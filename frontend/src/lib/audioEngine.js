@@ -1,10 +1,13 @@
-// Dual-element audio engine with crossfade / gapless auto-play for live playout.
+// Dual-element audio engine with crossfade / gapless auto-play for live playout,
+// plus an independent CUE (headphone pre-listen) channel and audio-output routing.
 export default class AudioEngine {
-  constructor(onUpdate) {
+  constructor(onUpdate, onCue) {
     this.onUpdate = onUpdate;
+    this.onCue = onCue;
     this.a = new Audio();
     this.b = new Audio();
-    [this.a, this.b].forEach((el) => {
+    this.cue = new Audio();
+    [this.a, this.b, this.cue].forEach((el) => {
       el.preload = "auto";
       el.crossOrigin = "anonymous";
     });
@@ -17,6 +20,7 @@ export default class AudioEngine {
     this.crossfade = true;
     this.crossfadeSeconds = 3;
     this.autoplay = true;
+    this.cueTrackId = null;
     this._fading = false;
     this._fadeRaf = null;
     this._bind();
@@ -24,17 +28,20 @@ export default class AudioEngine {
 
   _bind() {
     const emit = () => this._emit();
-    ["timeupdate"].forEach((ev) => {
-      this.a.addEventListener(ev, () => this._onTime(this.a));
-      this.b.addEventListener(ev, () => this._onTime(this.b));
-    });
-    ["ended"].forEach((ev) => {
-      this.a.addEventListener(ev, () => this._onEnded(this.a));
-      this.b.addEventListener(ev, () => this._onEnded(this.b));
-    });
+    this.a.addEventListener("timeupdate", () => this._onTime(this.a));
+    this.b.addEventListener("timeupdate", () => this._onTime(this.b));
+    this.a.addEventListener("ended", () => this._onEnded(this.a));
+    this.b.addEventListener("ended", () => this._onEnded(this.b));
     ["loadedmetadata", "play", "pause", "durationchange"].forEach((ev) => {
       this.a.addEventListener(ev, emit);
       this.b.addEventListener(ev, emit);
+    });
+    const cueEmit = () => this._emitCue();
+    ["timeupdate", "loadedmetadata", "play", "pause", "durationchange", "ended"].forEach((ev) => {
+      this.cue.addEventListener(ev, () => {
+        if (ev === "ended") this.cueTrackId = null;
+        cueEmit();
+      });
     });
   }
 
@@ -43,7 +50,6 @@ export default class AudioEngine {
     if (getUrl) this.getUrl = getUrl;
   }
 
-  // Reorder/remove-safe: keep playing the same track after list changes.
   syncQueue(tracks, getUrl, currentTrackId) {
     this.queue = tracks;
     if (getUrl) this.getUrl = getUrl;
@@ -56,9 +62,7 @@ export default class AudioEngine {
 
   setVolume(v) {
     this.volume = v;
-    if (!this._fading) {
-      this.active.volume = v;
-    }
+    if (!this._fading) this.active.volume = v;
     this._emit();
   }
 
@@ -69,6 +73,28 @@ export default class AudioEngine {
 
   setAutoplay(on) {
     this.autoplay = on;
+  }
+
+  async setMainSink(deviceId) {
+    for (const el of [this.a, this.b]) {
+      if (typeof el.setSinkId === "function") {
+        try {
+          await el.setSinkId(deviceId || "");
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  async setCueSink(deviceId) {
+    if (typeof this.cue.setSinkId === "function") {
+      try {
+        await this.cue.setSinkId(deviceId || "");
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   async playIndex(i) {
@@ -88,7 +114,7 @@ export default class AudioEngine {
     try {
       await this.active.play();
     } catch {
-      /* autoplay blocked */
+      /* ignore */
     }
     this._emit();
   }
@@ -135,6 +161,58 @@ export default class AudioEngine {
       /* ignore */
     }
     this._emit();
+  }
+
+  // ---------- CUE (headphone pre-listen) ----------
+  async cuePlay(track) {
+    if (!track) return;
+    const url = await this.getUrl(track);
+    if (!url) return;
+    this.cueTrackId = track.id;
+    this.cue.src = url;
+    this.cue.volume = 1;
+    try {
+      this.cue.currentTime = 0;
+      await this.cue.play();
+    } catch {
+      /* ignore */
+    }
+    this._emitCue();
+  }
+
+  async cueToggle() {
+    if (!this.cueTrackId) return;
+    if (this.cue.paused) {
+      try {
+        await this.cue.play();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      this.cue.pause();
+    }
+    this._emitCue();
+  }
+
+  cueStop() {
+    this.cue.pause();
+    try {
+      this.cue.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    this.cueTrackId = null;
+    this._emitCue();
+  }
+
+  cueSeek(t) {
+    if (!this.cueTrackId) return;
+    try {
+      this.cue.currentTime = t;
+    } catch {
+      /* ignore */
+    }
+    this._emitCue();
   }
 
   _onTime(el) {
@@ -227,11 +305,21 @@ export default class AudioEngine {
     });
   }
 
+  _emitCue() {
+    if (!this.onCue) return;
+    this.onCue({
+      trackId: this.cueTrackId,
+      isPlaying: !this.cue.paused && !!this.cueTrackId,
+      currentTime: this.cue.currentTime || 0,
+      duration: this.cue.duration || 0,
+    });
+  }
+
   destroy() {
     this._cancelFade();
-    this.a.pause();
-    this.b.pause();
-    this.a.src = "";
-    this.b.src = "";
+    [this.a, this.b, this.cue].forEach((el) => {
+      el.pause();
+      el.src = "";
+    });
   }
 }

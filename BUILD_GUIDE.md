@@ -76,3 +76,34 @@ From the `electron/` folder you can also run:
 - The app is fully **offline** — no internet required at showtime.
 - Supported audio: **.mp3** and **.wav**.
 - Icons live in `electron/build-assets/` (`icon.png`, `icon.ico`). Replace them to rebrand.
+
+---
+
+## 🔏 Signed builds (open with NO security warning)
+By default the app runs but shows a one-time OS warning (unsigned). To make it
+launch in one click for your DJs, sign the builds with a certificate. Signing is
+already wired up — just provide credentials via environment variables and rebuild.
+
+### Windows (removes SmartScreen "unknown publisher")
+Buy a **Code Signing / EV certificate** (e.g. DigiCert, Sectigo). Then:
+```powershell
+$env:CSC_LINK="C:\path\to\certificate.pfx"
+$env:CSC_KEY_PASSWORD="your-pfx-password"
+yarn dist:win
+```
+electron-builder signs the `.exe` automatically.
+
+### macOS (removes Gatekeeper "unidentified developer")
+Requires a paid **Apple Developer account** ($99/yr). In Xcode, install your
+"Developer ID Application" certificate, then:
+```bash
+export APPLE_ID="you@example.com"
+export APPLE_APP_SPECIFIC_PASSWORD="abcd-efgh-ijkl-mnop"   # appleid.apple.com app-specific password
+export APPLE_TEAM_ID="YOURTEAMID"
+yarn dist:mac
+```
+The app is signed (hardened runtime + entitlements) and automatically notarized
+by `notarize.js` when these three variables are set.
+
+> Without a certificate the build still works — DJs just do a one-time
+> right-click → **Open** (Mac) or **More info → Run anyway** (Windows).

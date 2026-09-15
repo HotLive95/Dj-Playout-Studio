@@ -83,6 +83,25 @@ ipcMain.handle("pick-files", async () => {
   });
 });
 
+// Import files dragged from the OS into the playlist (copies to the data folder).
+ipcMain.handle("import-paths", async (_e, paths) => {
+  const out = [];
+  for (const fp of paths || []) {
+    try {
+      const ext = path.extname(fp).toLowerCase();
+      if (ext !== ".mp3" && ext !== ".wav") continue;
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const dest = path.join(mediaDir(), id + ext);
+      fs.copyFileSync(fp, dest);
+      const stat = fs.statSync(dest);
+      out.push({ id, name: path.basename(fp), path: dest, size: stat.size });
+    } catch {
+      /* skip bad file */
+    }
+  }
+  return out;
+});
+
 ipcMain.handle("load-state", async () => {
   try {
     return JSON.parse(fs.readFileSync(statePath(), "utf-8"));

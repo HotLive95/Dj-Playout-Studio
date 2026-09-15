@@ -8,6 +8,8 @@ import {
   RefreshCw,
   Music2,
   Clock,
+  Headphones,
+  Upload,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
 
@@ -15,9 +17,11 @@ export default function TrackList({
   playlist,
   tracks,
   currentTrackId,
+  cueTrackId,
   isPlaying,
   onAddFiles,
   onImportDialog,
+  onDropFiles,
   isElectron,
   onReorder,
   onRemove,
@@ -25,12 +29,15 @@ export default function TrackList({
   onReplaceDialog,
   onPlayTrack,
   onTogglePlay,
+  onCueTrack,
 }) {
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
   const replaceIndexRef = useRef(null);
+  const dragDepth = useRef(0);
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
+  const [fileDragging, setFileDragging] = useState(false);
 
   const items = playlist ? playlist.trackIds.map((id) => tracks[id]).filter(Boolean) : [];
   const totalDuration = items.reduce((sum, t) => sum + (t.duration || 0), 0);
@@ -49,15 +56,44 @@ export default function TrackList({
     }
   };
 
-  const onDragStart = (index) => setDragIndex(index);
-  const onDragOver = (e, index) => {
+  const onRowDragStart = (index) => setDragIndex(index);
+  const onRowDragOver = (e, index) => {
+    if (dragIndex === null) return; // let file-drag pass through
     e.preventDefault();
     setOverIndex(index);
   };
-  const onDrop = (index) => {
+  const onRowDrop = (index) => {
     if (dragIndex !== null && dragIndex !== index) onReorder(dragIndex, index);
     setDragIndex(null);
     setOverIndex(null);
+  };
+
+  // ---- Drag files from the OS ----
+  const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  const onZoneDragEnter = (e) => {
+    if (!isFileDrag(e) || !playlist) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setFileDragging(true);
+  };
+  const onZoneDragOver = (e) => {
+    if (!isFileDrag(e) || !playlist) return;
+    e.preventDefault();
+  };
+  const onZoneDragLeave = (e) => {
+    if (!isFileDrag(e)) return;
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0;
+      setFileDragging(false);
+    }
+  };
+  const onZoneDrop = (e) => {
+    if (!isFileDrag(e) || !playlist) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setFileDragging(false);
+    if (e.dataTransfer.files?.length) onDropFiles(e.dataTransfer.files);
   };
 
   if (!playlist) {
@@ -76,7 +112,26 @@ export default function TrackList({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-w-0" data-testid="track-list-panel">
+    <div
+      className="flex-1 flex flex-col min-w-0 relative"
+      data-testid="track-list-panel"
+      onDragEnter={onZoneDragEnter}
+      onDragOver={onZoneDragOver}
+      onDragLeave={onZoneDragLeave}
+      onDrop={onZoneDrop}
+    >
+      {fileDragging && (
+        <div
+          className="absolute inset-3 z-20 rounded-2xl border-2 border-dashed border-[var(--hl-fire)] bg-[rgba(255,90,31,0.12)] backdrop-blur-sm grid place-items-center pointer-events-none"
+          data-testid="drop-overlay"
+        >
+          <div className="text-center">
+            <Upload size={44} className="mx-auto text-[var(--hl-fire)]" />
+            <p className="mt-3 font-display text-xl">Drop MP3 / WAV files to add</p>
+          </div>
+        </div>
+      )}
+
       {/* Hidden inputs for browser file selection */}
       <input
         ref={addInputRef}
@@ -145,7 +200,8 @@ export default function TrackList({
             <Music2 size={40} className="mx-auto text-[var(--hl-line)]" />
             <p className="mt-3 text-[var(--hl-muted)]">
               This playlist is empty. Click{" "}
-              <span className="text-[var(--hl-fire)] font-600">Add MP3 / WAV</span> to load tracks.
+              <span className="text-[var(--hl-fire)] font-600">Add MP3 / WAV</span> or drag files
+              here to load tracks.
             </p>
           </div>
         ) : (
@@ -153,14 +209,15 @@ export default function TrackList({
             {items.map((track, index) => {
               const active = track.id === currentTrackId;
               const rowPlaying = active && isPlaying;
+              const cued = track.id === cueTrackId;
               return (
                 <div
                   key={track.id}
                   data-testid={`track-row-${index}`}
                   draggable
-                  onDragStart={() => onDragStart(index)}
-                  onDragOver={(e) => onDragOver(e, index)}
-                  onDrop={() => onDrop(index)}
+                  onDragStart={() => onRowDragStart(index)}
+                  onDragOver={(e) => onRowDragOver(e, index)}
+                  onDrop={() => onRowDrop(index)}
                   onDragEnd={() => {
                     setDragIndex(null);
                     setOverIndex(null);
@@ -168,6 +225,8 @@ export default function TrackList({
                   className={`group flex items-center gap-3 rounded-lg pl-2 pr-3 py-2.5 border transition ${
                     active
                       ? "bg-[rgba(255,90,31,0.1)] border-[var(--hl-fire)]"
+                      : cued
+                      ? "bg-[rgba(255,171,0,0.08)] border-[var(--hl-amber)]"
                       : "bg-[var(--hl-panel-2)] border-[var(--hl-line)] hover:border-[#3a3a44]"
                   } ${dragIndex === index ? "hl-dragging" : ""} ${
                     overIndex === index && dragIndex !== null && dragIndex !== index
@@ -191,7 +250,7 @@ export default function TrackList({
                         ? "hl-fire-gradient text-white"
                         : "bg-black/40 text-[var(--hl-muted)] group-hover:text-white"
                     }`}
-                    title={rowPlaying ? "Pause" : "Play"}
+                    title={rowPlaying ? "Pause" : "Play on air"}
                   >
                     {rowPlaying ? <Pause size={18} /> : <Play size={18} />}
                   </button>
@@ -202,7 +261,9 @@ export default function TrackList({
 
                   <div className="flex-1 min-w-0">
                     <div
-                      className={`truncate font-500 ${active ? "text-[var(--hl-fire)]" : ""}`}
+                      className={`truncate font-500 ${
+                        active ? "text-[var(--hl-fire)]" : cued ? "text-[var(--hl-amber)]" : ""
+                      }`}
                       data-testid={`track-name-${index}`}
                     >
                       {track.name}
@@ -216,11 +277,23 @@ export default function TrackList({
                     {track.duration ? formatTime(track.duration) : "--:--"}
                   </div>
 
-                  <div className="flex items-center gap-1 w-[80px] justify-end opacity-0 group-hover:opacity-100 transition">
+                  <div className="flex items-center gap-1 w-[112px] justify-end">
+                    <button
+                      data-testid={`cue-track-${index}`}
+                      onClick={() => onCueTrack(index)}
+                      className={`h-8 w-8 grid place-items-center rounded transition ${
+                        cued
+                          ? "text-[var(--hl-amber)] bg-[rgba(255,171,0,0.15)]"
+                          : "text-[var(--hl-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hl-amber)] hover:bg-white/10"
+                      }`}
+                      title="Cue / pre-listen on headphones"
+                    >
+                      <Headphones size={16} />
+                    </button>
                     <button
                       data-testid={`replace-track-${index}`}
                       onClick={() => handleReplaceClick(index)}
-                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:bg-white/10"
+                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hl-amber)] hover:bg-white/10"
                       title="Replace file"
                     >
                       <RefreshCw size={16} />
@@ -228,7 +301,7 @@ export default function TrackList({
                     <button
                       data-testid={`remove-track-${index}`}
                       onClick={() => onRemove(index)}
-                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:bg-white/10"
+                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hl-onair)] hover:bg-white/10"
                       title="Remove from playlist"
                     >
                       <Trash2 size={16} />

@@ -14,32 +14,62 @@
     "dist:linux": "electron-builder --linux AppImage"
   },
   "devDependencies": {
+    "@electron/notarize": "2.5.0",
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.hotlive95.playout",
     "productName": "Hot Live 95 Playout Studio",
-    "files": ["main.js", "preload.js", "renderer/**/*", "build-assets/**/*"],
-    "directories": { "output": "dist" },
+    "afterSign": "notarize.js",
+    "files": [
+      "main.js",
+      "preload.js",
+      "notarize.js",
+      "renderer/**/*",
+      "build-assets/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
     "win": {
-      "target": [{ "target": "portable" }, { "target": "nsis" }],
+      "target": [
+        {
+          "target": "portable"
+        },
+        {
+          "target": "nsis"
+        }
+      ],
       "icon": "build-assets/icon.ico"
     },
-    "portable": { "artifactName": "HotLive95-Playout-Portable.exe" },
+    "portable": {
+      "artifactName": "HotLive95-Playout-Portable.exe"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "artifactName": "HotLive95-Playout-Setup-${version}.exe"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build-assets/icon.png",
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build-assets/entitlements.mac.plist",
+      "entitlementsInherit": "build-assets/entitlements.mac.plist"
     },
-    "dmg": { "artifactName": "HotLive95-Playout-${version}.dmg" },
+    "dmg": {
+      "artifactName": "HotLive95-Playout-${version}.dmg"
+    },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "build-assets/icon.png",
       "category": "AudioVideo"
     }

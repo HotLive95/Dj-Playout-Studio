@@ -38,12 +38,15 @@ export const platform = {
     localStorage.setItem("hotlive95_state", JSON.stringify(state));
   },
 
-  // Electron only: opens a native dialog, copies files to the flash-drive data
-  // folder, and returns track descriptors. Browser uses an <input> instead.
+  // Electron only: native dialog -> copies files to the flash-drive data folder.
   async importViaDialog() {
-    if (isElectron) {
-      return await window.hotlive.pickFiles();
-    }
+    if (isElectron) return await window.hotlive.pickFiles();
+    return null;
+  },
+
+  // Electron only: import files dragged from the OS by their paths.
+  async importPaths(paths) {
+    if (isElectron) return await window.hotlive.importPaths(paths);
     return null;
   },
 

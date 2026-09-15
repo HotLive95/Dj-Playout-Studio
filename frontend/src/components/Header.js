@@ -10,15 +10,15 @@ export default function Header({ onAir, nowPlaying }) {
         <img
           src="/logo.jpg"
           alt="Hot Live 95 Detroit A.I. Radio"
-          className="h-12 w-auto rounded-md object-contain"
+          className="h-14 w-auto rounded-lg object-contain"
           data-testid="app-logo"
         />
-        <div className="hidden sm:block">
-          <div className="font-display text-lg font-700 leading-none tracking-wide">
+        <div className="hidden sm:block border-l border-[var(--hl-line)] pl-3">
+          <div className="font-display text-base font-600 leading-none tracking-wide">
             DJ <span className="hl-text-fire">PLAYOUT</span> STUDIO
           </div>
-          <div className="text-[11px] text-[var(--hl-muted)] tracking-[0.25em] uppercase">
-            Hot Live 95 Detroit
+          <div className="text-[10px] text-[var(--hl-muted)] tracking-[0.2em] uppercase mt-1">
+            Space play · ← → skip · ↑ ↓ vol
           </div>
         </div>
       </div>
