@@ -137,3 +137,20 @@ ipcMain.handle("delete-file", async (_e, p) => {
   }
   return true;
 });
+
+const licensePath = () => path.join(dataDir(), "license.json");
+ipcMain.handle("get-license", async () => {
+  try {
+    return JSON.parse(fs.readFileSync(licensePath(), "utf-8"));
+  } catch {
+    return null;
+  }
+});
+ipcMain.handle("set-license", async (_e, lic) => {
+  try {
+    fs.writeFileSync(licensePath(), JSON.stringify(lic));
+  } catch {
+    /* ignore */
+  }
+  return true;
+});

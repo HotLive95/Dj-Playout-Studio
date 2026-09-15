@@ -74,8 +74,28 @@ From the `electron/` folder you can also run:
 
 ## 🔧 Notes
 - The app is fully **offline** — no internet required at showtime.
-- Supported audio: **.mp3** and **.wav**.
+- Supported audio: **.mp3** and **.wav** (**.m4a** imports too).
 - Icons live in `electron/build-assets/` (`icon.png`, `icon.ico`). Replace them to rebrand.
+
+---
+
+## 🔑 License keys (activation lock)
+The app shows a one-time **activation screen** on first launch. Mint keys for your
+authorized DJs from the `electron/` folder:
+```bash
+node tools/genkeys.js 10      # prints 10 activation keys
+```
+Give each DJ a key; they enter it once per computer, then accept the license
+agreement. Keys are verified **offline** (no server needed).
+
+To change the secret so old keys stop working, edit `SECRET` in BOTH
+`frontend/src/lib/license.js` and `electron/tools/genkeys.js` (keep them identical),
+then rebuild and re-issue keys.
+
+> This is casual protection: it stops copy-and-share among casual users. No app that
+> runs on someone's computer can be made 100% uncopyable — pair this with the
+> built-in © license agreement (your real legal protection) and, for stronger
+> security, code-sign the builds (below).
 
 ---
 

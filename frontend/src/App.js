@@ -9,6 +9,7 @@ import TrackEditor from "@/components/TrackEditor";
 import ScheduleModal from "@/components/ScheduleModal";
 import JingleBar from "@/components/JingleBar";
 import VoiceRecorder from "@/components/VoiceRecorder";
+import LicenseGate from "@/components/LicenseGate";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob } from "@/lib/db";
@@ -27,7 +28,54 @@ const defaultSettings = {
   cueSink: "",
   trimSilence: false,
   autoDuck: false,
+  voiceFx: "off",
 };
+
+function makeImpulse(ctx, seconds = 2.2, decay = 2.5) {
+  const rate = ctx.sampleRate;
+  const len = Math.floor(rate * seconds);
+  const buf = ctx.createBuffer(2, len, rate);
+  for (let c = 0; c < 2; c++) {
+    const data = buf.getChannelData(c);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    }
+  }
+  return buf;
+}
+
+function buildMicGraph(ctx, source, fx) {
+  const out = ctx.createGain();
+  out.gain.value = 0.9;
+  if (fx === "echo") {
+    const dry = ctx.createGain();
+    const delay = ctx.createDelay(1.0);
+    delay.delayTime.value = 0.28;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.35;
+    source.connect(dry);
+    dry.connect(out);
+    source.connect(delay);
+    delay.connect(fb);
+    fb.connect(delay);
+    delay.connect(out);
+  } else if (fx === "reverb") {
+    const conv = ctx.createConvolver();
+    conv.buffer = makeImpulse(ctx);
+    const wet = ctx.createGain();
+    wet.gain.value = 0.85;
+    const dry = ctx.createGain();
+    dry.gain.value = 0.8;
+    source.connect(dry);
+    dry.connect(out);
+    source.connect(conv);
+    conv.connect(wet);
+    wet.connect(out);
+  } else {
+    source.connect(out);
+  }
+  out.connect(ctx.destination);
+}
 
 function readDuration(src) {
   return new Promise((resolve) => {
@@ -73,9 +121,12 @@ function App() {
   const [banner, setBanner] = useState("");
   const [jingles, setJingles] = useState([]);
   const [currentPeaks, setCurrentPeaks] = useState(null);
+  const [micLive, setMicLive] = useState(false);
+  const [license, setLicenseState] = useState(undefined);
 
   const engineRef = useRef(null);
   const micRef = useRef({ active: false });
+  const micLiveRef = useRef({});
   const schedRef = useRef({ start: {}, end: {} });
   const jinglesRef = useRef([]);
   const activeJinglesRef = useRef([]);
@@ -98,6 +149,27 @@ function App() {
       setLoaded(true);
     })();
   }, []);
+
+  // ---- License ----
+  useEffect(() => {
+    (async () => {
+      const l = await platform.getLicense();
+      setLicenseState(l || {});
+    })();
+  }, []);
+
+  const activateLicense = (key) => {
+    const lic = { activated: true, key, activatedAt: new Date().toISOString(), legalAccepted: false };
+    setLicenseState(lic);
+    platform.setLicense(lic);
+  };
+  const acceptLegal = () => {
+    setLicenseState((l) => {
+      const n = { ...l, legalAccepted: true };
+      platform.setLicense(n);
+      return n;
+    });
+  };
 
   // ---- Audio engine ----
   useEffect(() => {
@@ -127,8 +199,46 @@ function App() {
 
   // ---- Ducking (manual Talk + mic auto-duck) ----
   useEffect(() => {
-    engineRef.current?.setDuck(talkActive || micActive);
-  }, [talkActive, micActive]);
+    engineRef.current?.setDuck(talkActive || micActive || micLive);
+  }, [talkActive, micActive, micLive]);
+
+  // ---- Mic live to air (with Voice FX) ----
+  useEffect(() => {
+    if (!micLive) {
+      const m = micLiveRef.current;
+      if (m.stream) m.stream.getTracks().forEach((t) => t.stop());
+      if (m.ctx) m.ctx.close();
+      micLiveRef.current = {};
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        const AC = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AC();
+        const src = ctx.createMediaStreamSource(stream);
+        buildMicGraph(ctx, src, settings.voiceFx);
+        micLiveRef.current = { stream, ctx };
+      } catch {
+        setBanner("Microphone unavailable — mic to air turned off.");
+        setMicLive(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      const m = micLiveRef.current;
+      if (m.stream) m.stream.getTracks().forEach((t) => t.stop());
+      if (m.ctx) m.ctx.close();
+      micLiveRef.current = {};
+    };
+  }, [micLive, settings.voiceFx]);
 
   useEffect(() => {
     if (!settings.autoDuck) {
@@ -629,6 +739,23 @@ function App() {
   const setProgramSink = (id) => setSettings((s) => ({ ...s, programSink: id }));
   const setCueSink = (id) => setSettings((s) => ({ ...s, cueSink: id }));
   const toggleAutoDuck = () => setSettings((s) => ({ ...s, autoDuck: !s.autoDuck }));
+  const setVoiceFx = (v) => setSettings((s) => ({ ...s, voiceFx: v }));
+  const toggleMicLive = () => setMicLive((v) => !v);
+
+  const setCueIn = () => {
+    if (!currentTrackId) return;
+    setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueIn: playback.currentTime } }));
+    setBanner("Start cue set");
+  };
+  const setCueOut = () => {
+    if (!currentTrackId) return;
+    setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueOut: playback.currentTime } }));
+    setBanner("End cue set");
+  };
+  const clearCues = () => {
+    if (!currentTrackId) return;
+    setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueIn: undefined, cueOut: undefined } }));
+  };
   const toggleTrimSilence = () =>
     setSettings((s) => {
       const on = !s.trimSilence;
@@ -718,6 +845,22 @@ function App() {
     [tracks]
   );
 
+  if (license === undefined) {
+    return (
+      <div
+        className="h-screen w-screen hl-app-bg grid place-items-center text-[var(--hl-muted)]"
+        data-testid="app-splash"
+      >
+        Loading…
+      </div>
+    );
+  }
+  if (!license.activated || !license.legalAccepted) {
+    return (
+      <LicenseGate license={license} onActivate={activateLicense} onAcceptLegal={acceptLegal} />
+    );
+  }
+
   return (
     <div className="h-screen w-screen flex flex-col hl-app-bg" data-testid="app-root">
       <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} />
@@ -805,6 +948,10 @@ function App() {
         talkActive={talkActive}
         autoDuck={settings.autoDuck}
         micActive={micActive}
+        micLive={micLive}
+        voiceFx={settings.voiceFx}
+        cueIn={currentTrack?.cueIn}
+        cueOut={currentTrack?.cueOut}
         onTogglePlay={togglePlay}
         onNext={next}
         onPrev={prev}
@@ -816,6 +963,11 @@ function App() {
         onToggleTrimSilence={toggleTrimSilence}
         onToggleTalk={() => setTalkActive((v) => !v)}
         onToggleAutoDuck={toggleAutoDuck}
+        onToggleMic={toggleMicLive}
+        onVoiceFx={setVoiceFx}
+        onSetCueIn={setCueIn}
+        onSetCueOut={setCueOut}
+        onClearCues={clearCues}
       />
 
       {editorTrack && (

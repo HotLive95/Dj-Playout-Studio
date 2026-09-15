@@ -7,6 +7,7 @@ export default function Waveform({
   inPoint = 0,
   outPoint = 1,
   cuts = [],
+  markers = [],
   height = 96,
   onSeek,
   interactive = true,
@@ -71,6 +72,14 @@ export default function Waveform({
       data-testid="waveform"
     >
       <canvas ref={canvasRef} />
+      {markers.map((m, i) => (
+        <div
+          key={`mk-${i}`}
+          className="absolute top-0 bottom-0 pointer-events-none"
+          style={{ left: `${m.frac * 100}%`, width: 2, background: m.color }}
+          data-testid={`wave-marker-${m.label || i}`}
+        />
+      ))}
       {/* trim handles */}
       {!compact && (
         <>

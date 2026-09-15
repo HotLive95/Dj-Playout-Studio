@@ -136,7 +136,12 @@ export default class AudioEngine {
     this.active.src = url;
     this.active.volume = this._effVol();
     const track = this.queue[i];
-    const startAt = this.trimSilence && track && track.leadIn ? track.leadIn : 0;
+    const startAt =
+      track && track.cueIn != null
+        ? track.cueIn
+        : this.trimSilence && track && track.leadIn
+        ? track.leadIn
+        : 0;
     if (startAt > 0) {
       const onMeta = () => {
         try {
@@ -264,9 +269,14 @@ export default class AudioEngine {
     if (dur && isFinite(dur)) {
       const track = this.queue[this.index];
       const effEnd =
-        this.trimSilence && track && track.tailStart ? Math.min(track.tailStart, dur) : dur;
+        track && track.cueOut != null
+          ? Math.min(track.cueOut, dur)
+          : this.trimSilence && track && track.tailStart
+          ? Math.min(track.tailStart, dur)
+          : dur;
       const hasNext = this.index < this.queue.length - 1;
       const remaining = effEnd - el.currentTime;
+      const hasEarlyEnd = effEnd < dur - 0.05;
       if (
         this.crossfade &&
         this.autoplay &&
@@ -276,14 +286,7 @@ export default class AudioEngine {
         remaining > 0.05
       ) {
         this._startCrossfade();
-      } else if (
-        !this._fading &&
-        this.trimSilence &&
-        track &&
-        track.tailStart &&
-        track.tailStart < dur - 0.05 &&
-        el.currentTime >= track.tailStart
-      ) {
+      } else if (!this._fading && hasEarlyEnd && el.currentTime >= effEnd) {
         if (this.autoplay && hasNext) this.playIndex(this.index + 1);
         else el.pause();
       }

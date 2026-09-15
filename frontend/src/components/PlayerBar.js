@@ -30,6 +30,10 @@ export default function PlayerBar({
   talkActive,
   autoDuck,
   micActive,
+  micLive,
+  voiceFx,
+  cueIn,
+  cueOut,
   onTogglePlay,
   onNext,
   onPrev,
@@ -41,8 +45,16 @@ export default function PlayerBar({
   onToggleTrimSilence,
   onToggleTalk,
   onToggleAutoDuck,
+  onToggleMic,
+  onVoiceFx,
+  onSetCueIn,
+  onSetCueOut,
+  onClearCues,
 }) {
   const pct = duration ? (currentTime / duration) * 100 : 0;
+  const markers = [];
+  if (cueIn != null && duration) markers.push({ frac: cueIn / duration, color: "#00e5ff", label: "in" });
+  if (cueOut != null && duration) markers.push({ frac: cueOut / duration, color: "#ff1744", label: "out" });
 
   return (
     <div
@@ -68,6 +80,7 @@ export default function PlayerBar({
               <Waveform
                 peaks={peaks}
                 progress={duration ? currentTime / duration : 0}
+                markers={markers}
                 compact
                 height={32}
                 onSeek={(frac) => onSeek(frac * (duration || 0))}
@@ -89,6 +102,44 @@ export default function PlayerBar({
         <span className="text-xs text-[var(--hl-muted)] tabular-nums w-11" data-testid="duration">
           {formatTime(duration)}
         </span>
+        {track && (
+          <div className="flex items-center gap-1 pl-1">
+            <button
+              data-testid="set-cue-in"
+              onClick={onSetCueIn}
+              className={`px-2 py-1 rounded text-[11px] font-600 border transition ${
+                cueIn != null
+                  ? "border-[#00e5ff] text-[#00e5ff] bg-[rgba(0,229,255,0.1)]"
+                  : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white"
+              }`}
+              title="Set start cue at playhead"
+            >
+              ⇤ In
+            </button>
+            <button
+              data-testid="set-cue-out"
+              onClick={onSetCueOut}
+              className={`px-2 py-1 rounded text-[11px] font-600 border transition ${
+                cueOut != null
+                  ? "border-[var(--hl-onair)] text-[var(--hl-onair)] bg-[rgba(255,23,68,0.1)]"
+                  : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white"
+              }`}
+              title="Set end cue at playhead"
+            >
+              Out ⇥
+            </button>
+            {(cueIn != null || cueOut != null) && (
+              <button
+                data-testid="clear-cues"
+                onClick={onClearCues}
+                className="px-1.5 py-1 rounded text-[11px] text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
+                title="Clear cue markers"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between mt-2.5 gap-4">
@@ -146,6 +197,29 @@ export default function PlayerBar({
           >
             <Mic size={17} /> TALK
           </button>
+          <button
+            data-testid="mic-live-button"
+            onClick={onToggleMic}
+            className={`flex items-center gap-1.5 px-3 h-10 rounded-full font-700 text-sm border-2 transition ${
+              micLive
+                ? "bg-[var(--hl-fire)] border-[var(--hl-fire)] text-white"
+                : "border-[var(--hl-fire)] text-[var(--hl-fire)] hover:bg-[rgba(255,90,31,0.12)]"
+            }`}
+            title="Mic live to air (with Voice FX)"
+          >
+            <Radio size={16} /> MIC
+          </button>
+          <select
+            data-testid="voice-fx-select"
+            value={voiceFx}
+            onChange={(e) => onVoiceFx(e.target.value)}
+            className="h-10 bg-black/50 border border-[var(--hl-line)] rounded-lg text-xs px-2 outline-none focus:border-[var(--hl-fire)]"
+            title="Voice FX for the mic"
+          >
+            <option value="off">FX: Off</option>
+            <option value="echo">FX: Echo</option>
+            <option value="reverb">FX: Reverb</option>
+          </select>
         </div>
 
         {/* Right controls */}
