@@ -1,0 +1,245 @@
+import React, { useRef, useState } from "react";
+import {
+  Plus,
+  Play,
+  Pause,
+  GripVertical,
+  Trash2,
+  RefreshCw,
+  Music2,
+  Clock,
+} from "lucide-react";
+import { formatTime, formatTotal } from "../lib/format";
+
+export default function TrackList({
+  playlist,
+  tracks,
+  currentTrackId,
+  isPlaying,
+  onAddFiles,
+  onImportDialog,
+  isElectron,
+  onReorder,
+  onRemove,
+  onReplaceFiles,
+  onReplaceDialog,
+  onPlayTrack,
+  onTogglePlay,
+}) {
+  const addInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
+  const replaceIndexRef = useRef(null);
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+
+  const items = playlist ? playlist.trackIds.map((id) => tracks[id]).filter(Boolean) : [];
+  const totalDuration = items.reduce((sum, t) => sum + (t.duration || 0), 0);
+
+  const handleAddClick = () => {
+    if (isElectron) onImportDialog();
+    else addInputRef.current?.click();
+  };
+
+  const handleReplaceClick = (index) => {
+    if (isElectron) {
+      onReplaceDialog(index);
+    } else {
+      replaceIndexRef.current = index;
+      replaceInputRef.current?.click();
+    }
+  };
+
+  const onDragStart = (index) => setDragIndex(index);
+  const onDragOver = (e, index) => {
+    e.preventDefault();
+    setOverIndex(index);
+  };
+  const onDrop = (index) => {
+    if (dragIndex !== null && dragIndex !== index) onReorder(dragIndex, index);
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
+  if (!playlist) {
+    return (
+      <div className="flex-1 grid place-items-center text-center px-8">
+        <div>
+          <Music2 size={48} className="mx-auto text-[var(--hl-line)]" />
+          <h2 className="font-display text-2xl mt-4">No Playlist Selected</h2>
+          <p className="text-[var(--hl-muted)] mt-2 max-w-sm mx-auto">
+            Create or select a playlist on the left to start loading your MP3 and WAV files for
+            live playout.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0" data-testid="track-list-panel">
+      {/* Hidden inputs for browser file selection */}
+      <input
+        ref={addInputRef}
+        type="file"
+        accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav,audio/*"
+        multiple
+        className="hidden"
+        data-testid="add-files-input"
+        onChange={(e) => {
+          if (e.target.files?.length) onAddFiles(Array.from(e.target.files));
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav,audio/*"
+        className="hidden"
+        data-testid="replace-file-input"
+        onChange={(e) => {
+          if (e.target.files?.[0] && replaceIndexRef.current !== null) {
+            onReplaceFiles(replaceIndexRef.current, e.target.files[0]);
+          }
+          replaceIndexRef.current = null;
+          e.target.value = "";
+        }}
+      />
+
+      {/* Playlist header */}
+      <div className="px-6 pt-5 pb-4 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--hl-muted)]">
+            Now editing
+          </div>
+          <h1
+            className="font-display text-3xl font-700 truncate hl-text-fire"
+            data-testid="current-playlist-name"
+          >
+            {playlist.name}
+          </h1>
+          <div className="flex items-center gap-4 mt-1.5 text-sm text-[var(--hl-muted)]">
+            <span data-testid="track-count">
+              {items.length} track{items.length === 1 ? "" : "s"}
+            </span>
+            <span className="flex items-center gap-1.5" data-testid="total-duration">
+              <Clock size={14} /> {formatTotal(totalDuration)} total runtime
+            </span>
+          </div>
+        </div>
+        <button
+          data-testid="add-files-button"
+          onClick={handleAddClick}
+          className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-lg hl-fire-gradient text-white font-600 hover:brightness-110 transition hl-glow"
+        >
+          <Plus size={18} /> Add MP3 / WAV
+        </button>
+      </div>
+
+      {/* Track rows */}
+      <div className="flex-1 overflow-y-auto hl-scroll px-4 pb-6">
+        {items.length === 0 ? (
+          <div
+            className="mx-2 mt-4 border-2 border-dashed border-[var(--hl-line)] rounded-xl py-16 text-center"
+            data-testid="empty-playlist"
+          >
+            <Music2 size={40} className="mx-auto text-[var(--hl-line)]" />
+            <p className="mt-3 text-[var(--hl-muted)]">
+              This playlist is empty. Click{" "}
+              <span className="text-[var(--hl-fire)] font-600">Add MP3 / WAV</span> to load tracks.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {items.map((track, index) => {
+              const active = track.id === currentTrackId;
+              const rowPlaying = active && isPlaying;
+              return (
+                <div
+                  key={track.id}
+                  data-testid={`track-row-${index}`}
+                  draggable
+                  onDragStart={() => onDragStart(index)}
+                  onDragOver={(e) => onDragOver(e, index)}
+                  onDrop={() => onDrop(index)}
+                  onDragEnd={() => {
+                    setDragIndex(null);
+                    setOverIndex(null);
+                  }}
+                  className={`group flex items-center gap-3 rounded-lg pl-2 pr-3 py-2.5 border transition ${
+                    active
+                      ? "bg-[rgba(255,90,31,0.1)] border-[var(--hl-fire)]"
+                      : "bg-[var(--hl-panel-2)] border-[var(--hl-line)] hover:border-[#3a3a44]"
+                  } ${dragIndex === index ? "hl-dragging" : ""} ${
+                    overIndex === index && dragIndex !== null && dragIndex !== index
+                      ? "hl-drag-over"
+                      : ""
+                  }`}
+                >
+                  <span
+                    className="cursor-grab active:cursor-grabbing text-[var(--hl-muted)] hover:text-white"
+                    title="Drag to reorder"
+                    data-testid={`drag-handle-${index}`}
+                  >
+                    <GripVertical size={18} />
+                  </span>
+
+                  <button
+                    data-testid={`play-track-${index}`}
+                    onClick={() => (active ? onTogglePlay() : onPlayTrack(index))}
+                    className={`h-10 w-10 shrink-0 grid place-items-center rounded-md ${
+                      active
+                        ? "hl-fire-gradient text-white"
+                        : "bg-black/40 text-[var(--hl-muted)] group-hover:text-white"
+                    }`}
+                    title={rowPlaying ? "Pause" : "Play"}
+                  >
+                    {rowPlaying ? <Pause size={18} /> : <Play size={18} />}
+                  </button>
+
+                  <div className="w-7 text-right text-sm text-[var(--hl-muted)] tabular-nums">
+                    {index + 1}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={`truncate font-500 ${active ? "text-[var(--hl-fire)]" : ""}`}
+                      data-testid={`track-name-${index}`}
+                    >
+                      {track.name}
+                    </div>
+                    <div className="text-[11px] text-[var(--hl-muted)] uppercase tracking-wide">
+                      {track.type?.includes("wav") || /\.wav$/i.test(track.name) ? "WAV" : "MP3"}
+                    </div>
+                  </div>
+
+                  <div className="text-sm text-[var(--hl-muted)] tabular-nums w-14 text-right">
+                    {track.duration ? formatTime(track.duration) : "--:--"}
+                  </div>
+
+                  <div className="flex items-center gap-1 w-[80px] justify-end opacity-0 group-hover:opacity-100 transition">
+                    <button
+                      data-testid={`replace-track-${index}`}
+                      onClick={() => handleReplaceClick(index)}
+                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:bg-white/10"
+                      title="Replace file"
+                    >
+                      <RefreshCw size={16} />
+                    </button>
+                    <button
+                      data-testid={`remove-track-${index}`}
+                      onClick={() => onRemove(index)}
+                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:bg-white/10"
+                      title="Remove from playlist"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

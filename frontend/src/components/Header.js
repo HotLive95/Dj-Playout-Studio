@@ -1,0 +1,74 @@
+import React from "react";
+
+export default function Header({ onAir, nowPlaying }) {
+  return (
+    <header
+      data-testid="app-header"
+      className="flex items-center justify-between px-6 py-3 border-b border-[var(--hl-line)] bg-[var(--hl-panel)]"
+    >
+      <div className="flex items-center gap-3">
+        <img
+          src="/logo.jpg"
+          alt="Hot Live 95 Detroit A.I. Radio"
+          className="h-12 w-auto rounded-md object-contain"
+          data-testid="app-logo"
+        />
+        <div className="hidden sm:block">
+          <div className="font-display text-lg font-700 leading-none tracking-wide">
+            DJ <span className="hl-text-fire">PLAYOUT</span> STUDIO
+          </div>
+          <div className="text-[11px] text-[var(--hl-muted)] tracking-[0.25em] uppercase">
+            Hot Live 95 Detroit
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4">
+        {nowPlaying && (
+          <div className="hidden md:flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/40 border border-[var(--hl-line)]">
+            <div className="flex items-end gap-[3px] h-4">
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={i}
+                  className="hl-eq-bar"
+                  style={{
+                    animationDelay: `${i * 0.15}s`,
+                    animationPlayState: onAir ? "running" : "paused",
+                    height: onAir ? undefined : "25%",
+                  }}
+                />
+              ))}
+            </div>
+            <span
+              className="text-sm text-[var(--hl-text)] max-w-[280px] truncate"
+              data-testid="header-now-playing"
+            >
+              {nowPlaying}
+            </span>
+          </div>
+        )}
+        <div
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${
+            onAir
+              ? "border-[var(--hl-onair)] bg-[rgba(255,23,68,0.12)]"
+              : "border-[var(--hl-line)] bg-black/40"
+          }`}
+          data-testid="on-air-indicator"
+        >
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${
+              onAir ? "bg-[var(--hl-onair)] hl-onair-dot" : "bg-[#555]"
+            }`}
+          />
+          <span
+            className={`font-display text-sm font-600 tracking-widest ${
+              onAir ? "text-[var(--hl-onair)]" : "text-[var(--hl-muted)]"
+            }`}
+          >
+            {onAir ? "ON AIR" : "OFF AIR"}
+          </span>
+        </div>
+      </div>
+    </header>
+  );
+}
