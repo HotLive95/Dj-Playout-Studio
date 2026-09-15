@@ -38,9 +38,16 @@ for "Hot Live 95 Detroit A.I. Radio".
   build scripts + BUILD_GUIDE.md for Windows .exe (portable) and Mac .dmg
 
 ## Backlog / Next
-- P1: Cue/preview headphone bus (pre-listen next track without airing)
-- P1: Keyboard shortcuts for live use (space=play, arrows=skip)
-- P2: Waveform + auto cue-point trimming of silence
-- P2: Drag-and-drop files directly into the playlist from OS
-- P2: Import quota/size guard for very large libraries
-- P2: Code-sign builds (Windows + Apple notarization) to avoid Gatekeeper prompt
+- P1: Waveform display + auto cue-point (trim leading/trailing silence)
+- P2: Save/export a playlist as a portable file to share between DJs
+- P2: Mic/voice-track ducking during talk breaks
+- P2: Scheduling / clock automation for unattended playout
+
+## Update 2 (2026-06) — verified by testing agent (16/16 assertions, 100%)
+- Cue / headphone pre-listen: independent preview channel per track + Air-out / Cue-out
+  device routing (setSinkId). Files: `audioEngine.js` (cue element + sinks), `CuePanel.js`.
+- Live hotkeys: Space play/pause, ←/→ prev/next, ↑/↓ volume, C stop-cue (ignored while typing).
+- Drag MP3/WAV from the OS into the playlist (browser + Electron via `import-paths` IPC).
+- Signed-build support: env-driven Windows (CSC_LINK) + macOS notarization (`notarize.js`,
+  entitlements, hardened runtime); documented in BUILD_GUIDE.md.
+- Logo refreshed to the flame emblem wordmark ("HOT LIVE 95 / DETROIT · A.I. RADIO").
