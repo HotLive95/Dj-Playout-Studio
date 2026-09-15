@@ -39,8 +39,20 @@ for "Hot Live 95 Detroit A.I. Radio".
 
 ## Backlog / Next
 - P2: MP3 export via Web Worker for very long tracks
-- P2: License-key activation + per-device lock (anti-piracy) — offered to user
 - P2: Validate imported .hlp.json schema; validate schedule end > start
+- P2: Optional per-device license binding + online activation (stronger anti-piracy)
+
+## Update 5 (2026-06) — verified by testing agent (100%)
+- License Lock: offline activation gate (`license.js` checksum keys, `LicenseGate.js`),
+  persisted via `platform.getLicense/setLicense` (+ Electron license.json IPC). Key
+  generator `electron/tools/genkeys.js`. NOTE: soft/casual protection (secret is in
+  client code) — pair with the © agreement + code signing.
+- Legal Notice: © license agreement + agree checkbox on first launch (in `LicenseGate.js`).
+- Main Waveform Cues: per-track manual cueIn/cueOut markers on the on-air waveform;
+  engine starts at cueIn and auto-advances at cueOut (`audioEngine.js`, `PlayerBar.js`,
+  `Waveform.js` markers).
+- Instant Voice FX: MIC live-to-air button + Voice FX select (Off/Echo/Reverb) via Web
+  Audio (`buildMicGraph`/`makeImpulse` in `App.js`), ducks music while live.
 
 ## Update 4 (2026-06) — verified by testing agent (8/8 flows, 100%)
 - Main waveform on the on-air seek bar (PlayerBar renders `Waveform` from decoded peaks,

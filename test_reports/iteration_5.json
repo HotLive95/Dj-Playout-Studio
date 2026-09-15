@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only regression + new-feature testing for Hot Live 95 DJ Playout Studio iteration 5 (License Gate, Legal Notice, Main Waveform Cues, Voice FX/MIC). All requested flows PASS. License gate blocks app-root on fresh start; invalid key shows license-error; both valid keys (Q61VK-... and C77J9-...) advance to legal step; legal-accept-button without checkbox does not proceed; ticking checkbox + accept mounts app-root; license persists across reload (localStorage['hotlive95_license'] set with activated:true, legalAccepted:true). Regression: create playlist, upload 2 WAVs, play-track-0 sets ON AIR badge, prev/next cycles tracks, jingle upload works. Waveform cues: set-cue-in renders wave-marker-in, set-cue-out renders wave-marker-out, clear-cues removes both. Voice FX select accepts echo/reverb without error. MIC live button toggles on (fire class) then off with fake mic; no crash. Hotkeys: typing space inside new-playlist-input is captured as text (no playback trigger); Space on body toggles playback.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PlayerBar crossfade-seconds <select>", "issues": ["React hydration warning: <span> rendered as child of <option> (from dev instrumentation wrapping option children). Non-blocking but pollutes console with hydration errors. Consider suppressing dev wrapper for <option> elements."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "LicenseGate uses document.getElementById('agree') to check the checkbox. Works but a controlled React state (useState) would be cleaner and avoid DOM coupling.",
+    "License checksum uses FNV-1a with a hard-coded SECRET in source. Since this is client-only offline validation the secret is trivially discoverable; this is acceptable for a soft license gate but should be documented as such (not cryptographically secure).",
+    "Hydration warning stream on every reload — Fix crossfade <option> rendering to avoid nested <span> children inside <option>."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "test_credentials": "License keys: Q61VK-G819N-40K1B-H226T, C77J9-PVZZ4-B1NRC-7BKNZ",
+  "seed_data_creation": "Generated /tmp/wavs/t1.wav and /tmp/wavs/t2.wav (2s mono 22050 Hz sine WAVs) for upload tests. TEST_Show playlist created inside the app (client-side only, localStorage).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Frontend is client-only. To retest license gate: localStorage.clear() then reload; the localStorage key is 'hotlive95_license'. Fake mic is granted by grant_permissions(['microphone']) in Playwright. Waveform peaks take ~1-2s to decode after load; add wait_for_timeout(1500) before asserting on waveform markers.",
+  "rca of the issue": "n/a — no failures"
+}
