@@ -28,3 +28,11 @@ root.render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
+
+// Register the PWA service worker so DJs can install to their phone home screen
+// (skipped inside the Electron desktop build, which is already fully offline).
+if ("serviceWorker" in navigator && !(typeof window !== "undefined" && window.hotlive && window.hotlive.isElectron)) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register(`${process.env.PUBLIC_URL || ""}/sw.js`).catch(() => {});
+  });
+}

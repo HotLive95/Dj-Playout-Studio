@@ -1,0 +1,17 @@
+{
+  "short_name": "Hot Live 95",
+  "name": "Hot Live 95 — DJ Playout Studio",
+  "description": "Hot Live 95 Detroit A.I. Radio — DJ Playout Studio",
+  "icons": [
+    { "src": "icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "icon-maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ],
+  "id": "/",
+  "start_url": ".",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#ff5a1f",
+  "background_color": "#0a0a0c"
+}

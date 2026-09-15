@@ -49,6 +49,14 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 13 (2026-06) — verified
+- PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,
+  icons 192/512 + maskable generated from the app icon/emblem), mobile meta tags + apple-touch-icon
+  in `index.html`, and a service worker (`public/sw.js`) registered in `index.js` (skipped in Electron;
+  API & hlmedia always pass through, app-shell cached). Verified: manifest loads, SW registers,
+  icons 200. DJs open the hosted link on a phone → "Add to Home Screen" → launches standalone.
+  NOTE: requires the frontend to be deployed/hosted to be reachable on DJs' phones.
+
 ## Update 12 (2026-06) — verified
 - Jingle Duck Depth dial: `settings.jingleDuckDepth` (0–0.8), slider in JingleBar; duck level = 1-depth.
 - Jingle Duck Speed dial: `settings.jingleDuckMs` (60–900ms), slider in JingleBar; `engine.setDuck(active, level, ms)`
