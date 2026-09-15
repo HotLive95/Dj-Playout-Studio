@@ -11,9 +11,11 @@ import JingleBar from "@/components/JingleBar";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import LicenseGate from "@/components/LicenseGate";
 import KeyManager from "@/components/KeyManager";
+import CustomFxModal from "@/components/CustomFxModal";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob } from "@/lib/db";
+import { api } from "@/lib/api";
 import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessing";
 
 const uid = () =>
@@ -31,6 +33,8 @@ const defaultSettings = {
   autoDuck: false,
   voiceFx: "off",
   cueAutoFade: false,
+  cueFadeSeconds: 1.5,
+  customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
 function makeImpulse(ctx, seconds = 2.2, decay = 2.5) {
@@ -46,9 +50,56 @@ function makeImpulse(ctx, seconds = 2.2, decay = 2.5) {
   return buf;
 }
 
-function buildMicGraph(ctx, source, fx) {
+function buildMicGraph(ctx, source, fx, custom) {
   const out = ctx.createGain();
   out.gain.value = 0.9;
+
+  if (fx === "custom") {
+    const c = { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0, ...(custom || {}) };
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = c.highpass;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = c.lowpass;
+    source.connect(hp);
+    hp.connect(lp);
+    let node = lp;
+    if (c.drive > 0) {
+      const ws = ctx.createWaveShaper();
+      const curve = new Float32Array(256);
+      const amt = 1 + c.drive * 4;
+      for (let i = 0; i < 256; i++) curve[i] = Math.tanh(((i / 255) * 2 - 1) * amt);
+      ws.curve = curve;
+      node.connect(ws);
+      node = ws;
+    }
+    node.connect(out);
+    if (c.echo > 0) {
+      const delay = ctx.createDelay(1.0);
+      delay.delayTime.value = 0.28;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.3;
+      const wet = ctx.createGain();
+      wet.gain.value = c.echo;
+      node.connect(delay);
+      delay.connect(fb);
+      fb.connect(delay);
+      delay.connect(wet);
+      wet.connect(out);
+    }
+    if (c.reverb > 0) {
+      const conv = ctx.createConvolver();
+      conv.buffer = makeImpulse(ctx, 2.4, 2.6);
+      const wet = ctx.createGain();
+      wet.gain.value = c.reverb;
+      node.connect(conv);
+      conv.connect(wet);
+      wet.connect(out);
+    }
+    out.connect(ctx.destination);
+    return;
+  }
 
   const bandpass = (hp, lp) => {
     const h = ctx.createBiquadFilter();
@@ -180,6 +231,7 @@ function App() {
   const [micLive, setMicLive] = useState(false);
   const [license, setLicenseState] = useState(undefined);
   const [keyManagerOpen, setKeyManagerOpen] = useState(false);
+  const [customFxOpen, setCustomFxOpen] = useState(false);
 
   const engineRef = useRef(null);
   const micRef = useRef({ active: false });
@@ -208,31 +260,86 @@ function App() {
     })();
   }, []);
 
-  // ---- License (with device lock) ----
+  // ---- License (with device lock + optional online activation) ----
   useEffect(() => {
     (async () => {
       const dev = await platform.getDeviceId();
       deviceIdRef.current = dev;
       const l = await platform.getLicense();
-      if (l && l.activated && l.deviceId && l.deviceId !== dev) {
-        // Copied to a different computer — force re-activation.
-        setLicenseState({ activated: false, legalAccepted: false, lockedNotice: true });
-      } else {
+      if (!l || !l.activated) {
         setLicenseState(l || {});
+        return;
       }
+      // Device lock
+      if (l.deviceId && l.deviceId !== dev) {
+        setLicenseState({ activated: false, legalAccepted: false, lockedNotice: true });
+        return;
+      }
+      // Local expiry
+      if (l.expiresAt && new Date(l.expiresAt) < new Date()) {
+        setLicenseState({ activated: false, legalAccepted: false, expiredNotice: true });
+        return;
+      }
+      // Online re-validation (best-effort; offline still works if server unreachable)
+      if (l.online) {
+        try {
+          const r = await api.validate(l.key, dev);
+          if (["revoked", "expired", "unknown", "not_registered"].includes(r.status)) {
+            setLicenseState({ activated: false, legalAccepted: false, revokedNotice: r.status });
+            return;
+          }
+        } catch {
+          /* offline grace — keep working */
+        }
+      }
+      setLicenseState(l);
     })();
   }, []);
 
-  const activateLicense = (key) => {
-    const lic = {
-      activated: true,
-      key,
-      deviceId: deviceIdRef.current,
-      activatedAt: new Date().toISOString(),
-      legalAccepted: false,
-    };
-    setLicenseState(lic);
-    platform.setLicense(lic);
+  const activateLicense = async (key) => {
+    const dev = deviceIdRef.current;
+    // Try online first
+    try {
+      const r = await api.activate(key, dev);
+      if (r.status === "ok") {
+        const lic = {
+          activated: true,
+          key,
+          deviceId: dev,
+          online: true,
+          dj: r.dj,
+          expiresAt: r.expires_at,
+          activatedAt: new Date().toISOString(),
+          legalAccepted: false,
+        };
+        setLicenseState(lic);
+        platform.setLicense(lic);
+        return { ok: true };
+      }
+      if (r.status === "revoked") return { ok: false, message: "This key has been revoked." };
+      if (r.status === "expired") return { ok: false, message: "This key has expired." };
+      if (r.status === "cap_exceeded")
+        return { ok: false, message: "This key has reached its device limit." };
+      // status 'unknown' → not a server key; fall through to offline check
+    } catch {
+      /* server unreachable → offline path */
+    }
+    // Offline checksum validation
+    const { validateKey } = await import("@/lib/license");
+    if (validateKey(key)) {
+      const lic = {
+        activated: true,
+        key,
+        deviceId: dev,
+        online: false,
+        activatedAt: new Date().toISOString(),
+        legalAccepted: false,
+      };
+      setLicenseState(lic);
+      platform.setLicense(lic);
+      return { ok: true };
+    }
+    return { ok: false, message: "That activation key isn't valid." };
   };
   const acceptLegal = () => {
     setLicenseState((l) => {
@@ -266,7 +373,7 @@ function App() {
     e.setMainSink(settings.programSink || "");
     e.setCueSink(settings.cueSink || "");
     e.setTrimSilence(settings.trimSilence);
-    e.setCueAutoFade(settings.cueAutoFade);
+    e.setCueAutoFade(settings.cueAutoFade, settings.cueFadeSeconds);
   }, [settings]);
 
   // ---- Ducking (manual Talk + mic auto-duck) ----
@@ -296,7 +403,7 @@ function App() {
         const AC = window.AudioContext || window.webkitAudioContext;
         const ctx = new AC();
         const src = ctx.createMediaStreamSource(stream);
-        buildMicGraph(ctx, src, settings.voiceFx);
+        buildMicGraph(ctx, src, settings.voiceFx, settings.customFx);
         micLiveRef.current = { stream, ctx };
       } catch {
         setBanner("Microphone unavailable — mic to air turned off.");
@@ -310,7 +417,7 @@ function App() {
       if (m.ctx) m.ctx.close();
       micLiveRef.current = {};
     };
-  }, [micLive, settings.voiceFx]);
+  }, [micLive, settings.voiceFx, settings.customFx]);
 
   useEffect(() => {
     if (!settings.autoDuck) {
@@ -814,6 +921,8 @@ function App() {
   const setVoiceFx = (v) => setSettings((s) => ({ ...s, voiceFx: v }));
   const toggleMicLive = () => setMicLive((v) => !v);
   const toggleCueFade = () => setSettings((s) => ({ ...s, cueAutoFade: !s.cueAutoFade }));
+  const setCueFadeSeconds = (n) => setSettings((s) => ({ ...s, cueFadeSeconds: n }));
+  const saveCustomFx = (fx) => setSettings((s) => ({ ...s, customFx: fx, voiceFx: "custom" }));
 
   const setCueIn = () => {
     if (!currentTrackId) return;
@@ -1026,6 +1135,7 @@ function App() {
         cueIn={currentTrack?.cueIn}
         cueOut={currentTrack?.cueOut}
         cueAutoFade={settings.cueAutoFade}
+        cueFadeSeconds={settings.cueFadeSeconds}
         onTogglePlay={togglePlay}
         onNext={next}
         onPrev={prev}
@@ -1043,6 +1153,8 @@ function App() {
         onSetCueOut={setCueOut}
         onClearCues={clearCues}
         onToggleCueFade={toggleCueFade}
+        onCueFadeSeconds={setCueFadeSeconds}
+        onEditCustomFx={() => setCustomFxOpen(true)}
       />
 
       {editorTrack && (
@@ -1076,6 +1188,14 @@ function App() {
       )}
 
       {keyManagerOpen && <KeyManager onClose={() => setKeyManagerOpen(false)} />}
+
+      {customFxOpen && (
+        <CustomFxModal
+          value={settings.customFx}
+          onClose={() => setCustomFxOpen(false)}
+          onSave={saveCustomFx}
+        />
+      )}
     </div>
   );
 }

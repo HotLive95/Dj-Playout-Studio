@@ -1,22 +1,28 @@
 import React, { useState } from "react";
 import { KeyRound, ShieldCheck, Lock } from "lucide-react";
-import { validateKey, formatKey } from "../lib/license";
 
 const YEAR = new Date().getFullYear();
 
 export default function LicenseGate({ license, onActivate, onAcceptLegal }) {
   const [keyInput, setKeyInput] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const activated = !!license?.activated;
+  const notice = license?.lockedNotice
+    ? "This copy was activated on a different computer. Your key is locked to one machine — please re-enter it to activate here."
+    : license?.expiredNotice
+    ? "This license has expired. Enter a current key to continue."
+    : license?.revokedNotice
+    ? "This license is no longer active (revoked or removed). Contact your station manager for a new key."
+    : "";
 
-  const submitKey = () => {
-    if (validateKey(keyInput)) {
-      setError("");
-      onActivate(formatKey(keyInput));
-    } else {
-      setError("That activation key isn't valid. Please check it and try again.");
-    }
+  const submitKey = async () => {
+    setBusy(true);
+    setError("");
+    const res = await onActivate(keyInput);
+    setBusy(false);
+    if (!res?.ok) setError(res?.message || "That activation key isn't valid.");
   };
 
   return (
@@ -42,13 +48,12 @@ export default function LicenseGate({ license, onActivate, onAcceptLegal }) {
               This copy is licensed to authorized Hot Live 95 DJs only. Enter the activation key
               you were given to unlock the studio. You only need to do this once on this computer.
             </p>
-            {license?.lockedNotice && (
+            {notice && (
               <div
                 className="text-sm rounded-lg border border-[var(--hl-onair)] bg-[rgba(255,23,68,0.1)] text-[var(--hl-onair)] px-3 py-2"
                 data-testid="license-locked-notice"
               >
-                This copy was activated on a different computer. Your key is locked to one machine —
-                please re-enter it to activate on this computer.
+                {notice}
               </div>
             )}
             <input
@@ -67,9 +72,10 @@ export default function LicenseGate({ license, onActivate, onAcceptLegal }) {
             <button
               data-testid="license-activate-button"
               onClick={submitKey}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg hl-fire-gradient text-white font-700 hover:brightness-110 transition"
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg hl-fire-gradient text-white font-700 hover:brightness-110 transition disabled:opacity-60"
             >
-              <KeyRound size={18} /> Activate
+              <KeyRound size={18} /> {busy ? "Checking…" : "Activate"}
             </button>
             <p className="text-[11px] text-[var(--hl-muted)] text-center">
               Don't have a key? Contact your Hot Live 95 station manager.

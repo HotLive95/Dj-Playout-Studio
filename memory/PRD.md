@@ -49,6 +49,17 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 7 (2026-06) — backend curl-verified + UI E2E
+- Online Activation (optional): FastAPI + MongoDB licensing service (`backend/server.py`):
+  `/api/activate`, `/api/validate`, admin `/api/admin/keys` (create/list/revoke/free-device/delete,
+  `X-Admin-Token`). Frontend tries online first, falls back to offline checksum keys when the
+  server is unreachable (`lib/api.js`, `App.activateLicense`). Revoked/expired/cap enforced.
+- Key Expiry: per-key `expires_at`; enforced server-side (activate/validate) and locally on load.
+- Fade Length: `settings.cueFadeSeconds` slider (0.5–8s) wired to `engine.setCueAutoFade(on,sec)`.
+- Custom FX Slot: `CustomFxModal.js` (highpass/lowpass/drive/echo/reverb) saved to
+  `settings.customFx`; `buildMicGraph` builds a live chain for the "Custom" preset.
+- Key Manager gained an Online (revocable) tab alongside the device-locked Offline generator.
+
 ## Backlog / Next
 - P2: MP3 export via Web Worker for very long tracks
 - P2: Validate imported .hlp.json schema; validate schedule end > start

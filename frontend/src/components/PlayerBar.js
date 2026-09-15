@@ -12,6 +12,7 @@ import {
   Mic,
   Radio,
   Scissors,
+  Sliders,
 } from "lucide-react";
 import { formatTime } from "../lib/format";
 import Waveform from "./Waveform";
@@ -35,6 +36,7 @@ export default function PlayerBar({
   cueIn,
   cueOut,
   cueAutoFade,
+  cueFadeSeconds,
   onTogglePlay,
   onNext,
   onPrev,
@@ -52,6 +54,8 @@ export default function PlayerBar({
   onSetCueOut,
   onClearCues,
   onToggleCueFade,
+  onCueFadeSeconds,
+  onEditCustomFx,
 }) {
   const pct = duration ? (currentTime / duration) * 100 : 0;
   const markers = [];
@@ -142,6 +146,19 @@ export default function PlayerBar({
             >
               ⌇ Fade
             </button>
+            {cueAutoFade && (
+              <input
+                data-testid="cue-fade-slider"
+                type="range"
+                min="0.5"
+                max="8"
+                step="0.5"
+                value={cueFadeSeconds}
+                onChange={(e) => onCueFadeSeconds(Number(e.target.value))}
+                className="hl-range w-20"
+                title={`Fade length: ${cueFadeSeconds}s`}
+              />
+            )}
             {(cueIn != null || cueOut != null) && (
               <button
                 data-testid="clear-cues"
@@ -236,7 +253,16 @@ export default function PlayerBar({
             <option value="stadium">FX: Stadium</option>
             <option value="echo">FX: Echo</option>
             <option value="reverb">FX: Reverb</option>
+            <option value="custom">FX: Custom</option>
           </select>
+          <button
+            data-testid="edit-custom-fx"
+            onClick={onEditCustomFx}
+            className="h-10 w-9 grid place-items-center rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)]"
+            title="Dial in your own Custom voice FX"
+          >
+            <Sliders size={16} />
+          </button>
         </div>
 
         {/* Right controls */}
