@@ -36,6 +36,7 @@ const defaultSettings = {
   voiceFx: "off",
   cueAutoFade: false,
   cueFadeSeconds: 1.5,
+  jingleDuckDepth: 0.4,
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -384,9 +385,9 @@ function App() {
   useEffect(() => {
     const strong = talkActive || micActive || micLive;
     if (strong) engineRef.current?.setDuck(true, 0.28);
-    else if (jingleActive) engineRef.current?.setDuck(true, 0.6);
+    else if (jingleActive) engineRef.current?.setDuck(true, 1 - (settings.jingleDuckDepth ?? 0.4));
     else engineRef.current?.setDuck(false);
-  }, [talkActive, micActive, micLive, jingleActive]);
+  }, [talkActive, micActive, micLive, jingleActive, settings.jingleDuckDepth]);
 
   // ---- Mic live to air (with Voice FX) ----
   useEffect(() => {
@@ -1118,6 +1119,8 @@ function App() {
         onPlay={playJingle}
         onClear={clearJingle}
         onSetVolume={setJingleVolume}
+        duckDepth={settings.jingleDuckDepth ?? 0.4}
+        onSetDuckDepth={(d) => setSettings((s) => ({ ...s, jingleDuckDepth: d }))}
         onStop={stopJingles}
       />
 

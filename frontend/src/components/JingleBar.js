@@ -3,7 +3,7 @@ import { Zap, Plus, X, Square, Volume2 } from "lucide-react";
 
 const PAD_COUNT = 6;
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onSetVolume, onStop }) {
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -119,6 +119,21 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
             </div>
           );
         })}
+      </div>
+
+      <div className="shrink-0 flex items-center gap-1.5 pr-2 border-r border-[var(--hl-line)]" title="How far the music dips while a jingle plays">
+        <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)]">Duck</span>
+        <input
+          data-testid="jingle-duck-depth"
+          type="range"
+          min="0"
+          max="0.8"
+          step="0.05"
+          value={typeof duckDepth === "number" ? duckDepth : 0.4}
+          onChange={(e) => onSetDuckDepth(Number(e.target.value))}
+          className="hl-jingle-vol w-20"
+        />
+        <span className="text-[10px] tabular-nums text-[var(--hl-amber)] w-8 text-right" data-testid="jingle-duck-depth-label">{Math.round((typeof duckDepth === "number" ? duckDepth : 0.4) * 100)}%</span>
       </div>
 
       <button
