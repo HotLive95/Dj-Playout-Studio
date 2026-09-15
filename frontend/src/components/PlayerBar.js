@@ -14,9 +14,11 @@ import {
   Scissors,
 } from "lucide-react";
 import { formatTime } from "../lib/format";
+import Waveform from "./Waveform";
 
 export default function PlayerBar({
   track,
+  peaks,
   isPlaying,
   currentTime,
   duration,
@@ -61,14 +63,28 @@ export default function PlayerBar({
             onSeek(Math.max(0, Math.min(1, ratio)) * (duration || 0));
           }}
         >
-          <div
-            className="absolute left-0 top-0 h-full rounded-full hl-fire-gradient"
-            style={{ width: `${pct}%` }}
-          />
-          <div
-            className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 transition"
-            style={{ left: `calc(${pct}% - 7px)` }}
-          />
+          {peaks ? (
+            <div className="absolute inset-0 -top-3">
+              <Waveform
+                peaks={peaks}
+                progress={duration ? currentTime / duration : 0}
+                compact
+                height={32}
+                onSeek={(frac) => onSeek(frac * (duration || 0))}
+              />
+            </div>
+          ) : (
+            <>
+              <div
+                className="absolute left-0 top-0 h-full rounded-full hl-fire-gradient"
+                style={{ width: `${pct}%` }}
+              />
+              <div
+                className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 transition"
+                style={{ left: `calc(${pct}% - 7px)` }}
+              />
+            </>
+          )}
         </div>
         <span className="text-xs text-[var(--hl-muted)] tabular-nums w-11" data-testid="duration">
           {formatTime(duration)}

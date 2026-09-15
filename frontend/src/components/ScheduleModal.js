@@ -2,14 +2,19 @@ import React, { useState } from "react";
 import { X, Clock, Power } from "lucide-react";
 
 export default function ScheduleModal({ playlist, onClose, onSave }) {
-  const s = playlist.schedule || { enabled: false, start: "09:00", end: "12:00", autoStop: true };
+  const s = playlist.schedule || { enabled: false, start: "09:00", end: "12:00", autoStop: true, days: [] };
   const [enabled, setEnabled] = useState(s.enabled);
   const [start, setStart] = useState(s.start);
   const [end, setEnd] = useState(s.end);
   const [autoStop, setAutoStop] = useState(s.autoStop !== false);
+  const [days, setDays] = useState(s.days || []);
+
+  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const toggleDay = (d) =>
+    setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
 
   const save = () => {
-    onSave(playlist.id, { enabled, start, end, autoStop });
+    onSave(playlist.id, { enabled, start, end, autoStop, days });
     onClose();
   };
 
@@ -80,6 +85,29 @@ export default function ScheduleModal({ playlist, onClose, onSave }) {
                 disabled={!enabled}
                 className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 outline-none focus:border-[var(--hl-fire)] disabled:opacity-40"
               />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+              Repeat on days <span className="normal-case">(none = every day)</span>
+            </label>
+            <div className="flex gap-1.5 mt-2" data-testid="schedule-days">
+              {DAY_LABELS.map((lbl, d) => (
+                <button
+                  key={d}
+                  data-testid={`schedule-day-${d}`}
+                  onClick={() => toggleDay(d)}
+                  disabled={!enabled}
+                  className={`flex-1 py-2 rounded-md text-xs font-600 border transition disabled:opacity-40 ${
+                    days.includes(d)
+                      ? "border-[var(--hl-fire)] text-[var(--hl-fire)] bg-[rgba(255,90,31,0.12)]"
+                      : "border-[var(--hl-line)] text-[var(--hl-muted)]"
+                  }`}
+                >
+                  {lbl[0]}
+                </button>
+              ))}
             </div>
           </div>
 

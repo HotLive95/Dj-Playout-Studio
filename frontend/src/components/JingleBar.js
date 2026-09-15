@@ -1,0 +1,94 @@
+import React, { useRef } from "react";
+import { Zap, Plus, X, Square } from "lucide-react";
+
+const PAD_COUNT = 6;
+
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onStop }) {
+  const inputRef = useRef(null);
+  const targetIndex = useRef(null);
+
+  const assign = (i) => {
+    if (isElectron) {
+      onAssignDialog(i);
+    } else {
+      targetIndex.current = i;
+      inputRef.current?.click();
+    }
+  };
+
+  return (
+    <div
+      className="flex items-center gap-2 px-6 py-2 border-t border-[var(--hl-line)] bg-[#0e0e12]"
+      data-testid="jingle-bar"
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".mp3,.wav,.m4a,audio/*"
+        className="hidden"
+        data-testid="jingle-file-input"
+        onChange={(e) => {
+          if (e.target.files?.[0] && targetIndex.current !== null)
+            onAssignFile(targetIndex.current, e.target.files[0]);
+          targetIndex.current = null;
+          e.target.value = "";
+        }}
+      />
+      <div className="flex items-center gap-2 shrink-0">
+        <Zap size={16} className="text-[var(--hl-amber)]" />
+        <span className="font-display text-xs tracking-[0.2em] text-[var(--hl-muted)]">JINGLES</span>
+      </div>
+
+      <div className="flex items-center gap-2 flex-1 overflow-x-auto">
+        {Array.from({ length: PAD_COUNT }).map((_, i) => {
+          const j = jingles[i];
+          return (
+            <div key={i} className="relative shrink-0">
+              {j ? (
+                <button
+                  data-testid={`jingle-pad-${i}`}
+                  onClick={() => onPlay(i)}
+                  className="group flex items-center gap-2 h-10 pl-2.5 pr-3 rounded-lg border border-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)] text-[var(--hl-amber)] hover:bg-[rgba(255,171,0,0.2)] transition"
+                  title={`Play "${j.name}" (key ${i + 1})`}
+                >
+                  <span className="grid place-items-center h-5 w-5 rounded bg-[var(--hl-amber)] text-black text-[11px] font-700">
+                    {i + 1}
+                  </span>
+                  <span className="text-sm max-w-[130px] truncate">{j.name}</span>
+                </button>
+              ) : (
+                <button
+                  data-testid={`jingle-pad-${i}`}
+                  onClick={() => assign(i)}
+                  className="flex items-center gap-1.5 h-10 px-3 rounded-lg border border-dashed border-[var(--hl-line)] text-[var(--hl-muted)] hover:border-[var(--hl-amber)] hover:text-[var(--hl-amber)] transition"
+                  title={`Assign a jingle to pad ${i + 1}`}
+                >
+                  <Plus size={14} /> <span className="text-xs">Pad {i + 1}</span>
+                </button>
+              )}
+              {j && (
+                <button
+                  data-testid={`jingle-clear-${i}`}
+                  onClick={() => onClear(i)}
+                  className="absolute -top-1.5 -right-1.5 h-4 w-4 grid place-items-center rounded-full bg-[var(--hl-onair)] text-white opacity-0 group-hover:opacity-100 hover:opacity-100"
+                  title="Clear pad"
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        data-testid="jingle-stop-all"
+        onClick={onStop}
+        className="shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[var(--hl-line)] text-sm text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:border-[var(--hl-onair)]"
+        title="Stop all jingles"
+      >
+        <Square size={14} /> Stop
+      </button>
+    </div>
+  );
+}

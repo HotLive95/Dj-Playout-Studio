@@ -12,6 +12,7 @@ import {
   Upload,
   Scissors,
   Share2,
+  Mic,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
 
@@ -34,6 +35,7 @@ export default function TrackList({
   onCueTrack,
   onEditTrack,
   onExportPlaylist,
+  onRecordVoice,
 }) {
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -192,6 +194,14 @@ export default function TrackList({
           className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-lg hl-fire-gradient text-white font-600 hover:brightness-110 transition hl-glow"
         >
           <Plus size={18} /> Add MP3 / WAV
+        </button>
+        <button
+          data-testid="record-voice-button"
+          onClick={onRecordVoice}
+          className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-fire)]"
+          title="Record a voice intro and drop it into the playlist"
+        >
+          <Mic size={16} /> Voice
         </button>
         <button
           data-testid="export-playlist-button"

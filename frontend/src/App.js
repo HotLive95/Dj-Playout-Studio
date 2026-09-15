@@ -7,10 +7,12 @@ import PlayerBar from "@/components/PlayerBar";
 import CuePanel from "@/components/CuePanel";
 import TrackEditor from "@/components/TrackEditor";
 import ScheduleModal from "@/components/ScheduleModal";
+import JingleBar from "@/components/JingleBar";
+import VoiceRecorder from "@/components/VoiceRecorder";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob } from "@/lib/db";
-import { decodeToBuffer, detectSilence } from "@/lib/audioProcessing";
+import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessing";
 
 const uid = () =>
   (crypto.randomUUID && crypto.randomUUID()) ||
@@ -65,14 +67,22 @@ function App() {
 
   const [editorTrack, setEditorTrack] = useState(null);
   const [scheduleForId, setScheduleForId] = useState(null);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [talkActive, setTalkActive] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [banner, setBanner] = useState("");
+  const [jingles, setJingles] = useState([]);
+  const [currentPeaks, setCurrentPeaks] = useState(null);
 
   const engineRef = useRef(null);
   const micRef = useRef({ active: false });
   const schedRef = useRef({ start: {}, end: {} });
+  const jinglesRef = useRef([]);
+  const activeJinglesRef = useRef([]);
+  const peaksCacheRef = useRef({});
+  const playJingleRef = useRef(() => {});
   const [autoStartPending, setAutoStartPending] = useState(null);
+  jinglesRef.current = jingles;
 
   // ---- Load persisted state ----
   useEffect(() => {
@@ -83,6 +93,7 @@ function App() {
         setPlaylists(state.playlists || []);
         setCurrentPlaylistId(state.currentPlaylistId || state.playlists?.[0]?.id || null);
         setSettings({ ...defaultSettings, ...(state.settings || {}), autoDuck: false });
+        setJingles(state.jingles || []);
       }
       setLoaded(true);
     })();
@@ -220,8 +231,38 @@ function App() {
   // ---- Persist ----
   useEffect(() => {
     if (!loaded) return;
-    platform.saveState({ tracks, playlists, currentPlaylistId, settings });
-  }, [tracks, playlists, currentPlaylistId, settings, loaded]);
+    platform.saveState({ tracks, playlists, currentPlaylistId, settings, jingles });
+  }, [tracks, playlists, currentPlaylistId, settings, jingles, loaded]);
+
+  // ---- Waveform peaks for the on-air track ----
+  useEffect(() => {
+    let cancelled = false;
+    const t = currentTrackId ? tracks[currentTrackId] : null;
+    if (!t) {
+      setCurrentPeaks(null);
+      return;
+    }
+    if (peaksCacheRef.current[t.id]) {
+      setCurrentPeaks(peaksCacheRef.current[t.id]);
+      return;
+    }
+    setCurrentPeaks(null);
+    (async () => {
+      try {
+        const url = await platform.getUrl(t);
+        const buf = await decodeToBuffer(url);
+        const pk = computePeaks(buf, 900);
+        if (cancelled) return;
+        peaksCacheRef.current[t.id] = pk;
+        setCurrentPeaks(pk);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrackId, tracks]);
 
   // ---- Live hotkeys ----
   useEffect(() => {
@@ -261,6 +302,10 @@ function App() {
           eng.cueStop();
           break;
         default:
+          if (/^Digit[1-6]$/.test(e.code)) {
+            e.preventDefault();
+            playJingleRef.current(parseInt(e.code.slice(5), 10) - 1);
+          }
           break;
       }
     };
@@ -277,6 +322,7 @@ function App() {
       playlists.forEach((pl) => {
         const s = pl.schedule;
         if (!s || !s.enabled) return;
+        if (s.days && s.days.length && !s.days.includes(now.getDay())) return;
         if (s.start === cur && schedRef.current.start[pl.id] !== `${day} ${cur}`) {
           schedRef.current.start[pl.id] = `${day} ${cur}`;
           setCurrentPlaylistId(pl.id);
@@ -590,6 +636,79 @@ function App() {
       return { ...s, trimSilence: on };
     });
 
+  // ---------------- Voice track insert ----------------
+  const saveVoiceTrack = async (blob, name, index, duration) => {
+    let meta;
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(name, blob);
+      meta = { id: d.id, name, path: d.path, size: d.size, duration };
+    } else {
+      const id = uid();
+      await putBlob(id, blob);
+      meta = { id, name, type: "audio/wav", duration };
+    }
+    setTracks((prev) => ({ ...prev, [meta.id]: meta }));
+    setPlaylists((prev) =>
+      prev.map((p) => {
+        if (p.id !== currentPlaylistId) return p;
+        const ids = [...p.trackIds];
+        ids.splice(Math.max(0, Math.min(index, ids.length)), 0, meta.id);
+        return { ...p, trackIds: ids };
+      })
+    );
+    setBanner(`Added voice track "${name}"`);
+  };
+
+  // ---------------- Jingles ----------------
+  const assignJingleBrowser = async (index, file) => {
+    const id = uid();
+    await putBlob(id, file);
+    const j = { id, name: file.name, type: file.type };
+    setJingles((prev) => {
+      const n = [...prev];
+      n[index] = j;
+      return n;
+    });
+  };
+  const assignJingleDialog = async (index) => {
+    const picked = await platform.importViaDialog();
+    if (!picked?.length) return;
+    const f = picked[0];
+    const j = { id: f.id || uid(), name: f.name, path: f.path };
+    setJingles((prev) => {
+      const n = [...prev];
+      n[index] = j;
+      return n;
+    });
+  };
+  const clearJingle = (index) =>
+    setJingles((prev) => {
+      const n = [...prev];
+      n[index] = undefined;
+      return n;
+    });
+  const playJingle = async (index) => {
+    const j = jinglesRef.current[index];
+    if (!j) return;
+    const url = await platform.getUrl(j);
+    if (!url) return;
+    const a = new Audio(url);
+    activeJinglesRef.current.push(a);
+    a.onended = () => {
+      activeJinglesRef.current = activeJinglesRef.current.filter((x) => x !== a);
+    };
+    try {
+      await a.play();
+    } catch {
+      /* ignore */
+    }
+  };
+  playJingleRef.current = playJingle;
+  const stopJingles = () => {
+    activeJinglesRef.current.forEach((a) => a.pause());
+    activeJinglesRef.current = [];
+  };
+
   const currentTrack = currentTrackId ? tracks[currentTrackId] : null;
   const cueTrackObj = cue.trackId ? tracks[cue.trackId] : null;
   const onAir = playback.isPlaying;
@@ -644,9 +763,20 @@ function App() {
             onCueTrack={cueTrack}
             onEditTrack={(i) => setEditorTrack(queueTracks[i])}
             onExportPlaylist={exportPlaylist}
+            onRecordVoice={() => setVoiceOpen(true)}
           />
         </main>
       </div>
+
+      <JingleBar
+        jingles={jingles}
+        isElectron={platform.isElectron}
+        onAssignFile={assignJingleBrowser}
+        onAssignDialog={assignJingleDialog}
+        onPlay={playJingle}
+        onClear={clearJingle}
+        onStop={stopJingles}
+      />
 
       <CuePanel
         cueTrack={cueTrackObj}
@@ -663,6 +793,7 @@ function App() {
 
       <PlayerBar
         track={currentTrack}
+        peaks={currentPeaks}
         isPlaying={playback.isPlaying}
         currentTime={playback.currentTime}
         duration={playback.duration}
@@ -701,6 +832,19 @@ function App() {
           playlist={playlists.find((p) => p.id === scheduleForId)}
           onClose={() => setScheduleForId(null)}
           onSave={setSchedule}
+        />
+      )}
+
+      {voiceOpen && (
+        <VoiceRecorder
+          existingTracks={queueTracks}
+          defaultIndex={
+            currentTrackId
+              ? queueTracks.findIndex((t) => t.id === currentTrackId) + 1
+              : queueTracks.length
+          }
+          onClose={() => setVoiceOpen(false)}
+          onSave={saveVoiceTrack}
         />
       )}
     </div>
