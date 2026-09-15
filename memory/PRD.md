@@ -49,6 +49,22 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 8 (2026-06) — backend curl-verified + UI E2E
+- Usage Dashboard: Key Manager online tab shows summary cards — Active DJs, Computers
+  online, Total keys, Expiring ≤14d. Backend `/api/admin/keys` now returns `active_devices`,
+  `days_left`, `expired`, `email_sent_at`, `last_activated_at`. Rows show device count, email,
+  days-left countdown, and an "emailed" badge.
+- Auto Renew: `POST /api/admin/keys/{key}/renew` extends expiry by RENEW_DAYS (default 90)
+  from max(now, current expiry) and un-revokes. One-click ↻ button per key.
+- Activation Emails (Resend): `send_welcome_email` sends a branded HTML welcome + key on
+  create when a DJ email is provided; `POST /api/admin/keys/{key}/resend-email` re-sends.
+  Graceful no-op (email_sent:false) when RESEND_API_KEY is empty. Env: RESEND_API_KEY,
+  SENDER_EMAIL, RENEW_DAYS. **Needs a Resend API key in backend/.env to actually deliver.**
+- Deploy/hosted licensing prep: `lib/api.js` BASE resolves `window.hotlive.licenseServer`
+  first (Electron), falling back to REACT_APP_BACKEND_URL. `electron/preload.js` reads the
+  hosted backend URL from `HotLive95Data/license-server.txt` (or HL_LICENSE_SERVER env) so DJ
+  copies activate/validate against the owner's deployed backend over the internet.
+
 ## Update 7 (2026-06) — backend curl-verified + UI E2E
 - Online Activation (optional): FastAPI + MongoDB licensing service (`backend/server.py`):
   `/api/activate`, `/api/validate`, admin `/api/admin/keys` (create/list/revoke/free-device/delete,
