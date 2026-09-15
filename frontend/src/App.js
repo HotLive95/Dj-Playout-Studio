@@ -1005,6 +1005,7 @@ function App() {
     const url = await platform.getUrl(j);
     if (!url) return;
     const a = new Audio(url);
+    a.volume = typeof j.volume === "number" ? j.volume : 1;
     activeJinglesRef.current.push(a);
     a.onended = () => {
       activeJinglesRef.current = activeJinglesRef.current.filter((x) => x !== a);
@@ -1016,6 +1017,12 @@ function App() {
     }
   };
   playJingleRef.current = playJingle;
+  const setJingleVolume = (index, volume) =>
+    setJingles((prev) => {
+      const n = [...prev];
+      if (n[index]) n[index] = { ...n[index], volume };
+      return n;
+    });
   const stopJingles = () => {
     activeJinglesRef.current.forEach((a) => a.pause());
     activeJinglesRef.current = [];
@@ -1103,6 +1110,7 @@ function App() {
         onAssignDialog={assignJingleDialog}
         onPlay={playJingle}
         onClear={clearJingle}
+        onSetVolume={setJingleVolume}
         onStop={stopJingles}
       />
 

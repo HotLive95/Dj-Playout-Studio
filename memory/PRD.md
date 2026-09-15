@@ -49,6 +49,16 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 11 (2026-06) — verified
+- Playlist backdrop: replaced carbon-fiber + old emblem with the user's flame+play emblem,
+  isolated to transparent (black square & border stripped via PIL) → `/public/hl-emblem.png`,
+  faint watermark behind the scrolling track list (`.hl-watermark`).
+- Jingle volume: each assigned pad has its own amber volume slider (`jingle-volume-{i}`);
+  `j.volume` stored per pad and applied in `playJingle` (`a.volume`).
+- QR welcome email: welcome email now embeds an inline QR (cid:licenseqr, generated with
+  `qrcode`) + an "Open my license page" button/link to `${PUBLIC_APP_URL}/license?key=...`.
+  Env: PUBLIC_APP_URL. Verified email_sent:True with attachment.
+
 ## Update 10 (2026-06) — backend curl-verified + UI E2E
 - QR License Link: each online key has a QR button (KeyManager) → modal shows a scannable
   QR (`qrcode.react`) to `${origin}/license?key=...` so DJs open their status page on a phone.

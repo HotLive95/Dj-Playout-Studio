@@ -1,9 +1,9 @@
 import React, { useRef, useState } from "react";
-import { Zap, Plus, X, Square } from "lucide-react";
+import { Zap, Plus, X, Square, Volume2 } from "lucide-react";
 
 const PAD_COUNT = 6;
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onStop }) {
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onSetVolume, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -68,17 +68,34 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
               onDrop={(e) => onPadDrop(e, i)}
             >
               {j ? (
-                <button
-                  data-testid={`jingle-pad-${i}`}
-                  onClick={() => onPlay(i)}
-                  className="group flex items-center gap-2 h-10 pl-2.5 pr-3 rounded-lg border border-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)] text-[var(--hl-amber)] hover:bg-[rgba(255,171,0,0.2)] transition"
-                  title={`Play "${j.name}" (key ${i + 1}) — drag a new file here to replace`}
-                >
-                  <span className="grid place-items-center h-5 w-5 rounded bg-[var(--hl-amber)] text-black text-[11px] font-700">
-                    {i + 1}
-                  </span>
-                  <span className="text-sm max-w-[130px] truncate">{j.name}</span>
-                </button>
+                <div className="flex flex-col gap-1 rounded-lg border border-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)] pb-1">
+                  <button
+                    data-testid={`jingle-pad-${i}`}
+                    onClick={() => onPlay(i)}
+                    className="group flex items-center gap-2 h-9 pl-2.5 pr-3 rounded-t-lg text-[var(--hl-amber)] hover:bg-[rgba(255,171,0,0.15)] transition"
+                    title={`Play "${j.name}" (key ${i + 1}) — drag a new file here to replace`}
+                  >
+                    <span className="grid place-items-center h-5 w-5 rounded bg-[var(--hl-amber)] text-black text-[11px] font-700">
+                      {i + 1}
+                    </span>
+                    <span className="text-sm max-w-[120px] truncate">{j.name}</span>
+                  </button>
+                  <div className="flex items-center gap-1.5 px-2.5">
+                    <Volume2 size={12} className="text-[var(--hl-amber)] shrink-0" />
+                    <input
+                      data-testid={`jingle-volume-${i}`}
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={typeof j.volume === "number" ? j.volume : 1}
+                      onChange={(e) => onSetVolume(i, Number(e.target.value))}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hl-jingle-vol w-24"
+                      title="Pad volume — dip it under your voice"
+                    />
+                  </div>
+                </div>
               ) : (
                 <button
                   data-testid={`jingle-pad-${i}`}

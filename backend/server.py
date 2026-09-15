@@ -12,6 +12,10 @@ from typing import Optional
 from datetime import datetime, timezone, timedelta
 
 import resend
+import qrcode
+import io
+import base64
+import urllib.parse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -26,6 +30,7 @@ SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
 RENEW_DAYS = int(os.environ.get('RENEW_DAYS', '90'))
 OWNER_EMAIL = os.environ.get('OWNER_EMAIL', '')
 EXPIRY_ALERT_DAYS = int(os.environ.get('EXPIRY_ALERT_DAYS', '7'))
+PUBLIC_APP_URL = os.environ.get('PUBLIC_APP_URL', '').rstrip('/')
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
@@ -146,10 +151,39 @@ def public_view(doc: dict) -> dict:
     }
 
 
+def status_url(key: str) -> str:
+    if not PUBLIC_APP_URL:
+        return ""
+    return f"{PUBLIC_APP_URL}/license?key={urllib.parse.quote(key)}"
+
+
+def make_qr_png_b64(data: str) -> str:
+    qr = qrcode.QRCode(box_size=6, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0a0a0c", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 def welcome_html(dj: str, key: str, expires_at: Optional[str]) -> str:
     exp_line = ""
     if expires_at:
         exp_line = f'<tr><td style="padding:4px 0;color:#9aa0a6;font-size:13px;">Valid through</td><td style="padding:4px 0;color:#ff6a2b;font-size:13px;text-align:right;">{str(expires_at)[:10]}</td></tr>'
+    url = status_url(key)
+    qr_block = ""
+    if url:
+        qr_block = f"""
+            <div style="text-align:center;margin:20px 0 4px;">
+              <div style="color:#9aa0a6;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">Scan to check your license anytime</div>
+              <img src="cid:licenseqr" alt="License QR" width="150" height="150" style="border-radius:12px;background:#fff;padding:8px;" />
+              <div style="margin-top:14px;">
+                <a href="{url}" style="display:inline-block;background:linear-gradient(135deg,#ff5a1f,#ff1744);color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:10px;">Open my license page</a>
+              </div>
+              <div style="color:#6b7280;font-size:11px;margin-top:10px;word-break:break-all;">{url}</div>
+            </div>
+        """
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0c;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
       <tr><td align="center">
@@ -161,11 +195,12 @@ def welcome_html(dj: str, key: str, expires_at: Optional[str]) -> str:
           <tr><td style="padding:28px;">
             <p style="color:#f4f4f5;font-size:16px;margin:0 0 12px;">Welcome to the booth, <b>{dj}</b>! 🎙️</p>
             <p style="color:#c9ccd1;font-size:14px;line-height:1.6;margin:0 0 20px;">Your DJ Playout Studio license is ready. Open the app, enter the key below on the activation screen, and you're live.</p>
-            <div style="background:#0a0a0c;border:1px dashed #ff5a1f;border-radius:10px;padding:16px;text-align:center;margin:0 0 20px;">
+            <div style="background:#0a0a0c;border:1px dashed #ff5a1f;border-radius:10px;padding:16px;text-align:center;margin:0 0 8px;">
               <div style="color:#9aa0a6;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">Your activation key</div>
               <div style="color:#ffb020;font-size:22px;font-weight:700;letter-spacing:4px;font-family:monospace;">{key}</div>
             </div>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">{exp_line}</table>
+            {qr_block}
             <p style="color:#6b7280;font-size:12px;line-height:1.6;margin:20px 0 0;">Keep this key private — it's tied to your account and can be capped to a limited number of computers. Questions? Just reply to this email.</p>
           </td></tr>
           <tr><td style="background:#0a0a0c;padding:16px 28px;border-top:1px solid #26262e;">
@@ -186,6 +221,14 @@ async def send_welcome_email(email: str, dj: str, key: str, expires_at: Optional
         "subject": f"🎙️ Your Hot Live 95 DJ license is ready, {dj}",
         "html": welcome_html(dj, key, expires_at),
     }
+    url = status_url(key)
+    if url:
+        params["attachments"] = [{
+            "filename": "license-qr.png",
+            "content": make_qr_png_b64(url),
+            "content_id": "licenseqr",
+            "content_type": "image/png",
+        }]
     try:
         await asyncio.to_thread(resend.Emails.send, params)
         return True

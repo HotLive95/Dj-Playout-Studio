@@ -67,27 +67,46 @@ body {
   box-shadow: 0 0 0 1px rgba(255, 90, 31, 0.35), 0 8px 30px rgba(255, 45, 14, 0.25);
 }
 
-/* Carbon-fiber skin for the playlist window */
-.hl-carbon {
-  background-color: #0b0b0e;
-  background-image:
-    linear-gradient(27deg, #15151a 5px, transparent 5px),
-    linear-gradient(207deg, #15151a 5px, transparent 5px),
-    linear-gradient(27deg, #101014 5px, transparent 5px),
-    linear-gradient(207deg, #101014 5px, transparent 5px),
-    linear-gradient(90deg, #17171c 10px, transparent 10px),
-    linear-gradient(#131318 25%, #0e0e12 25%, #0e0e12 50%, transparent 50%, transparent 75%, #0e0e12 75%, #0e0e12);
-  background-size: 20px 20px;
-  background-position: 0 0, 10px 10px, 0 0, 10px 10px, 0 0, 0 0;
+/* Slim amber jingle-pad volume slider */
+.hl-jingle-vol {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 171, 0, 0.3);
+  cursor: pointer;
+}
+.hl-jingle-vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  background: var(--hl-amber);
+  box-shadow: 0 0 6px rgba(255, 171, 0, 0.6);
+}
+.hl-jingle-vol::-moz-range-thumb {
+  height: 12px;
+  width: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--hl-amber);
 }
 
-/* Faint flame-emblem watermark (rendered as an <img> in TrackList) */
+
+/* Hot Live 95 branded playlist backdrop */
+.hl-playlist-bg {
+  background:
+    radial-gradient(900px 500px at 80% -5%, rgba(255, 90, 31, 0.10), transparent 60%),
+    linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
+}
 .hl-watermark {
-  top: 46%;
+  top: 47%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(56%, 440px);
-  opacity: 0.09;
+  height: min(64%, 460px);
+  width: auto;
+  opacity: 0.15;
 }
 
 

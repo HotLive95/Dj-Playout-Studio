@@ -126,15 +126,16 @@ export default function TrackList({
       onDragLeave={onZoneDragLeave}
       onDrop={onZoneDrop}
     >
-      {/* Carbon-fiber skin + flame emblem watermark (tracks scroll over these) */}
-      <div className="hl-carbon absolute inset-0 z-0 pointer-events-none" aria-hidden data-testid="playlist-carbon-bg" />
-      <img
-        src={`${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
-        alt=""
-        aria-hidden
-        data-testid="playlist-logo-watermark"
-        className="hl-watermark absolute z-0 pointer-events-none select-none"
-      />
+      {/* Hot Live 95 branded backdrop (tracks scroll over it) */}
+      <div className="absolute inset-0 z-0 pointer-events-none hl-playlist-bg" aria-hidden data-testid="playlist-carbon-bg">
+        <img
+          src={`${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
+          alt=""
+          aria-hidden
+          data-testid="playlist-logo-watermark"
+          className="hl-watermark absolute select-none"
+        />
+      </div>
 
       {fileDragging && (
         <div
