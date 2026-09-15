@@ -65,6 +65,22 @@ export const platform = {
     localStorage.setItem("hotlive95_license", JSON.stringify(lic));
   },
 
+  async getDeviceId() {
+    if (isElectron) {
+      try {
+        return await window.hotlive.getDeviceId();
+      } catch {
+        return "electron-unknown";
+      }
+    }
+    let id = localStorage.getItem("hotlive95_device");
+    if (!id) {
+      id = (crypto.randomUUID && crypto.randomUUID()) || `dev-${Date.now()}-${Math.random()}`;
+      localStorage.setItem("hotlive95_device", id);
+    }
+    return id;
+  },
+
   // Electron only: native dialog -> copies files to the flash-drive data folder.
   async importViaDialog() {
     if (isElectron) return await window.hotlive.pickFiles();

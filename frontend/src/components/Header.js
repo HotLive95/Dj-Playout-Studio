@@ -1,6 +1,7 @@
 import React from "react";
+import { KeyRound } from "lucide-react";
 
-export default function Header({ onAir, nowPlaying }) {
+export default function Header({ onAir, nowPlaying, onOpenKeyManager }) {
   return (
     <header
       data-testid="app-header"
@@ -24,6 +25,14 @@ export default function Header({ onAir, nowPlaying }) {
       </div>
 
       <div className="flex items-center gap-4">
+        <button
+          data-testid="open-key-manager"
+          onClick={onOpenKeyManager}
+          className="h-9 w-9 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)] transition"
+          title="Key Manager (admin)"
+        >
+          <KeyRound size={16} />
+        </button>
         {nowPlaying && (
           <div className="hidden md:flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/40 border border-[var(--hl-line)]">
             <div className="flex items-end gap-[3px] h-4">

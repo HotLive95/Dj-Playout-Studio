@@ -42,6 +42,15 @@ export default function LicenseGate({ license, onActivate, onAcceptLegal }) {
               This copy is licensed to authorized Hot Live 95 DJs only. Enter the activation key
               you were given to unlock the studio. You only need to do this once on this computer.
             </p>
+            {license?.lockedNotice && (
+              <div
+                className="text-sm rounded-lg border border-[var(--hl-onair)] bg-[rgba(255,23,68,0.1)] text-[var(--hl-onair)] px-3 py-2"
+                data-testid="license-locked-notice"
+              >
+                This copy was activated on a different computer. Your key is locked to one machine —
+                please re-enter it to activate on this computer.
+              </div>
+            )}
             <input
               data-testid="license-key-input"
               value={keyInput}

@@ -37,6 +37,18 @@ for "Hot Live 95 Detroit A.I. Radio".
 - Electron wrapper packages successfully (asar bundles UI+main+preload+icons);
   build scripts + BUILD_GUIDE.md for Windows .exe (portable) and Mac .dmg
 
+## Update 6 (2026-06) — verified via UI E2E
+- Device Locking: keys bind to a machine fingerprint (Electron `get-device-id` from
+  hardware/OS; browser random id). Copied folder on another PC forces re-activation
+  (`App.js` license load compares `deviceId`; `LicenseGate` shows locked notice). Verified.
+- Cue Auto-Fade: `⌇ Fade` toggle — engine ramps volume down over `cueFadeSeconds` before
+  the Out cue / track end (`audioEngine.setCueAutoFade` + `_onTime`).
+- FX Presets: Voice FX now includes Radio / Telephone / Stadium (plus Echo/Reverb) via
+  filters/waveshaper/convolver in `buildMicGraph`.
+- Key Manager (admin): 🔑 header button → passphrase → generate + track keys per DJ.
+  Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
+  `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
+
 ## Backlog / Next
 - P2: MP3 export via Web Worker for very long tracks
 - P2: Validate imported .hlp.json schema; validate schedule end > start

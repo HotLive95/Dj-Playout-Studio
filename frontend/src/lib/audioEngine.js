@@ -21,6 +21,8 @@ export default class AudioEngine {
     this.crossfadeSeconds = 3;
     this.autoplay = true;
     this.trimSilence = false;
+    this.cueAutoFade = false;
+    this.cueFadeSeconds = 1.5;
     this.duckActive = false;
     this.duckLevel = 0.28;
     this._volRaf = null;
@@ -93,6 +95,11 @@ export default class AudioEngine {
 
   setTrimSilence(on) {
     this.trimSilence = on;
+  }
+
+  setCueAutoFade(on, sec) {
+    this.cueAutoFade = on;
+    if (sec) this.cueFadeSeconds = sec;
   }
 
   setCrossfade(on, sec) {
@@ -277,6 +284,13 @@ export default class AudioEngine {
       const hasNext = this.index < this.queue.length - 1;
       const remaining = effEnd - el.currentTime;
       const hasEarlyEnd = effEnd < dur - 0.05;
+      if (this.cueAutoFade && !this._fading) {
+        if (remaining > 0 && remaining <= this.cueFadeSeconds) {
+          this.active.volume = Math.max(0, this._effVol() * (remaining / this.cueFadeSeconds));
+        } else if (!this.duckActive) {
+          this.active.volume = this._effVol();
+        }
+      }
       if (
         this.crossfade &&
         this.autoplay &&

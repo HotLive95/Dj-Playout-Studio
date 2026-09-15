@@ -2,6 +2,8 @@
 const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
 
 // Register our media scheme as privileged so the renderer can stream local audio.
 protocol.registerSchemesAsPrivileged([
@@ -153,4 +155,17 @@ ipcMain.handle("set-license", async (_e, lic) => {
     /* ignore */
   }
   return true;
+});
+
+// Machine fingerprint derived from hardware/OS (NOT stored in the app folder, so a
+// copied folder on another PC yields a different id and must re-activate).
+ipcMain.handle("get-device-id", async () => {
+  let cpu = "";
+  try {
+    cpu = (os.cpus()[0] || {}).model || "";
+  } catch {
+    cpu = "";
+  }
+  const raw = [os.hostname(), os.platform(), os.arch(), cpu, os.totalmem(), os.userInfo().username].join("|");
+  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 32);
 });

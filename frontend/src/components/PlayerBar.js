@@ -34,6 +34,7 @@ export default function PlayerBar({
   voiceFx,
   cueIn,
   cueOut,
+  cueAutoFade,
   onTogglePlay,
   onNext,
   onPrev,
@@ -50,6 +51,7 @@ export default function PlayerBar({
   onSetCueIn,
   onSetCueOut,
   onClearCues,
+  onToggleCueFade,
 }) {
   const pct = duration ? (currentTime / duration) * 100 : 0;
   const markers = [];
@@ -127,6 +129,18 @@ export default function PlayerBar({
               title="Set end cue at playhead"
             >
               Out ⇥
+            </button>
+            <button
+              data-testid="cue-fade-toggle"
+              onClick={onToggleCueFade}
+              className={`px-2 py-1 rounded text-[11px] font-600 border transition ${
+                cueAutoFade
+                  ? "border-[var(--hl-amber)] text-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)]"
+                  : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white"
+              }`}
+              title="Gently fade out at the end / Out cue"
+            >
+              ⌇ Fade
             </button>
             {(cueIn != null || cueOut != null) && (
               <button
@@ -217,6 +231,9 @@ export default function PlayerBar({
             title="Voice FX for the mic"
           >
             <option value="off">FX: Off</option>
+            <option value="radio">FX: Radio</option>
+            <option value="telephone">FX: Phone</option>
+            <option value="stadium">FX: Stadium</option>
             <option value="echo">FX: Echo</option>
             <option value="reverb">FX: Reverb</option>
           </select>

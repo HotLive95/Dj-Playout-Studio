@@ -10,6 +10,7 @@ import ScheduleModal from "@/components/ScheduleModal";
 import JingleBar from "@/components/JingleBar";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import LicenseGate from "@/components/LicenseGate";
+import KeyManager from "@/components/KeyManager";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob } from "@/lib/db";
@@ -29,6 +30,7 @@ const defaultSettings = {
   trimSilence: false,
   autoDuck: false,
   voiceFx: "off",
+  cueAutoFade: false,
 };
 
 function makeImpulse(ctx, seconds = 2.2, decay = 2.5) {
@@ -47,6 +49,18 @@ function makeImpulse(ctx, seconds = 2.2, decay = 2.5) {
 function buildMicGraph(ctx, source, fx) {
   const out = ctx.createGain();
   out.gain.value = 0.9;
+
+  const bandpass = (hp, lp) => {
+    const h = ctx.createBiquadFilter();
+    h.type = "highpass";
+    h.frequency.value = hp;
+    const l = ctx.createBiquadFilter();
+    l.type = "lowpass";
+    l.frequency.value = lp;
+    h.connect(l);
+    return { input: h, output: l };
+  };
+
   if (fx === "echo") {
     const dry = ctx.createGain();
     const delay = ctx.createDelay(1.0);
@@ -59,18 +73,60 @@ function buildMicGraph(ctx, source, fx) {
     delay.connect(fb);
     fb.connect(delay);
     delay.connect(out);
-  } else if (fx === "reverb") {
+  } else if (fx === "reverb" || fx === "stadium") {
     const conv = ctx.createConvolver();
-    conv.buffer = makeImpulse(ctx);
+    conv.buffer = makeImpulse(ctx, fx === "stadium" ? 4.5 : 2.2, fx === "stadium" ? 3.2 : 2.5);
     const wet = ctx.createGain();
-    wet.gain.value = 0.85;
+    wet.gain.value = fx === "stadium" ? 1.0 : 0.85;
     const dry = ctx.createGain();
-    dry.gain.value = 0.8;
+    dry.gain.value = 0.75;
     source.connect(dry);
     dry.connect(out);
     source.connect(conv);
     conv.connect(wet);
+    if (fx === "stadium") {
+      const delay = ctx.createDelay(1.0);
+      delay.delayTime.value = 0.32;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.3;
+      wet.connect(delay);
+      delay.connect(fb);
+      fb.connect(delay);
+      delay.connect(out);
+    }
     wet.connect(out);
+  } else if (fx === "telephone") {
+    const bp = bandpass(400, 3000);
+    const drive = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 255) * 2 - 1;
+      curve[i] = Math.tanh(x * 2.2);
+    }
+    drive.curve = curve;
+    source.connect(bp.input);
+    bp.output.connect(drive);
+    drive.connect(out);
+  } else if (fx === "radio") {
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 120;
+    const presence = ctx.createBiquadFilter();
+    presence.type = "peaking";
+    presence.frequency.value = 3000;
+    presence.Q.value = 1.1;
+    presence.gain.value = 6;
+    const drive = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 255) * 2 - 1;
+      curve[i] = Math.tanh(x * 1.6);
+    }
+    drive.curve = curve;
+    source.connect(hp);
+    hp.connect(presence);
+    presence.connect(drive);
+    drive.connect(out);
   } else {
     source.connect(out);
   }
@@ -123,10 +179,12 @@ function App() {
   const [currentPeaks, setCurrentPeaks] = useState(null);
   const [micLive, setMicLive] = useState(false);
   const [license, setLicenseState] = useState(undefined);
+  const [keyManagerOpen, setKeyManagerOpen] = useState(false);
 
   const engineRef = useRef(null);
   const micRef = useRef({ active: false });
   const micLiveRef = useRef({});
+  const deviceIdRef = useRef(null);
   const schedRef = useRef({ start: {}, end: {} });
   const jinglesRef = useRef([]);
   const activeJinglesRef = useRef([]);
@@ -150,16 +208,29 @@ function App() {
     })();
   }, []);
 
-  // ---- License ----
+  // ---- License (with device lock) ----
   useEffect(() => {
     (async () => {
+      const dev = await platform.getDeviceId();
+      deviceIdRef.current = dev;
       const l = await platform.getLicense();
-      setLicenseState(l || {});
+      if (l && l.activated && l.deviceId && l.deviceId !== dev) {
+        // Copied to a different computer — force re-activation.
+        setLicenseState({ activated: false, legalAccepted: false, lockedNotice: true });
+      } else {
+        setLicenseState(l || {});
+      }
     })();
   }, []);
 
   const activateLicense = (key) => {
-    const lic = { activated: true, key, activatedAt: new Date().toISOString(), legalAccepted: false };
+    const lic = {
+      activated: true,
+      key,
+      deviceId: deviceIdRef.current,
+      activatedAt: new Date().toISOString(),
+      legalAccepted: false,
+    };
     setLicenseState(lic);
     platform.setLicense(lic);
   };
@@ -195,6 +266,7 @@ function App() {
     e.setMainSink(settings.programSink || "");
     e.setCueSink(settings.cueSink || "");
     e.setTrimSilence(settings.trimSilence);
+    e.setCueAutoFade(settings.cueAutoFade);
   }, [settings]);
 
   // ---- Ducking (manual Talk + mic auto-duck) ----
@@ -741,6 +813,7 @@ function App() {
   const toggleAutoDuck = () => setSettings((s) => ({ ...s, autoDuck: !s.autoDuck }));
   const setVoiceFx = (v) => setSettings((s) => ({ ...s, voiceFx: v }));
   const toggleMicLive = () => setMicLive((v) => !v);
+  const toggleCueFade = () => setSettings((s) => ({ ...s, cueAutoFade: !s.cueAutoFade }));
 
   const setCueIn = () => {
     if (!currentTrackId) return;
@@ -863,7 +936,7 @@ function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col hl-app-bg" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} onOpenKeyManager={() => setKeyManagerOpen(true)} />
 
       {banner && (
         <div
@@ -952,6 +1025,7 @@ function App() {
         voiceFx={settings.voiceFx}
         cueIn={currentTrack?.cueIn}
         cueOut={currentTrack?.cueOut}
+        cueAutoFade={settings.cueAutoFade}
         onTogglePlay={togglePlay}
         onNext={next}
         onPrev={prev}
@@ -968,6 +1042,7 @@ function App() {
         onSetCueIn={setCueIn}
         onSetCueOut={setCueOut}
         onClearCues={clearCues}
+        onToggleCueFade={toggleCueFade}
       />
 
       {editorTrack && (
@@ -999,6 +1074,8 @@ function App() {
           onSave={saveVoiceTrack}
         />
       )}
+
+      {keyManagerOpen && <KeyManager onClose={() => setKeyManagerOpen(false)} />}
     </div>
   );
 }

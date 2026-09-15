@@ -92,6 +92,20 @@ To change the secret so old keys stop working, edit `SECRET` in BOTH
 `frontend/src/lib/license.js` and `electron/tools/genkeys.js` (keep them identical),
 then rebuild and re-issue keys.
 
+### In-app Key Manager (owner-only, locked to your computer)
+Click the 🔑 icon in the app header → enter the admin passphrase
+(`hotlive95admin`, change it in `frontend/src/components/KeyManager.js`). The first
+time, click **"Register this computer as the key-issuing machine"** — from then on
+the key maker ONLY works on that computer; on any other machine it shows "Key
+generation is locked". For distributed builds you can hard-bind it: copy the
+"This computer" ID shown in the Key Manager into `KEY_ISSUER_DEVICE` in
+`KeyManager.js`, then rebuild the copy you give to DJs.
+
+### Device locking (keys lock to one machine)
+Each activation key binds to the first computer it's activated on (via a hardware
+fingerprint). If a DJ copies their app folder to another PC, it won't run there —
+it shows a "locked to another computer" notice and requires re-entering the key.
+
 > This is casual protection: it stops copy-and-share among casual users. No app that
 > runs on someone's computer can be made 100% uncopyable — pair this with the
 > built-in © license agreement (your real legal protection) and, for stronger
