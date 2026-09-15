@@ -49,6 +49,11 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 12 (2026-06) — verified
+- Jingle Duck Depth dial: `settings.jingleDuckDepth` (0–0.8), slider in JingleBar; duck level = 1-depth.
+- Jingle Duck Speed dial: `settings.jingleDuckMs` (60–900ms), slider in JingleBar; `engine.setDuck(active, level, ms)`
+  ramps dip + recover at this speed. Both persist in saved state.
+
 ## Update 11 (2026-06) — verified
 - Playlist backdrop: replaced carbon-fiber + old emblem with the user's flame+play emblem,
   isolated to transparent (black square & border stripped via PIL) → `/public/hl-emblem.png`,

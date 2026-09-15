@@ -3,7 +3,7 @@ import { Zap, Plus, X, Square, Volume2 } from "lucide-react";
 
 const PAD_COUNT = 6;
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, onStop }) {
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -134,6 +134,21 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
           className="hl-jingle-vol w-20"
         />
         <span className="text-[10px] tabular-nums text-[var(--hl-amber)] w-8 text-right" data-testid="jingle-duck-depth-label">{Math.round((typeof duckDepth === "number" ? duckDepth : 0.4) * 100)}%</span>
+      </div>
+
+      <div className="shrink-0 flex items-center gap-1.5 pr-2 border-r border-[var(--hl-line)]" title="How fast the music dips and recovers around a jingle">
+        <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)]">Speed</span>
+        <input
+          data-testid="jingle-duck-speed"
+          type="range"
+          min="60"
+          max="900"
+          step="20"
+          value={typeof duckMs === "number" ? duckMs : 220}
+          onChange={(e) => onSetDuckMs(Number(e.target.value))}
+          className="hl-jingle-vol w-20"
+        />
+        <span className="text-[10px] tabular-nums text-[var(--hl-amber)] w-12 text-right" data-testid="jingle-duck-speed-label">{((typeof duckMs === "number" ? duckMs : 220) / 1000).toFixed(2)}s</span>
       </div>
 
       <button

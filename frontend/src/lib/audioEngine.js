@@ -88,11 +88,12 @@ export default class AudioEngine {
     this._volRaf = requestAnimationFrame(step);
   }
 
-  setDuck(active, level) {
+  setDuck(active, level, ms) {
     this.duckActive = active;
     if (typeof level === "number") this.duckLevel = level;
     else if (active) this.duckLevel = 0.28;
-    if (!this._fading) this._rampTo(this.active, this._effVol(), 220);
+    const dur = typeof ms === "number" ? ms : 220;
+    if (!this._fading) this._rampTo(this.active, this._effVol(), dur);
   }
 
   setTrimSilence(on) {

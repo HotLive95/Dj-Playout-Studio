@@ -37,6 +37,7 @@ const defaultSettings = {
   cueAutoFade: false,
   cueFadeSeconds: 1.5,
   jingleDuckDepth: 0.4,
+  jingleDuckMs: 220,
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -384,10 +385,11 @@ function App() {
   // ---- Ducking (manual Talk + mic auto-duck + jingle drops) ----
   useEffect(() => {
     const strong = talkActive || micActive || micLive;
-    if (strong) engineRef.current?.setDuck(true, 0.28);
-    else if (jingleActive) engineRef.current?.setDuck(true, 1 - (settings.jingleDuckDepth ?? 0.4));
-    else engineRef.current?.setDuck(false);
-  }, [talkActive, micActive, micLive, jingleActive, settings.jingleDuckDepth]);
+    const jms = settings.jingleDuckMs ?? 220;
+    if (strong) engineRef.current?.setDuck(true, 0.28, 220);
+    else if (jingleActive) engineRef.current?.setDuck(true, 1 - (settings.jingleDuckDepth ?? 0.4), jms);
+    else engineRef.current?.setDuck(false, undefined, jms);
+  }, [talkActive, micActive, micLive, jingleActive, settings.jingleDuckDepth, settings.jingleDuckMs]);
 
   // ---- Mic live to air (with Voice FX) ----
   useEffect(() => {
@@ -1121,6 +1123,8 @@ function App() {
         onSetVolume={setJingleVolume}
         duckDepth={settings.jingleDuckDepth ?? 0.4}
         onSetDuckDepth={(d) => setSettings((s) => ({ ...s, jingleDuckDepth: d }))}
+        duckMs={settings.jingleDuckMs ?? 220}
+        onSetDuckMs={(ms) => setSettings((s) => ({ ...s, jingleDuckMs: ms }))}
         onStop={stopJingles}
       />
 
