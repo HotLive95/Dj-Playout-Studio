@@ -88,8 +88,10 @@ export default class AudioEngine {
     this._volRaf = requestAnimationFrame(step);
   }
 
-  setDuck(active) {
+  setDuck(active, level) {
     this.duckActive = active;
+    if (typeof level === "number") this.duckLevel = level;
+    else if (active) this.duckLevel = 0.28;
     if (!this._fading) this._rampTo(this.active, this._effVol(), 220);
   }
 

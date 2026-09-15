@@ -229,6 +229,7 @@ function App() {
   const [micActive, setMicActive] = useState(false);
   const [banner, setBanner] = useState("");
   const [jingles, setJingles] = useState([]);
+  const [jingleActive, setJingleActive] = useState(false);
   const [currentPeaks, setCurrentPeaks] = useState(null);
   const [micLive, setMicLive] = useState(false);
   const [license, setLicenseState] = useState(undefined);
@@ -379,10 +380,13 @@ function App() {
     e.setCueAutoFade(settings.cueAutoFade, settings.cueFadeSeconds);
   }, [settings]);
 
-  // ---- Ducking (manual Talk + mic auto-duck) ----
+  // ---- Ducking (manual Talk + mic auto-duck + jingle drops) ----
   useEffect(() => {
-    engineRef.current?.setDuck(talkActive || micActive || micLive);
-  }, [talkActive, micActive, micLive]);
+    const strong = talkActive || micActive || micLive;
+    if (strong) engineRef.current?.setDuck(true, 0.28);
+    else if (jingleActive) engineRef.current?.setDuck(true, 0.6);
+    else engineRef.current?.setDuck(false);
+  }, [talkActive, micActive, micLive, jingleActive]);
 
   // ---- Mic live to air (with Voice FX) ----
   useEffect(() => {
@@ -1007,8 +1011,10 @@ function App() {
     const a = new Audio(url);
     a.volume = typeof j.volume === "number" ? j.volume : 1;
     activeJinglesRef.current.push(a);
+    setJingleActive(true);
     a.onended = () => {
       activeJinglesRef.current = activeJinglesRef.current.filter((x) => x !== a);
+      if (activeJinglesRef.current.length === 0) setJingleActive(false);
     };
     try {
       await a.play();
@@ -1026,6 +1032,7 @@ function App() {
   const stopJingles = () => {
     activeJinglesRef.current.forEach((a) => a.pause());
     activeJinglesRef.current = [];
+    setJingleActive(false);
   };
 
   const currentTrack = currentTrackId ? tracks[currentTrackId] : null;
