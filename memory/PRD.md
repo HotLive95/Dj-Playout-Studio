@@ -38,10 +38,26 @@ for "Hot Live 95 Detroit A.I. Radio".
   build scripts + BUILD_GUIDE.md for Windows .exe (portable) and Mac .dmg
 
 ## Backlog / Next
-- P1: Waveform display + auto cue-point (trim leading/trailing silence)
-- P2: Save/export a playlist as a portable file to share between DJs
-- P2: Mic/voice-track ducking during talk breaks
-- P2: Scheduling / clock automation for unattended playout
+- P2: MP3 export via Web Worker for very long tracks (avoid main-thread block)
+- P2: Waveform on the main player seek bar for the on-air track
+- P2: Validate imported .hlp.json schema before applying
+- P2: Scheduling by day-of-week / rotation
+
+## Update 3 (2026-06) — verified by testing agent (16/16 assertions, 100%)
+- Track Editor: trim in/out + multi-section cut + auto-trim silence; preview; export
+  WAV/MP3 (client-side, `audioProcessing.js` using `@breezystack/lamejs`); Save-to-playlist
+  or Download. Files: `TrackEditor.js`, `Waveform.js`.
+- Waveform view inside editor (canvas, `Waveform.js`).
+- Silence Trim playout toggle — engine skips leading/trailing dead air using
+  per-track leadIn/tailStart (`detectSilence`), wired in `audioEngine.js`.
+- Share Playlists: export current playlist to self-contained `.hlp.json` (base64 audio)
+  and import it back (`exportPlaylist`/`importPlaylist` in `App.js`). Round-trip verified.
+- Talk Ducking: manual TALK button (+ hotkey T) and live mic auto-duck (getUserMedia +
+  AnalyserNode RMS) — `engine.setDuck`, mic effect in `App.js`.
+- Scheduled auto start/stop per show (per-playlist `schedule`, 1s scheduler tick),
+  `ScheduleModal.js`. Persists across reloads.
+- YouTube ripper: intentionally SKIPPED per user (ToS/offline constraints).
+- Electron: added `import-paths` and `save-media` IPC for OS drag-import + saving edits.
 
 ## Update 2 (2026-06) — verified by testing agent (16/16 assertions, 100%)
 - Cue / headphone pre-listen: independent preview channel per track + Air-out / Cue-out

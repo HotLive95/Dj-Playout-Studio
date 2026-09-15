@@ -7,14 +7,22 @@ you are. Runs fully offline and can be shared with your DJs on a flash drive.
 
 ## What it does
 - 🎵 **Load MP3 & WAV files** into playlists
-- ↕️ **Drag-and-drop reorder** tracks
+- ↕️ **Drag-and-drop reorder** tracks (and drag files in from your desktop)
 - ♻️ **Remove or replace** any track in one click
+- ✂️ **Track editor**: trim start/end, cut out multiple sections, auto-trim silence, and save the edited clip as **WAV or MP3**
+- 〰️ **Waveform view** so you can see intros/outros and set precise points
 - 📻 **Live playout controls**: play / pause / next / previous + seek bar
 - ⏭️ **Auto-play** the next track (continuous playout)
 - 🎚️ **Crossfade** between tracks (1–10s, adjustable)
+- 🔇 **Silence trim** — skip dead air at the start/end for tight back-to-back playout
+- 🎧 **Cue / headphone pre-listen** with separate Air-out and Cue-out routing
+- 🎙️ **Talk ducking** — a TALK button plus live mic auto-duck that dips the music while you speak
+- ⏰ **Scheduled auto start/stop** per DJ show time
+- 🔀 **Share playlists** — export a self-contained file and import it on another DJ's copy
+- ⌨️ **Live hotkeys**: Space = play/pause, ← / → = skip, ↑ / ↓ = volume, T = talk
 - ⏱️ **Per-track duration + total show runtime**
 - 🗂️ **Multiple playlists** (create / rename / delete)
-- 💾 **Auto-save** — playlists + audio persist between sessions (and on the flash drive)
+- 💾 **Auto-save** — everything persists between sessions (and on the flash drive)
 
 ---
 
