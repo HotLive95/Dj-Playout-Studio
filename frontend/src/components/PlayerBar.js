@@ -9,6 +9,9 @@ import {
   Repeat,
   Shuffle,
   Waves,
+  Mic,
+  Radio,
+  Scissors,
 } from "lucide-react";
 import { formatTime } from "../lib/format";
 
@@ -21,6 +24,10 @@ export default function PlayerBar({
   autoplay,
   crossfade,
   crossfadeSeconds,
+  trimSilence,
+  talkActive,
+  autoDuck,
+  micActive,
   onTogglePlay,
   onNext,
   onPrev,
@@ -29,6 +36,9 @@ export default function PlayerBar({
   onToggleAutoplay,
   onToggleCrossfade,
   onCrossfadeSeconds,
+  onToggleTrimSilence,
+  onToggleTalk,
+  onToggleAutoDuck,
 }) {
   const pct = duration ? (currentTime / duration) * 100 : 0;
 
@@ -107,10 +117,49 @@ export default function PlayerBar({
           >
             <SkipForward size={22} />
           </button>
+          <div className="w-px h-8 bg-[var(--hl-line)] mx-1" />
+          <button
+            data-testid="talk-button"
+            onClick={onToggleTalk}
+            className={`flex items-center gap-1.5 px-3 h-10 rounded-full font-700 text-sm border-2 transition ${
+              talkActive
+                ? "bg-[var(--hl-onair)] border-[var(--hl-onair)] text-white hl-onair-dot"
+                : "border-[var(--hl-onair)] text-[var(--hl-onair)] hover:bg-[rgba(255,23,68,0.12)]"
+            }`}
+            title="Talk over — dips the music while you speak (T)"
+          >
+            <Mic size={17} /> TALK
+          </button>
         </div>
 
         {/* Right controls */}
-        <div className="flex items-center gap-3 w-1/3 justify-end">
+        <div className="flex items-center gap-2.5 w-1/3 justify-end">
+          <button
+            data-testid="auto-duck-toggle"
+            onClick={onToggleAutoDuck}
+            className={`h-9 w-9 grid place-items-center rounded-md border transition ${
+              autoDuck
+                ? micActive
+                  ? "border-[var(--hl-onair)] text-[var(--hl-onair)] bg-[rgba(255,23,68,0.15)]"
+                  : "border-[var(--hl-fire)] text-[var(--hl-fire)] bg-[rgba(255,90,31,0.1)]"
+                : "border-[var(--hl-line)] text-[var(--hl-muted)]"
+            }`}
+            title="Auto-duck: listens to your mic and dips music automatically"
+          >
+            <Radio size={16} />
+          </button>
+          <button
+            data-testid="trim-silence-toggle"
+            onClick={onToggleTrimSilence}
+            className={`h-9 w-9 grid place-items-center rounded-md border transition ${
+              trimSilence
+                ? "border-[var(--hl-amber)] text-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)]"
+                : "border-[var(--hl-line)] text-[var(--hl-muted)]"
+            }`}
+            title="Trim silence: skip dead air at the start/end for tight playout"
+          >
+            <Scissors size={16} />
+          </button>
           <button
             data-testid="autoplay-toggle"
             onClick={onToggleAutoplay}

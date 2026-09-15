@@ -20,6 +20,10 @@ export default class AudioEngine {
     this.crossfade = true;
     this.crossfadeSeconds = 3;
     this.autoplay = true;
+    this.trimSilence = false;
+    this.duckActive = false;
+    this.duckLevel = 0.28;
+    this._volRaf = null;
     this.cueTrackId = null;
     this._fading = false;
     this._fadeRaf = null;
@@ -62,8 +66,33 @@ export default class AudioEngine {
 
   setVolume(v) {
     this.volume = v;
-    if (!this._fading) this.active.volume = v;
+    if (!this._fading) this.active.volume = this._effVol();
     this._emit();
+  }
+
+  _effVol() {
+    return this.duckActive ? this.volume * this.duckLevel : this.volume;
+  }
+
+  _rampTo(el, target, ms) {
+    if (this._volRaf) cancelAnimationFrame(this._volRaf);
+    const start = performance.now();
+    const from = el.volume;
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / ms);
+      el.volume = from + (target - from) * p;
+      if (p < 1) this._volRaf = requestAnimationFrame(step);
+    };
+    this._volRaf = requestAnimationFrame(step);
+  }
+
+  setDuck(active) {
+    this.duckActive = active;
+    if (!this._fading) this._rampTo(this.active, this._effVol(), 220);
+  }
+
+  setTrimSilence(on) {
+    this.trimSilence = on;
   }
 
   setCrossfade(on, sec) {
@@ -105,11 +134,25 @@ export default class AudioEngine {
     if (!url) return;
     this.index = i;
     this.active.src = url;
-    this.active.volume = this.volume;
-    try {
-      this.active.currentTime = 0;
-    } catch {
-      /* ignore */
+    this.active.volume = this._effVol();
+    const track = this.queue[i];
+    const startAt = this.trimSilence && track && track.leadIn ? track.leadIn : 0;
+    if (startAt > 0) {
+      const onMeta = () => {
+        try {
+          this.active.currentTime = startAt;
+        } catch {
+          /* ignore */
+        }
+        this.active.removeEventListener("loadedmetadata", onMeta);
+      };
+      this.active.addEventListener("loadedmetadata", onMeta);
+    } else {
+      try {
+        this.active.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
     }
     try {
       await this.active.play();
@@ -218,17 +261,31 @@ export default class AudioEngine {
   _onTime(el) {
     if (el !== this.active) return;
     const dur = el.duration;
-    if (
-      this.crossfade &&
-      this.autoplay &&
-      !this._fading &&
-      dur &&
-      isFinite(dur) &&
-      this.index < this.queue.length - 1
-    ) {
-      const remaining = dur - el.currentTime;
-      if (remaining <= this.crossfadeSeconds && remaining > 0.05) {
+    if (dur && isFinite(dur)) {
+      const track = this.queue[this.index];
+      const effEnd =
+        this.trimSilence && track && track.tailStart ? Math.min(track.tailStart, dur) : dur;
+      const hasNext = this.index < this.queue.length - 1;
+      const remaining = effEnd - el.currentTime;
+      if (
+        this.crossfade &&
+        this.autoplay &&
+        !this._fading &&
+        hasNext &&
+        remaining <= this.crossfadeSeconds &&
+        remaining > 0.05
+      ) {
         this._startCrossfade();
+      } else if (
+        !this._fading &&
+        this.trimSilence &&
+        track &&
+        track.tailStart &&
+        track.tailStart < dur - 0.05 &&
+        el.currentTime >= track.tailStart
+      ) {
+        if (this.autoplay && hasNext) this.playIndex(this.index + 1);
+        else el.pause();
       }
     }
     this._emit();

@@ -102,6 +102,16 @@ ipcMain.handle("import-paths", async (_e, paths) => {
   return out;
 });
 
+// Save an edited/imported audio buffer (Uint8Array) to the media folder.
+ipcMain.handle("save-media", async (_e, name, bytes) => {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const ext = path.extname(name) || ".wav";
+  const dest = path.join(mediaDir(), id + ext);
+  fs.writeFileSync(dest, Buffer.from(bytes));
+  const stat = fs.statSync(dest);
+  return { id, name, path: dest, size: stat.size };
+});
+
 ipcMain.handle("load-state", async () => {
   try {
     return JSON.parse(fs.readFileSync(statePath(), "utf-8"));

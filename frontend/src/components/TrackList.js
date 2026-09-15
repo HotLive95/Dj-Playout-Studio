@@ -10,6 +10,8 @@ import {
   Clock,
   Headphones,
   Upload,
+  Scissors,
+  Share2,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
 
@@ -30,6 +32,8 @@ export default function TrackList({
   onPlayTrack,
   onTogglePlay,
   onCueTrack,
+  onEditTrack,
+  onExportPlaylist,
 }) {
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -181,6 +185,7 @@ export default function TrackList({
             </span>
           </div>
         </div>
+        <div className="shrink-0 flex items-center gap-2">
         <button
           data-testid="add-files-button"
           onClick={handleAddClick}
@@ -188,6 +193,16 @@ export default function TrackList({
         >
           <Plus size={18} /> Add MP3 / WAV
         </button>
+        <button
+          data-testid="export-playlist-button"
+          onClick={onExportPlaylist}
+          disabled={items.length === 0}
+          className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-amber)] disabled:opacity-40"
+          title="Export this playlist to a shareable file"
+        >
+          <Share2 size={16} /> Share
+        </button>
+        </div>
       </div>
 
       {/* Track rows */}
@@ -277,7 +292,7 @@ export default function TrackList({
                     {track.duration ? formatTime(track.duration) : "--:--"}
                   </div>
 
-                  <div className="flex items-center gap-1 w-[112px] justify-end">
+                  <div className="flex items-center gap-1 w-[144px] justify-end">
                     <button
                       data-testid={`cue-track-${index}`}
                       onClick={() => onCueTrack(index)}
@@ -289,6 +304,14 @@ export default function TrackList({
                       title="Cue / pre-listen on headphones"
                     >
                       <Headphones size={16} />
+                    </button>
+                    <button
+                      data-testid={`edit-track-${index}`}
+                      onClick={() => onEditTrack(index)}
+                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hl-fire)] hover:bg-white/10"
+                      title="Edit / trim this track"
+                    >
+                      <Scissors size={16} />
                     </button>
                     <button
                       data-testid={`replace-track-${index}`}

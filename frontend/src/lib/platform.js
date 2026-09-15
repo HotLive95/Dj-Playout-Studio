@@ -50,6 +50,15 @@ export const platform = {
     return null;
   },
 
+  // Electron only: write an edited/imported blob to the media folder.
+  async saveMedia(name, blob) {
+    if (isElectron) {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      return await window.hotlive.saveMedia(name, bytes);
+    }
+    return null;
+  },
+
   async getUrl(track) {
     if (!track) return null;
     if (track.path) {

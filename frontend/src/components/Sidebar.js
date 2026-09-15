@@ -1,5 +1,15 @@
-import React, { useState } from "react";
-import { Plus, Radio, Trash2, Pencil, Check, X, ListMusic } from "lucide-react";
+import React, { useState, useRef } from "react";
+import {
+  Plus,
+  Radio,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+  ListMusic,
+  Clock,
+  FolderDown,
+} from "lucide-react";
 import { formatTotal } from "../lib/format";
 
 export default function Sidebar({
@@ -9,12 +19,15 @@ export default function Sidebar({
   onCreate,
   onRename,
   onDelete,
+  onSchedule,
+  onImportPlaylist,
   durationOf,
 }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
+  const importRef = useRef(null);
 
   const submitCreate = () => {
     const name = newName.trim() || "New Playlist";
@@ -38,14 +51,35 @@ export default function Sidebar({
           <Radio size={15} className="text-[var(--hl-fire)]" />
           Playlists
         </div>
-        <button
-          data-testid="new-playlist-button"
-          onClick={() => setCreating(true)}
-          className="h-7 w-7 grid place-items-center rounded-md hl-fire-gradient text-white hover:brightness-110 transition"
-          title="New playlist"
-        >
-          <Plus size={16} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={importRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            data-testid="import-playlist-input"
+            onChange={(e) => {
+              if (e.target.files?.[0]) onImportPlaylist(e.target.files[0]);
+              e.target.value = "";
+            }}
+          />
+          <button
+            data-testid="import-playlist-button"
+            onClick={() => importRef.current?.click()}
+            className="h-7 w-7 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)] transition"
+            title="Import a shared playlist"
+          >
+            <FolderDown size={15} />
+          </button>
+          <button
+            data-testid="new-playlist-button"
+            onClick={() => setCreating(true)}
+            className="h-7 w-7 grid place-items-center rounded-md hl-fire-gradient text-white hover:brightness-110 transition"
+            title="New playlist"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
       </div>
 
       {creating && (
@@ -140,8 +174,29 @@ export default function Sidebar({
                       {pl.trackIds.length} track{pl.trackIds.length === 1 ? "" : "s"} ·{" "}
                       {formatTotal(total)}
                     </div>
+                    {pl.schedule?.enabled && (
+                      <div
+                        className="text-[10px] mt-1 pl-6 flex items-center gap-1 text-[var(--hl-amber)]"
+                        data-testid={`schedule-badge-${pl.id}`}
+                      >
+                        <Clock size={11} /> {pl.schedule.start}–{pl.schedule.end}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                    <button
+                      data-testid={`schedule-playlist-${pl.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSchedule(pl.id);
+                      }}
+                      className={`h-7 w-7 grid place-items-center rounded hover:bg-white/10 ${
+                        pl.schedule?.enabled ? "text-[var(--hl-amber)]" : "text-[var(--hl-muted)] hover:text-white"
+                      }`}
+                      title="Show schedule"
+                    >
+                      <Clock size={14} />
+                    </button>
                     <button
                       data-testid={`rename-playlist-${pl.id}`}
                       onClick={(e) => {
