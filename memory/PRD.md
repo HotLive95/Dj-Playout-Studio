@@ -49,6 +49,18 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 9 (2026-06) — backend curl-verified + UI E2E
+- Expiry Alerts: backend daily scheduler (`check_expiring`, startup asyncio loop, 12h) emails
+  OWNER_EMAIL once per key when it enters the ≤7-day window (`expiry_alert_for` flag re-arms on
+  renew). Manual trigger `POST /api/admin/run-expiry-check`. Env: OWNER_EMAIL, EXPIRY_ALERT_DAYS.
+  Verified: alerts_sent:1 for an in-window key.
+- DJ Self-Serve: public `POST /api/status {key, device_id?}` returns dj/expiry/days_left/
+  device summary (no admin token, no raw device_ids). `LicenseStatus.js` reusable component used
+  in (a) in-app "My License" header modal and (b) public route `/license?key=` (`LicenseStatusPage.js`,
+  react-router-dom v7 added in `index.js`). Verified on /license page.
+- Renew Length: KeyManager dropdown 30/90/180/365 (default 90) feeds `adminRenew(key, days)`.
+  Verified renew 365 → +365d.
+
 ## Update 8 (2026-06) — backend curl-verified + UI E2E
 - Usage Dashboard: Key Manager online tab shows summary cards — Active DJs, Computers
   online, Total keys, Expiring ≤14d. Backend `/api/admin/keys` now returns `active_devices`,

@@ -19,11 +19,13 @@ async function post(path, body, token) {
 export const api = {
   activate: (key, deviceId) => post("/api/activate", { key, device_id: deviceId }),
   validate: (key, deviceId) => post("/api/validate", { key, device_id: deviceId }),
+  status: (key, deviceId) => post("/api/status", { key, device_id: deviceId || null }),
 
   adminCreate: (token, dj, maxDevices, expiresAt, email) =>
     post("/api/admin/keys", { dj, email, max_devices: maxDevices, expires_at: expiresAt }, token),
   adminRenew: (token, key, days) => post(`/api/admin/keys/${key}/renew`, { days }, token),
   adminResendEmail: (token, key) => post(`/api/admin/keys/${key}/resend-email`, {}, token),
+  adminRunExpiryCheck: (token) => post(`/api/admin/run-expiry-check`, {}, token),
   adminList: async (token) => {
     const res = await fetch(`${BASE}/api/admin/keys`, { headers: { "X-Admin-Token": token } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

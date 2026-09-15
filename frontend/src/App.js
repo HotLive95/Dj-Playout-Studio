@@ -12,6 +12,8 @@ import VoiceRecorder from "@/components/VoiceRecorder";
 import LicenseGate from "@/components/LicenseGate";
 import KeyManager from "@/components/KeyManager";
 import CustomFxModal from "@/components/CustomFxModal";
+import { LicenseStatus } from "@/components/LicenseStatus";
+import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob } from "@/lib/db";
@@ -231,6 +233,7 @@ function App() {
   const [micLive, setMicLive] = useState(false);
   const [license, setLicenseState] = useState(undefined);
   const [keyManagerOpen, setKeyManagerOpen] = useState(false);
+  const [licenseStatusOpen, setLicenseStatusOpen] = useState(false);
   const [customFxOpen, setCustomFxOpen] = useState(false);
 
   const engineRef = useRef(null);
@@ -1045,7 +1048,7 @@ function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col hl-app-bg" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} onOpenKeyManager={() => setKeyManagerOpen(true)} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} />
 
       {banner && (
         <div
@@ -1188,6 +1191,23 @@ function App() {
       )}
 
       {keyManagerOpen && <KeyManager onClose={() => setKeyManagerOpen(false)} />}
+
+      {licenseStatusOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm grid place-items-center p-4" data-testid="license-status-modal" onMouseDown={(e) => e.target === e.currentTarget && setLicenseStatusOpen(false)}>
+          <div className="w-full max-w-lg hl-panel rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--hl-line)]">
+              <div className="flex items-center gap-2">
+                <IdCard size={18} className="text-[var(--hl-fire)]" />
+                <h2 className="font-display text-lg">My License</h2>
+              </div>
+              <button data-testid="license-status-close" onClick={() => setLicenseStatusOpen(false)} className="h-8 w-8 grid place-items-center rounded hover:bg-white/10"><X size={18} /></button>
+            </div>
+            <div className="p-5">
+              <LicenseStatus defaultKey={license?.key || ""} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {customFxOpen && (
         <CustomFxModal

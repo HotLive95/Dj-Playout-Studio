@@ -24,6 +24,8 @@ ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', 'hotlive95admin')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
 RENEW_DAYS = int(os.environ.get('RENEW_DAYS', '90'))
+OWNER_EMAIL = os.environ.get('OWNER_EMAIL', '')
+EXPIRY_ALERT_DAYS = int(os.environ.get('EXPIRY_ALERT_DAYS', '7'))
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
@@ -165,6 +167,72 @@ async def send_welcome_email(email: str, dj: str, key: str, expires_at: Optional
         return False
 
 
+def expiry_alert_html(dj: str, key: str, expires_at: Optional[str], dl: int) -> str:
+    when = "today" if dl <= 0 else (f"in {dl} day" + ("" if dl == 1 else "s"))
+    return f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0c;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
+      <tr><td align="center">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#121216;border:1px solid #26262e;border-radius:16px;overflow:hidden;">
+          <tr><td style="background:linear-gradient(90deg,#ff5a1f,#ff1744);padding:22px 28px;">
+            <div style="color:#fff;font-size:22px;font-weight:800;letter-spacing:2px;">HOT LIVE 95</div>
+            <div style="color:#ffe;opacity:.85;font-size:11px;letter-spacing:3px;">LICENSE EXPIRY ALERT</div>
+          </td></tr>
+          <tr><td style="padding:28px;">
+            <p style="color:#f4f4f5;font-size:16px;margin:0 0 12px;">Heads up — a DJ license expires <b style="color:#ffb020;">{when}</b>.</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 16px;">
+              <tr><td style="padding:4px 0;color:#9aa0a6;font-size:13px;">DJ</td><td style="padding:4px 0;color:#f4f4f5;font-size:13px;text-align:right;">{dj}</td></tr>
+              <tr><td style="padding:4px 0;color:#9aa0a6;font-size:13px;">Key</td><td style="padding:4px 0;color:#ffb020;font-size:13px;text-align:right;font-family:monospace;">{key}</td></tr>
+              <tr><td style="padding:4px 0;color:#9aa0a6;font-size:13px;">Expires</td><td style="padding:4px 0;color:#ff6a2b;font-size:13px;text-align:right;">{str(expires_at)[:10]}</td></tr>
+            </table>
+            <p style="color:#c9ccd1;font-size:14px;line-height:1.6;margin:0;">Open the Key Manager and tap the renew (↻) button to extend it another season so this DJ never drops off-air mid-show.</p>
+          </td></tr>
+          <tr><td style="background:#0a0a0c;padding:16px 28px;border-top:1px solid #26262e;">
+            <div style="color:#6b7280;font-size:11px;">© Hot Live 95 Detroit · A.I. Radio</div>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+    """
+
+
+async def send_owner_expiry_alert(doc: dict, dl: int) -> bool:
+    if not RESEND_API_KEY or not OWNER_EMAIL:
+        return False
+    params = {
+        "from": SENDER_EMAIL,
+        "to": [OWNER_EMAIL],
+        "subject": f"⏳ {doc.get('dj')}'s Hot Live 95 key expires in {dl} day(s)",
+        "html": expiry_alert_html(doc.get("dj"), doc.get("key"), doc.get("expires_at"), dl),
+    }
+    try:
+        await asyncio.to_thread(resend.Emails.send, params)
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Expiry alert email failed: {e}")
+        return False
+
+
+async def check_expiring() -> int:
+    """Email the owner once per key when it enters the expiry-alert window."""
+    if not RESEND_API_KEY or not OWNER_EMAIL:
+        return 0
+    sent = 0
+    cursor = db.licenses.find({"revoked": {"$ne": True}, "expires_at": {"$nin": [None, ""]}})
+    async for doc in cursor:
+        dl = days_left(doc.get("expires_at"))
+        if dl is None or dl < 0 or dl > EXPIRY_ALERT_DAYS:
+            continue
+        if doc.get("expiry_alert_for") == doc.get("expires_at"):
+            continue
+        if await send_owner_expiry_alert(doc, dl):
+            await db.licenses.update_one(
+                {"key_norm": doc["key_norm"]},
+                {"$set": {"expiry_alert_for": doc.get("expires_at")}},
+            )
+            sent += 1
+    return sent
+
+
 # ---------- Public activation endpoints ----------
 class ActivateBody(BaseModel):
     key: str
@@ -197,6 +265,38 @@ async def activate(body: ActivateBody):
 class ValidateBody(BaseModel):
     key: str
     device_id: str
+
+
+class StatusBody(BaseModel):
+    key: str
+    device_id: Optional[str] = None
+
+
+@api_router.post("/status")
+async def license_status(body: StatusBody):
+    """Public DJ self-serve lookup — no admin token; reveals only summary info."""
+    kn = normalize_key(body.key)
+    doc = await db.licenses.find_one({"key_norm": kn})
+    if not doc:
+        return {"status": "unknown"}
+    devices = doc.get("devices", [])
+    return {
+        "status": "revoked" if doc.get("revoked") else ("expired" if is_expired(doc.get("expires_at")) else "ok"),
+        "dj": doc.get("dj"),
+        "revoked": bool(doc.get("revoked")),
+        "expired": is_expired(doc.get("expires_at")),
+        "expires_at": doc.get("expires_at"),
+        "days_left": days_left(doc.get("expires_at")),
+        "max_devices": doc.get("max_devices", 1),
+        "active_devices": len(devices),
+        "devices": [
+            {
+                "activated_at": d.get("activated_at"),
+                "this_device": bool(body.device_id and d.get("device_id") == body.device_id),
+            }
+            for d in devices
+        ],
+    }
 
 
 @api_router.post("/validate")
@@ -340,6 +440,13 @@ async def root():
     return {"message": "Hot Live 95 licensing service"}
 
 
+@api_router.post("/admin/run-expiry-check")
+async def admin_run_expiry_check(x_admin_token: Optional[str] = Header(None)):
+    check_admin(x_admin_token)
+    sent = await check_expiring()
+    return {"status": "ok", "alerts_sent": sent, "owner_email": OWNER_EMAIL or None}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -352,6 +459,21 @@ app.add_middleware(
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def _start_expiry_scheduler():
+    async def loop():
+        await asyncio.sleep(15)
+        while True:
+            try:
+                n = await check_expiring()
+                if n:
+                    logger.info(f"Expiry check sent {n} alert(s)")
+            except Exception as e:
+                logger.error(f"Expiry check failed: {e}")
+            await asyncio.sleep(12 * 3600)
+    asyncio.create_task(loop())
 
 
 @app.on_event("shutdown")

@@ -1,7 +1,7 @@
 import React from "react";
-import { KeyRound } from "lucide-react";
+import { KeyRound, IdCard } from "lucide-react";
 
-export default function Header({ onAir, nowPlaying, onOpenKeyManager }) {
+export default function Header({ onAir, nowPlaying, onOpenKeyManager, onOpenLicenseStatus }) {
   return (
     <header
       data-testid="app-header"
@@ -25,6 +25,14 @@ export default function Header({ onAir, nowPlaying, onOpenKeyManager }) {
       </div>
 
       <div className="flex items-center gap-4">
+        <button
+          data-testid="open-license-status"
+          onClick={onOpenLicenseStatus}
+          className="h-9 px-3 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] transition"
+          title="My License — check your key status"
+        >
+          <span className="flex items-center gap-1.5 text-xs font-600"><IdCard size={15} /> My License</span>
+        </button>
         <button
           data-testid="open-key-manager"
           onClick={onOpenKeyManager}

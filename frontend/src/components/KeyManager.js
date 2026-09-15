@@ -30,6 +30,7 @@ export default function KeyManager({ onClose }) {
   const [oExp, setOExp] = useState("");
   const [oMsg, setOMsg] = useState("");
   const [busy, setBusy] = useState(null);
+  const [renewDays, setRenewDays] = useState(90);
 
   useEffect(() => {
     try {
@@ -105,8 +106,8 @@ export default function KeyManager({ onClose }) {
   const renewOnline = async (k) => {
     setBusy(k);
     try {
-      const r = await api.adminRenew(ADMIN_PASS, k, 90);
-      setOMsg(`Renewed 90 days — now valid through ${String(r.expires_at).slice(0, 10)}.`);
+      const r = await api.adminRenew(ADMIN_PASS, k, renewDays);
+      setOMsg(`Renewed ${renewDays} days — now valid through ${String(r.expires_at).slice(0, 10)}.`);
       await loadOnline();
     } catch {
       setOMsg("Renew failed.");
@@ -216,6 +217,16 @@ export default function KeyManager({ onClose }) {
                   <button data-testid="online-generate" onClick={createOnline} className="flex items-center gap-2 px-4 py-2.5 rounded-lg hl-fire-gradient text-white font-600"><Plus size={16} /> Create</button>
                 </div>
                 {oMsg && <div className="text-[var(--hl-amber)] text-sm" data-testid="online-msg">{oMsg}</div>}
+                <div className="flex items-center gap-2 text-xs text-[var(--hl-muted)]">
+                  <span className="uppercase tracking-wider">Renew length</span>
+                  <select data-testid="renew-days-select" value={renewDays} onChange={(e) => setRenewDays(Number(e.target.value))} className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-1.5 text-[var(--hl-text)] outline-none focus:border-[var(--hl-fire)]">
+                    <option value={30}>30 days</option>
+                    <option value={90}>90 days (season)</option>
+                    <option value={180}>180 days</option>
+                    <option value={365}>365 days</option>
+                  </select>
+                  <span>— used by the ↻ renew button.</span>
+                </div>
                 <div className="max-h-[300px] overflow-y-auto hl-scroll space-y-2" data-testid="online-list">
                   {onlineKeys.length === 0 && <div className="text-center text-[var(--hl-muted)] text-sm py-6">No server keys yet.</div>}
                   {onlineKeys.map((k, i) => {
@@ -244,7 +255,7 @@ export default function KeyManager({ onClose }) {
                         </div>
                       </div>
                       {(k.expires_at || k.revoked || k.expired) && (
-                        <button data-testid={`online-renew-${i}`} disabled={busy === k.key} onClick={() => renewOnline(k.key)} className="h-8 px-2 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:bg-white/10 disabled:opacity-40" title="Renew 90 days"><RefreshCw size={14} className={busy === k.key ? "animate-spin" : ""} /></button>
+                        <button data-testid={`online-renew-${i}`} disabled={busy === k.key} onClick={() => renewOnline(k.key)} className="h-8 px-2 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:bg-white/10 disabled:opacity-40" title={`Renew ${renewDays} days`}><RefreshCw size={14} className={busy === k.key ? "animate-spin" : ""} /></button>
                       )}
                       {k.email && (
                         <button data-testid={`online-resend-${i}`} disabled={busy === k.key} onClick={() => resendEmail(k.key)} className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] hover:text-white hover:bg-white/10 disabled:opacity-40" title="Re-send welcome email"><Mail size={14} /></button>
