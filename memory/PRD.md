@@ -38,10 +38,19 @@ for "Hot Live 95 Detroit A.I. Radio".
   build scripts + BUILD_GUIDE.md for Windows .exe (portable) and Mac .dmg
 
 ## Backlog / Next
-- P2: MP3 export via Web Worker for very long tracks (avoid main-thread block)
-- P2: Waveform on the main player seek bar for the on-air track
-- P2: Validate imported .hlp.json schema before applying
-- P2: Scheduling by day-of-week / rotation
+- P2: MP3 export via Web Worker for very long tracks
+- P2: License-key activation + per-device lock (anti-piracy) — offered to user
+- P2: Validate imported .hlp.json schema; validate schedule end > start
+
+## Update 4 (2026-06) — verified by testing agent (8/8 flows, 100%)
+- Main waveform on the on-air seek bar (PlayerBar renders `Waveform` from decoded peaks,
+  cached per track; click-to-seek). `computePeaks` in `audioProcessing.js`.
+- Voice tracking: `VoiceRecorder.js` records via MediaRecorder, decodes to WAV, inserts at a
+  chosen playlist position (`saveVoiceTrack` in `App.js`).
+- Weekly scheduler: `ScheduleModal.js` adds day-of-week toggles; scheduler skips days not
+  selected (empty = every day).
+- Instant jingles: `JingleBar.js` — 6 assignable pads, click or number keys 1-6 fire drops
+  over the music on independent audio elements; persisted in saved state.
 
 ## Update 3 (2026-06) — verified by testing agent (16/16 assertions, 100%)
 - Track Editor: trim in/out + multi-section cut + auto-trim silence; preview; export
