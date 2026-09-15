@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { Zap, Plus, X, Square } from "lucide-react";
 
 const PAD_COUNT = 6;
@@ -6,6 +6,7 @@ const PAD_COUNT = 6;
 export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
+  const [dragOver, setDragOver] = useState(null);
 
   const assign = (i) => {
     if (isElectron) {
@@ -14,6 +15,15 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
       targetIndex.current = i;
       inputRef.current?.click();
     }
+  };
+
+  const isAudio = (f) => f && (/(mp3|wav|m4a|aac|ogg|flac)$/i.test(f.name) || (f.type || "").startsWith("audio"));
+  const onPadDrop = (e, i) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(null);
+    const f = e.dataTransfer?.files?.[0];
+    if (f && isAudio(f)) onAssignFile(i, f);
   };
 
   return (
@@ -43,13 +53,26 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
         {Array.from({ length: PAD_COUNT }).map((_, i) => {
           const j = jingles[i];
           return (
-            <div key={i} className="relative shrink-0">
+            <div
+              key={i}
+              className={`relative shrink-0 rounded-lg ${dragOver === i ? "ring-2 ring-[var(--hl-fire)] ring-offset-1 ring-offset-[#0e0e12]" : ""}`}
+              data-testid={`jingle-pad-drop-${i}`}
+              onDragOver={(e) => {
+                if (Array.from(e.dataTransfer?.types || []).includes("Files")) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOver(i);
+                }
+              }}
+              onDragLeave={() => setDragOver((d) => (d === i ? null : d))}
+              onDrop={(e) => onPadDrop(e, i)}
+            >
               {j ? (
                 <button
                   data-testid={`jingle-pad-${i}`}
                   onClick={() => onPlay(i)}
                   className="group flex items-center gap-2 h-10 pl-2.5 pr-3 rounded-lg border border-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)] text-[var(--hl-amber)] hover:bg-[rgba(255,171,0,0.2)] transition"
-                  title={`Play "${j.name}" (key ${i + 1})`}
+                  title={`Play "${j.name}" (key ${i + 1}) — drag a new file here to replace`}
                 >
                   <span className="grid place-items-center h-5 w-5 rounded bg-[var(--hl-amber)] text-black text-[11px] font-700">
                     {i + 1}
@@ -61,7 +84,7 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
                   data-testid={`jingle-pad-${i}`}
                   onClick={() => assign(i)}
                   className="flex items-center gap-1.5 h-10 px-3 rounded-lg border border-dashed border-[var(--hl-line)] text-[var(--hl-muted)] hover:border-[var(--hl-amber)] hover:text-[var(--hl-amber)] transition"
-                  title={`Assign a jingle to pad ${i + 1}`}
+                  title={`Assign a jingle to pad ${i + 1} — click to browse or drag a file here`}
                 >
                   <Plus size={14} /> <span className="text-xs">Pad {i + 1}</span>
                 </button>
@@ -70,8 +93,8 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
                 <button
                   data-testid={`jingle-clear-${i}`}
                   onClick={() => onClear(i)}
-                  className="absolute -top-1.5 -right-1.5 h-4 w-4 grid place-items-center rounded-full bg-[var(--hl-onair)] text-white opacity-0 group-hover:opacity-100 hover:opacity-100"
-                  title="Clear pad"
+                  className="absolute -top-1.5 -right-1.5 h-4 w-4 grid place-items-center rounded-full bg-[var(--hl-onair)] text-white hover:scale-110 transition"
+                  title="Remove this jingle"
                 >
                   <X size={10} />
                 </button>

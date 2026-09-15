@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { X, KeyRound, Copy, Trash2, Plus, ShieldQuestion, MonitorSmartphone, Lock, Ban, Cloud, HardDrive, Mail, RefreshCw, Send, Users, Clock, AlertTriangle } from "lucide-react";
+import { X, KeyRound, Copy, Trash2, Plus, ShieldQuestion, MonitorSmartphone, Lock, Ban, Cloud, HardDrive, Mail, RefreshCw, Send, Users, Clock, AlertTriangle, QrCode, Repeat } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { generateKey } from "../lib/license";
 import { platform } from "../lib/platform";
 import { api } from "../lib/api";
@@ -31,6 +32,8 @@ export default function KeyManager({ onClose }) {
   const [oMsg, setOMsg] = useState("");
   const [busy, setBusy] = useState(null);
   const [renewDays, setRenewDays] = useState(90);
+  const [alertLead, setAlertLead] = useState(7);
+  const [qrKey, setQrKey] = useState(null);
 
   useEffect(() => {
     try {
@@ -45,6 +48,10 @@ export default function KeyManager({ onClose }) {
     try {
       setOnlineKeys(await api.adminList(ADMIN_PASS));
       setOMsg("");
+      try {
+        const s = await api.adminGetSettings(ADMIN_PASS);
+        if (s?.alert_lead_days) setAlertLead(s.alert_lead_days);
+      } catch {}
     } catch {
       setOMsg("Can't reach the licensing server.");
     }
@@ -113,6 +120,26 @@ export default function KeyManager({ onClose }) {
       setOMsg("Renew failed.");
     }
     setBusy(null);
+  };
+  const toggleAutoRenew = async (k, cur) => {
+    setBusy(k);
+    try {
+      await api.adminAutoRenew(ADMIN_PASS, k, !cur, renewDays);
+      setOMsg(!cur ? `Auto-renew ON — this key will extend ${renewDays} days near expiry.` : "Auto-renew turned off.");
+      await loadOnline();
+    } catch {
+      setOMsg("Couldn't update auto-renew.");
+    }
+    setBusy(null);
+  };
+  const changeAlertLead = async (days) => {
+    setAlertLead(days);
+    try {
+      await api.adminSetSettings(ADMIN_PASS, days);
+      setOMsg(`Expiry warnings now fire ${days} days before a key runs out.`);
+    } catch {
+      setOMsg("Couldn't save alert timing.");
+    }
   };
   const resendEmail = async (k) => {
     setBusy(k);
@@ -217,15 +244,24 @@ export default function KeyManager({ onClose }) {
                   <button data-testid="online-generate" onClick={createOnline} className="flex items-center gap-2 px-4 py-2.5 rounded-lg hl-fire-gradient text-white font-600"><Plus size={16} /> Create</button>
                 </div>
                 {oMsg && <div className="text-[var(--hl-amber)] text-sm" data-testid="online-msg">{oMsg}</div>}
-                <div className="flex items-center gap-2 text-xs text-[var(--hl-muted)]">
-                  <span className="uppercase tracking-wider">Renew length</span>
-                  <select data-testid="renew-days-select" value={renewDays} onChange={(e) => setRenewDays(Number(e.target.value))} className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-1.5 text-[var(--hl-text)] outline-none focus:border-[var(--hl-fire)]">
-                    <option value={30}>30 days</option>
-                    <option value={90}>90 days (season)</option>
-                    <option value={180}>180 days</option>
-                    <option value={365}>365 days</option>
-                  </select>
-                  <span>— used by the ↻ renew button.</span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--hl-muted)]">
+                  <div className="flex items-center gap-2">
+                    <span className="uppercase tracking-wider">Renew length</span>
+                    <select data-testid="renew-days-select" value={renewDays} onChange={(e) => setRenewDays(Number(e.target.value))} className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-1.5 text-[var(--hl-text)] outline-none focus:border-[var(--hl-fire)]">
+                      <option value={30}>30 days</option>
+                      <option value={90}>90 days (season)</option>
+                      <option value={180}>180 days</option>
+                      <option value={365}>365 days</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="uppercase tracking-wider flex items-center gap-1"><AlertTriangle size={12} /> Warn me</span>
+                    <select data-testid="alert-lead-select" value={alertLead} onChange={(e) => changeAlertLead(Number(e.target.value))} className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-1.5 text-[var(--hl-text)] outline-none focus:border-[var(--hl-fire)]">
+                      <option value={7}>7 days before</option>
+                      <option value={14}>14 days before</option>
+                      <option value={30}>30 days before</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="max-h-[300px] overflow-y-auto hl-scroll space-y-2" data-testid="online-list">
                   {onlineKeys.length === 0 && <div className="text-center text-[var(--hl-muted)] text-sm py-6">No server keys yet.</div>}
@@ -252,8 +288,11 @@ export default function KeyManager({ onClose }) {
                             <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)]">No expiry</span>
                           )}
                           {k.email_sent_at && <span className="text-[10px] text-[var(--hl-muted)] inline-flex items-center gap-1"><Send size={10} /> emailed</span>}
+                          {k.auto_renew && <span className="text-[10px] uppercase tracking-wider text-[var(--hl-fire)] inline-flex items-center gap-1" data-testid={`online-autorenew-badge-${i}`}><Repeat size={10} /> auto-renew {k.auto_renew_days}d</span>}
                         </div>
                       </div>
+                      <button data-testid={`online-qr-${i}`} onClick={() => setQrKey(k.key)} className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] hover:text-white hover:bg-white/10" title="Show QR to open this DJ's status page"><QrCode size={14} /></button>
+                      <button data-testid={`online-autorenew-${i}`} disabled={busy === k.key} onClick={() => toggleAutoRenew(k.key, k.auto_renew)} className={`h-8 w-8 grid place-items-center rounded hover:bg-white/10 disabled:opacity-40 ${k.auto_renew ? "text-[var(--hl-fire)]" : "text-[var(--hl-muted)] hover:text-[var(--hl-fire)]"}`} title={k.auto_renew ? "Auto-renew ON — click to turn off" : "Turn on auto-renew"}><Repeat size={14} /></button>
                       {(k.expires_at || k.revoked || k.expired) && (
                         <button data-testid={`online-renew-${i}`} disabled={busy === k.key} onClick={() => renewOnline(k.key)} className="h-8 px-2 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:bg-white/10 disabled:opacity-40" title={`Renew ${renewDays} days`}><RefreshCw size={14} className={busy === k.key ? "animate-spin" : ""} /></button>
                       )}
@@ -313,6 +352,22 @@ export default function KeyManager({ onClose }) {
           </div>
         )}
       </div>
+
+      {qrKey && (
+        <div className="fixed inset-0 z-[60] bg-black/80 grid place-items-center p-4" data-testid="qr-modal" onMouseDown={(e) => e.target === e.currentTarget && setQrKey(null)}>
+          <div className="hl-panel rounded-2xl p-6 max-w-xs w-full text-center">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display text-base flex items-center gap-2"><QrCode size={16} className="text-[var(--hl-fire)]" /> Scan for status</h3>
+              <button data-testid="qr-close" onClick={() => setQrKey(null)} className="h-7 w-7 grid place-items-center rounded hover:bg-white/10"><X size={16} /></button>
+            </div>
+            <div className="bg-white rounded-xl p-4 inline-block">
+              <QRCodeSVG value={`${window.location.origin}/license?key=${encodeURIComponent(qrKey)}`} size={180} level="M" />
+            </div>
+            <p className="text-xs text-[var(--hl-muted)] mt-3">The DJ scans this to open their live license status on any phone — no key typing needed.</p>
+            <div className="font-display tracking-widest text-sm text-[var(--hl-amber)] mt-2 break-all">{qrKey}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

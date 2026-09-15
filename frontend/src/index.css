@@ -67,6 +67,30 @@ body {
   box-shadow: 0 0 0 1px rgba(255, 90, 31, 0.35), 0 8px 30px rgba(255, 45, 14, 0.25);
 }
 
+/* Carbon-fiber skin for the playlist window */
+.hl-carbon {
+  background-color: #0b0b0e;
+  background-image:
+    linear-gradient(27deg, #15151a 5px, transparent 5px),
+    linear-gradient(207deg, #15151a 5px, transparent 5px),
+    linear-gradient(27deg, #101014 5px, transparent 5px),
+    linear-gradient(207deg, #101014 5px, transparent 5px),
+    linear-gradient(90deg, #17171c 10px, transparent 10px),
+    linear-gradient(#131318 25%, #0e0e12 25%, #0e0e12 50%, transparent 50%, transparent 75%, #0e0e12 75%, #0e0e12);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px, 0 0, 10px 10px, 0 0, 0 0;
+}
+
+/* Faint flame-emblem watermark (rendered as an <img> in TrackList) */
+.hl-watermark {
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(56%, 440px);
+  opacity: 0.09;
+}
+
+
 /* Custom scrollbar */
 .hl-scroll::-webkit-scrollbar {
   width: 10px;

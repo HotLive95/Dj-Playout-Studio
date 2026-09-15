@@ -100,6 +100,31 @@ def days_left(expires_at: Optional[str]):
         return None
 
 
+def extend_expiry(current: Optional[str], days: int) -> str:
+    now = datetime.now(timezone.utc)
+    base = now
+    if current:
+        try:
+            exp = datetime.fromisoformat(current)
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp > now:
+                base = exp
+        except Exception:
+            base = now
+    return (base + timedelta(days=days)).isoformat()
+
+
+SETTINGS_ID = "license_settings"
+
+
+async def get_alert_lead_days() -> int:
+    doc = await db.settings.find_one({"_id": SETTINGS_ID})
+    if doc and doc.get("alert_lead_days"):
+        return int(doc["alert_lead_days"])
+    return EXPIRY_ALERT_DAYS
+
+
 def public_view(doc: dict) -> dict:
     devices = doc.get("devices", [])
     return {
@@ -115,6 +140,8 @@ def public_view(doc: dict) -> dict:
         "expired": is_expired(doc.get("expires_at")),
         "email_sent_at": doc.get("email_sent_at"),
         "last_activated_at": doc.get("last_activated_at"),
+        "auto_renew": bool(doc.get("auto_renew")),
+        "auto_renew_days": doc.get("auto_renew_days") or RENEW_DAYS,
         "created_at": doc.get("created_at"),
     }
 
@@ -212,25 +239,61 @@ async def send_owner_expiry_alert(doc: dict, dl: int) -> bool:
         return False
 
 
-async def check_expiring() -> int:
-    """Email the owner once per key when it enters the expiry-alert window."""
+async def send_owner_autorenew(doc: dict, days: int, new_exp: str) -> bool:
     if not RESEND_API_KEY or not OWNER_EMAIL:
-        return 0
-    sent = 0
+        return False
+    html = f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0c;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
+      <tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#121216;border:1px solid #26262e;border-radius:16px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(90deg,#ff5a1f,#ff1744);padding:22px 28px;"><div style="color:#fff;font-size:22px;font-weight:800;letter-spacing:2px;">HOT LIVE 95</div><div style="color:#ffe;opacity:.85;font-size:11px;letter-spacing:3px;">AUTO-RENEWED</div></td></tr>
+        <tr><td style="padding:28px;"><p style="color:#f4f4f5;font-size:16px;margin:0 0 12px;"><b>{doc.get('dj')}</b>'s license auto-renewed for another <b style="color:#ffb020;">{days} days</b>.</p>
+        <p style="color:#c9ccd1;font-size:14px;line-height:1.6;margin:0;">New expiry: <b style="color:#ff6a2b;">{str(new_exp)[:10]}</b>. No action needed — this DJ stays on-air.</p></td></tr>
+        <tr><td style="background:#0a0a0c;padding:16px 28px;border-top:1px solid #26262e;"><div style="color:#6b7280;font-size:11px;">© Hot Live 95 Detroit · A.I. Radio</div></td></tr>
+      </table></td></tr></table>
+    """
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": SENDER_EMAIL, "to": [OWNER_EMAIL],
+            "subject": f"♻️ {doc.get('dj')}'s Hot Live 95 key auto-renewed {days} days",
+            "html": html,
+        })
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Auto-renew email failed: {e}")
+        return False
+
+
+async def process_expiry() -> dict:
+    """Daily pass: auto-renew flagged keys nearing expiry; email owner for the rest."""
+    lead = await get_alert_lead_days()
+    alerts = 0
+    renews = 0
     cursor = db.licenses.find({"revoked": {"$ne": True}, "expires_at": {"$nin": [None, ""]}})
     async for doc in cursor:
         dl = days_left(doc.get("expires_at"))
-        if dl is None or dl < 0 or dl > EXPIRY_ALERT_DAYS:
+        if dl is None or dl > lead:
+            continue
+        if doc.get("auto_renew"):
+            days = int(doc.get("auto_renew_days") or RENEW_DAYS)
+            new_exp = extend_expiry(doc.get("expires_at"), days)
+            await db.licenses.update_one(
+                {"key_norm": doc["key_norm"]},
+                {"$set": {"expires_at": new_exp, "expiry_alert_for": None}},
+            )
+            await send_owner_autorenew(doc, days, new_exp)
+            renews += 1
+            continue
+        if dl < 0:
             continue
         if doc.get("expiry_alert_for") == doc.get("expires_at"):
             continue
-        if await send_owner_expiry_alert(doc, dl):
+        if OWNER_EMAIL and RESEND_API_KEY and await send_owner_expiry_alert(doc, dl):
             await db.licenses.update_one(
                 {"key_norm": doc["key_norm"]},
                 {"$set": {"expiry_alert_for": doc.get("expires_at")}},
             )
-            sent += 1
-    return sent
+            alerts += 1
+    return {"alerts": alerts, "renews": renews}
 
 
 # ---------- Public activation endpoints ----------
@@ -383,24 +446,51 @@ async def admin_renew(key: str, body: RenewBody, x_admin_token: Optional[str] = 
     if not doc:
         raise HTTPException(status_code=404, detail="Key not found")
     days = int(body.days or RENEW_DAYS)
-    now = datetime.now(timezone.utc)
-    base = now
-    cur = doc.get("expires_at")
-    if cur:
-        try:
-            exp = datetime.fromisoformat(cur)
-            if exp.tzinfo is None:
-                exp = exp.replace(tzinfo=timezone.utc)
-            if exp > now:
-                base = exp
-        except Exception:
-            base = now
-    new_exp = (base + timedelta(days=days)).isoformat()
+    new_exp = extend_expiry(doc.get("expires_at"), days)
     await db.licenses.update_one(
         {"key_norm": normalize_key(key)},
-        {"$set": {"expires_at": new_exp, "revoked": False}},
+        {"$set": {"expires_at": new_exp, "revoked": False, "expiry_alert_for": None}},
     )
     return {"status": "ok", "expires_at": new_exp, "days": days}
+
+
+class AutoRenewBody(BaseModel):
+    enabled: bool = True
+    days: Optional[int] = None
+
+
+@api_router.post("/admin/keys/{key}/auto-renew")
+async def admin_auto_renew(key: str, body: AutoRenewBody, x_admin_token: Optional[str] = Header(None)):
+    check_admin(x_admin_token)
+    upd = {"auto_renew": bool(body.enabled)}
+    if body.days:
+        upd["auto_renew_days"] = int(body.days)
+    r = await db.licenses.update_one({"key_norm": normalize_key(key)}, {"$set": upd})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Key not found")
+    return {"status": "ok", "auto_renew": bool(body.enabled), "auto_renew_days": body.days or RENEW_DAYS}
+
+
+class SettingsBody(BaseModel):
+    alert_lead_days: int = 7
+
+
+@api_router.get("/admin/settings")
+async def admin_get_settings(x_admin_token: Optional[str] = Header(None)):
+    check_admin(x_admin_token)
+    lead = await get_alert_lead_days()
+    return {"alert_lead_days": lead, "renew_days": RENEW_DAYS}
+
+
+@api_router.post("/admin/settings")
+async def admin_set_settings(body: SettingsBody, x_admin_token: Optional[str] = Header(None)):
+    check_admin(x_admin_token)
+    await db.settings.update_one(
+        {"_id": SETTINGS_ID},
+        {"$set": {"alert_lead_days": max(1, int(body.alert_lead_days))}},
+        upsert=True,
+    )
+    return {"status": "ok", "alert_lead_days": max(1, int(body.alert_lead_days))}
 
 
 @api_router.post("/admin/keys/{key}/resend-email")
@@ -443,8 +533,8 @@ async def root():
 @api_router.post("/admin/run-expiry-check")
 async def admin_run_expiry_check(x_admin_token: Optional[str] = Header(None)):
     check_admin(x_admin_token)
-    sent = await check_expiring()
-    return {"status": "ok", "alerts_sent": sent, "owner_email": OWNER_EMAIL or None}
+    res = await process_expiry()
+    return {"status": "ok", "alerts_sent": res["alerts"], "auto_renewed": res["renews"], "owner_email": OWNER_EMAIL or None}
 
 
 app.include_router(api_router)
@@ -467,11 +557,11 @@ async def _start_expiry_scheduler():
         await asyncio.sleep(15)
         while True:
             try:
-                n = await check_expiring()
-                if n:
-                    logger.info(f"Expiry check sent {n} alert(s)")
+                res = await process_expiry()
+                if res["alerts"] or res["renews"]:
+                    logger.info(f"Expiry pass: {res['alerts']} alert(s), {res['renews']} auto-renew(s)")
             except Exception as e:
-                logger.error(f"Expiry check failed: {e}")
+                logger.error(f"Expiry pass failed: {e}")
             await asyncio.sleep(12 * 3600)
     asyncio.create_task(loop())
 

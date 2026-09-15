@@ -126,6 +126,16 @@ export default function TrackList({
       onDragLeave={onZoneDragLeave}
       onDrop={onZoneDrop}
     >
+      {/* Carbon-fiber skin + flame emblem watermark (tracks scroll over these) */}
+      <div className="hl-carbon absolute inset-0 z-0 pointer-events-none" aria-hidden data-testid="playlist-carbon-bg" />
+      <img
+        src={`${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
+        alt=""
+        aria-hidden
+        data-testid="playlist-logo-watermark"
+        className="hl-watermark absolute z-0 pointer-events-none select-none"
+      />
+
       {fileDragging && (
         <div
           className="absolute inset-3 z-20 rounded-2xl border-2 border-dashed border-[var(--hl-fire)] bg-[rgba(255,90,31,0.12)] backdrop-blur-sm grid place-items-center pointer-events-none"
@@ -167,7 +177,7 @@ export default function TrackList({
       />
 
       {/* Playlist header */}
-      <div className="px-6 pt-5 pb-4 flex items-end justify-between gap-4">
+      <div className="relative z-10 px-6 pt-5 pb-4 flex items-end justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--hl-muted)]">
             Now editing
@@ -215,8 +225,12 @@ export default function TrackList({
         </div>
       </div>
 
-      {/* Track rows */}
-      <div className="flex-1 overflow-y-auto hl-scroll px-4 pb-6">
+      {/* Track rows — windowed to ~6 rows, then scrolls */}
+      <div
+        className="relative z-10 flex-1 overflow-y-auto hl-scroll px-4 pb-6"
+        data-testid="track-scroll"
+        style={items.length > 6 ? { maxHeight: "27rem" } : undefined}
+      >
         {items.length === 0 ? (
           <div
             className="mx-2 mt-4 border-2 border-dashed border-[var(--hl-line)] rounded-xl py-16 text-center"

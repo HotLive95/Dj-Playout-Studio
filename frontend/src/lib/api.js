@@ -24,8 +24,15 @@ export const api = {
   adminCreate: (token, dj, maxDevices, expiresAt, email) =>
     post("/api/admin/keys", { dj, email, max_devices: maxDevices, expires_at: expiresAt }, token),
   adminRenew: (token, key, days) => post(`/api/admin/keys/${key}/renew`, { days }, token),
+  adminAutoRenew: (token, key, enabled, days) => post(`/api/admin/keys/${key}/auto-renew`, { enabled, days }, token),
   adminResendEmail: (token, key) => post(`/api/admin/keys/${key}/resend-email`, {}, token),
   adminRunExpiryCheck: (token) => post(`/api/admin/run-expiry-check`, {}, token),
+  adminGetSettings: async (token) => {
+    const res = await fetch(`${BASE}/api/admin/settings`, { headers: { "X-Admin-Token": token } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  adminSetSettings: (token, alertLeadDays) => post(`/api/admin/settings`, { alert_lead_days: alertLeadDays }, token),
   adminList: async (token) => {
     const res = await fetch(`${BASE}/api/admin/keys`, { headers: { "X-Admin-Token": token } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

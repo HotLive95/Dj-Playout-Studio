@@ -49,6 +49,23 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 10 (2026-06) — backend curl-verified + UI E2E
+- QR License Link: each online key has a QR button (KeyManager) → modal shows a scannable
+  QR (`qrcode.react`) to `${origin}/license?key=...` so DJs open their status page on a phone.
+- Alert Lead Time: owner dropdown 7/14/30 persisted in Mongo `settings` doc
+  (`GET/POST /api/admin/settings`); `process_expiry` uses it (fallback EXPIRY_ALERT_DAYS).
+- Auto-Renew: per-key toggle (`POST /api/admin/keys/{key}/auto-renew {enabled, days}`); the
+  daily pass auto-extends flagged keys near expiry by their stored days (set to the current
+  renew-length dropdown value when enabled) and emails the owner. Verified: 3d key → 92d.
+- Playlist window skin: carbon-fiber CSS texture (`.hl-carbon`) + faint flame-emblem watermark
+  (`/public/hl-emblem.png`, transparent) behind the track list; tracks scroll over it.
+- Scroll window: track list capped to ~6 rows (maxHeight 27rem) then scrolls.
+- Jingle pads: drag-and-drop audio files from the OS onto a pad to assign/replace; remove (✕)
+  button always visible.
+- Verified sender: SENDER_EMAIL can be a verified Resend domain address. NOTE: hotlive95.com is
+  NOT yet verified in Resend, so it's kept as `onboarding@resend.dev` (works) until the owner
+  verifies the domain, then flip SENDER_EMAIL to `Hot Live 95 <Dinthestreets@hotlive95.com>`.
+
 ## Update 9 (2026-06) — backend curl-verified + UI E2E
 - Expiry Alerts: backend daily scheduler (`check_expiring`, startup asyncio loop, 12h) emails
   OWNER_EMAIL once per key when it enters the ≤7-day window (`expiry_alert_for` flag re-arms on
