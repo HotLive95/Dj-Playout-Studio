@@ -1,5 +1,5 @@
 import React from "react";
-import { Play, Pause, SkipBack, SkipForward, Waves, Headphones } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Waves, Headphones, Shuffle } from "lucide-react";
 
 // Slim, always-visible transport bar for phones only (hidden on md+). Pinned to
 // the bottom of the viewport so DJs can play/pause/skip/cue one-handed without
@@ -11,6 +11,8 @@ export const MobileMiniPlayer = ({
   duration,
   cueing,
   onCue,
+  shuffle,
+  onToggleShuffle,
   onTogglePlay,
   onNext,
   onPrev,
@@ -39,6 +41,18 @@ export const MobileMiniPlayer = ({
             {track ? (isPlaying ? "On air" : "Paused") : "Load a track to begin"}
           </div>
         </div>
+        <button
+          data-testid="mini-shuffle-button"
+          onClick={onToggleShuffle}
+          className={`h-9 w-9 grid place-items-center rounded-full transition ${
+            shuffle
+              ? "text-[var(--hl-fire)] bg-[rgba(255,90,31,0.15)]"
+              : "text-[var(--hl-muted)] active:bg-white/10"
+          }`}
+          title="Shuffle: play in random order"
+        >
+          <Shuffle size={16} />
+        </button>
         <button
           data-testid="mini-cue-button"
           onClick={onCue}

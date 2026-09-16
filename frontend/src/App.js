@@ -31,6 +31,7 @@ const defaultSettings = {
   shuffle: false,
   crossfade: true,
   crossfadeSeconds: 3,
+  shuffleAll: false,
   volume: 1,
   programSink: "",
   cueSink: "",
@@ -518,10 +519,22 @@ function App() {
     [playlists, currentPlaylistId]
   );
 
-  const queueTracks = useMemo(
-    () => (currentPlaylist ? currentPlaylist.trackIds.map((id) => tracks[id]).filter(Boolean) : []),
-    [currentPlaylist, tracks]
-  );
+  const queueTracks = useMemo(() => {
+    if (settings.shuffleAll) {
+      const seen = new Set();
+      const out = [];
+      for (const p of playlists) {
+        for (const id of p.trackIds) {
+          if (!seen.has(id) && tracks[id]) {
+            seen.add(id);
+            out.push(tracks[id]);
+          }
+        }
+      }
+      return out;
+    }
+    return currentPlaylist ? currentPlaylist.trackIds.map((id) => tracks[id]).filter(Boolean) : [];
+  }, [settings.shuffleAll, playlists, currentPlaylist, tracks]);
 
   const getUrl = useCallback((t) => platform.getUrl(t), []);
 
@@ -936,6 +949,11 @@ function App() {
   const setVolume = (v) => setSettings((s) => ({ ...s, volume: v }));
   const toggleAutoplay = () => setSettings((s) => ({ ...s, autoplay: !s.autoplay }));
   const toggleShuffle = () => setSettings((s) => ({ ...s, shuffle: !s.shuffle }));
+  const toggleShuffleAll = () =>
+    setSettings((s) => {
+      const on = !s.shuffleAll;
+      return { ...s, shuffleAll: on, shuffle: on ? true : s.shuffle };
+    });
   const toggleCrossfade = () => setSettings((s) => ({ ...s, crossfade: !s.crossfade }));
   const setCrossfadeSeconds = (n) => setSettings((s) => ({ ...s, crossfadeSeconds: n }));
   const setProgramSink = (id) => setSettings((s) => ({ ...s, programSink: id }));
@@ -1104,6 +1122,8 @@ function App() {
           onSchedule={setScheduleForId}
           onImportPlaylist={importPlaylist}
           durationOf={durationOf}
+          shuffleAll={settings.shuffleAll}
+          onToggleShuffleAll={toggleShuffleAll}
         />
         <main className="flex-1 flex flex-col min-w-0 min-h-[38vh] md:min-h-0">
           <TrackList
@@ -1208,6 +1228,8 @@ function App() {
         duration={playback.duration}
         cueing={cue.trackId === currentTrackId && cue.isPlaying}
         onCue={cueCurrent}
+        shuffle={settings.shuffle}
+        onToggleShuffle={toggleShuffle}
         onTogglePlay={togglePlay}
         onNext={next}
         onPrev={prev}

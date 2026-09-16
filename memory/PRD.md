@@ -112,6 +112,18 @@ for "Hot Live 95 Detroit A.I. Radio".
   helpers. Verified via node logic test (/tmp/shuffle_test.js): no-repeat+full-coverage n=5, n=1 no next,
   n=2 alternates, sequential still stops at end. UI toggle verified on mobile.
 
+## Update 16 (2026-06) — verified
+- Mobile page scroller: root cause of "can't scroll / doesn't fit" was `body { overflow:hidden }` +
+  `html,body,#root { height:100% }` locking the page. Added a `@media (max-width:767px)` override in
+  index.css: height:auto/min-height:100% + body overflow-y:auto (touch scrolling). Desktop unchanged.
+  Verified: page scrollable at 390px, no horizontal scroll.
+- Shuffle on mobile mini-player: added a Shuffle button (data-testid `mini-shuffle-button`) wired to
+  the same `settings.shuffle` / `toggleShuffle`.
+- Shuffle whole show: new `settings.shuffleAll` (default false) + Sidebar footer toggle
+  (data-testid `shuffle-all-toggle`). When on, queueTracks becomes every track across ALL playlists
+  (dedup, in order) and shuffle is force-enabled, so the engine randomizes across the whole show.
+  Verified: toggles active on mobile.
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

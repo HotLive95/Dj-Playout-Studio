@@ -34,6 +34,22 @@ body {
   overflow: hidden;
 }
 
+/* On phones the fixed desktop console can't fit — let the page scroll vertically
+   so every panel (jingles, cue, player) is reachable. Desktop stays fixed. */
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+  }
+  body {
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 .font-display {
   font-family: "Oswald", "Barlow", sans-serif;
   letter-spacing: 0.02em;

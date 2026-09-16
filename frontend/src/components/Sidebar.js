@@ -9,6 +9,7 @@ import {
   ListMusic,
   Clock,
   FolderDown,
+  Shuffle,
 } from "lucide-react";
 import { formatTotal } from "../lib/format";
 
@@ -22,6 +23,8 @@ export default function Sidebar({
   onSchedule,
   onImportPlaylist,
   durationOf,
+  shuffleAll,
+  onToggleShuffleAll,
 }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -228,8 +231,23 @@ export default function Sidebar({
         })}
       </div>
 
-      <div className="px-4 py-3 border-t border-[var(--hl-line)] text-[10px] text-[var(--hl-muted)] tracking-wide">
-        HOT LIVE 95 · A.I. RADIO · DETROIT
+      <div className="px-3 py-3 border-t border-[var(--hl-line)]">
+        <button
+          data-testid="shuffle-all-toggle"
+          onClick={onToggleShuffleAll}
+          className={`w-full flex items-center justify-center gap-2 h-9 rounded-lg text-xs font-700 border transition ${
+            shuffleAll
+              ? "border-[var(--hl-fire)] text-[var(--hl-fire)] bg-[rgba(255,90,31,0.12)] hl-glow"
+              : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)]"
+          }`}
+          title="Shuffle every track across all playlists as one big show"
+        >
+          <Shuffle size={15} />
+          {shuffleAll ? "Shuffling All Playlists" : "Shuffle All Playlists"}
+        </button>
+        <div className="mt-2 text-center text-[10px] text-[var(--hl-muted)] tracking-wide">
+          HOT LIVE 95 · A.I. RADIO · DETROIT
+        </div>
       </div>
     </aside>
   );
