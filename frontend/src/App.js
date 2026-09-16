@@ -28,6 +28,7 @@ const uid = () =>
 
 const defaultSettings = {
   autoplay: true,
+  shuffle: false,
   crossfade: true,
   crossfadeSeconds: 3,
   volume: 1,
@@ -376,6 +377,7 @@ function App() {
     const e = engineRef.current;
     if (!e) return;
     e.setAutoplay(settings.autoplay);
+    e.setShuffle(settings.shuffle);
     e.setCrossfade(settings.crossfade, settings.crossfadeSeconds);
     e.setVolume(settings.volume);
     e.setMainSink(settings.programSink || "");
@@ -933,6 +935,7 @@ function App() {
 
   const setVolume = (v) => setSettings((s) => ({ ...s, volume: v }));
   const toggleAutoplay = () => setSettings((s) => ({ ...s, autoplay: !s.autoplay }));
+  const toggleShuffle = () => setSettings((s) => ({ ...s, shuffle: !s.shuffle }));
   const toggleCrossfade = () => setSettings((s) => ({ ...s, crossfade: !s.crossfade }));
   const setCrossfadeSeconds = (n) => setSettings((s) => ({ ...s, crossfadeSeconds: n }));
   const setProgramSink = (id) => setSettings((s) => ({ ...s, programSink: id }));
@@ -1102,7 +1105,7 @@ function App() {
           onImportPlaylist={importPlaylist}
           durationOf={durationOf}
         />
-        <main className="flex-1 flex flex-col min-w-0 min-h-[55vh] md:min-h-0">
+        <main className="flex-1 flex flex-col min-w-0 min-h-[38vh] md:min-h-0">
           <TrackList
             playlist={currentPlaylist}
             tracks={tracks}
@@ -1163,6 +1166,7 @@ function App() {
         duration={playback.duration}
         volume={settings.volume}
         autoplay={settings.autoplay}
+        shuffle={settings.shuffle}
         crossfade={settings.crossfade}
         crossfadeSeconds={settings.crossfadeSeconds}
         trimSilence={settings.trimSilence}
@@ -1181,6 +1185,7 @@ function App() {
         onSeek={seek}
         onVolume={setVolume}
         onToggleAutoplay={toggleAutoplay}
+        onToggleShuffle={toggleShuffle}
         onToggleCrossfade={toggleCrossfade}
         onCrossfadeSeconds={setCrossfadeSeconds}
         onToggleTrimSilence={toggleTrimSilence}

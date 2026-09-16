@@ -101,6 +101,17 @@ for "Hot Live 95 Detroit A.I. Radio".
   standalone; remembers dismissal in localStorage `hotlive95_a2hs_dismissed`. Rendered in App.js.
   Verified: iOS banner shows with correct copy, dismiss hides + persists.
 
+## Update 15 (2026-06) — verified
+- Mobile compaction: jingle pads now render as a 3-col wrapping grid on phones (all 6 pads visible,
+  no horizontal scroll) via `grid grid-cols-3 md:flex` on the pad container; sidebar max-h reduced to
+  30vh and main min-h to 38vh on mobile so the JingleBar/CuePanel/PlayerBar sit closer and are reachable.
+- Shuffle / random playback: new `settings.shuffle` (default false) + PlayerBar "Shuffle" toggle
+  (data-testid `shuffle-toggle`; Xfade icon changed to Waves so Shuffle icon is distinct). Engine gains
+  `setShuffle`, `_hasNext`, `_nextIndex` (random, no immediate repeat, cycles all before repeating via
+  a `_recent` bag). All 4 advance paths (next(), _onTime early-end, crossfade, _onEnded) use the new
+  helpers. Verified via node logic test (/tmp/shuffle_test.js): no-repeat+full-coverage n=5, n=1 no next,
+  n=2 alternates, sequential still stops at end. UI toggle verified on mobile.
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

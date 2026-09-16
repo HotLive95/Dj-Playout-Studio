@@ -20,6 +20,8 @@ export default class AudioEngine {
     this.crossfade = true;
     this.crossfadeSeconds = 3;
     this.autoplay = true;
+    this.shuffle = false;
+    this._recent = [];
     this.trimSilence = false;
     this.cueAutoFade = false;
     this.cueFadeSeconds = 1.5;
@@ -114,6 +116,38 @@ export default class AudioEngine {
     this.autoplay = on;
   }
 
+  setShuffle(on) {
+    this.shuffle = !!on;
+    if (!on) this._recent = [];
+  }
+
+  // Whether there's another track to advance to given the current mode.
+  _hasNext() {
+    return this.shuffle ? this.queue.length > 1 : this.index < this.queue.length - 1;
+  }
+
+  // The index to play next: random (no immediate repeat, avoids recent history
+  // until the playlist is exhausted) when shuffle is on, else sequential.
+  _nextIndex() {
+    if (!this.shuffle) {
+      return this.index < this.queue.length - 1 ? this.index + 1 : -1;
+    }
+    const n = this.queue.length;
+    if (n <= 1) return -1;
+    let pool = [];
+    for (let i = 0; i < n; i++) {
+      if (i !== this.index && !this._recent.includes(i)) pool.push(i);
+    }
+    if (pool.length === 0) {
+      this._recent = [];
+      for (let i = 0; i < n; i++) if (i !== this.index) pool.push(i);
+    }
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    this._recent.push(pick);
+    if (this._recent.length > Math.max(1, n - 1)) this._recent.shift();
+    return pick;
+  }
+
   async setMainSink(deviceId) {
     for (const el of [this.a, this.b]) {
       if (typeof el.setSinkId === "function") {
@@ -195,7 +229,8 @@ export default class AudioEngine {
   }
 
   next() {
-    if (this.index < this.queue.length - 1) this.playIndex(this.index + 1);
+    const n = this._nextIndex();
+    if (n >= 0) this.playIndex(n);
   }
 
   prev() {
@@ -284,7 +319,7 @@ export default class AudioEngine {
           : this.trimSilence && track && track.tailStart
           ? Math.min(track.tailStart, dur)
           : dur;
-      const hasNext = this.index < this.queue.length - 1;
+      const hasNext = this._hasNext();
       const remaining = effEnd - el.currentTime;
       const hasEarlyEnd = effEnd < dur - 0.05;
       if (this.cueAutoFade && !this._fading) {
@@ -304,7 +339,8 @@ export default class AudioEngine {
       ) {
         this._startCrossfade();
       } else if (!this._fading && hasEarlyEnd && el.currentTime >= effEnd) {
-        if (this.autoplay && hasNext) this.playIndex(this.index + 1);
+        const n = this._nextIndex();
+        if (this.autoplay && n >= 0) this.playIndex(n);
         else el.pause();
       }
     }
@@ -321,7 +357,11 @@ export default class AudioEngine {
     }
     const from = this.active;
     const to = this.idle;
-    const nextIndex = this.index + 1;
+    const nextIndex = this._nextIndex();
+    if (nextIndex < 0) {
+      this._fading = false;
+      return;
+    }
     const url = await this.getUrl(this.queue[nextIndex]);
     if (!url) {
       this._fading = false;
@@ -375,8 +415,9 @@ export default class AudioEngine {
   _onEnded(el) {
     if (el !== this.active) return;
     if (this._fading) return;
-    if (this.autoplay && this.index < this.queue.length - 1) {
-      this.playIndex(this.index + 1);
+    const n = this._nextIndex();
+    if (this.autoplay && n >= 0) {
+      this.playIndex(n);
     } else {
       this._emit();
     }

@@ -25,6 +25,7 @@ export default function PlayerBar({
   duration,
   volume,
   autoplay,
+  shuffle,
   crossfade,
   crossfadeSeconds,
   trimSilence,
@@ -43,6 +44,7 @@ export default function PlayerBar({
   onSeek,
   onVolume,
   onToggleAutoplay,
+  onToggleShuffle,
   onToggleCrossfade,
   onCrossfadeSeconds,
   onToggleTrimSilence,
@@ -305,6 +307,18 @@ export default function PlayerBar({
           >
             <Repeat size={15} /> Auto
           </button>
+          <button
+            data-testid="shuffle-toggle"
+            onClick={onToggleShuffle}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-600 border transition ${
+              shuffle
+                ? "border-[var(--hl-fire)] text-[var(--hl-fire)] bg-[rgba(255,90,31,0.1)]"
+                : "border-[var(--hl-line)] text-[var(--hl-muted)]"
+            }`}
+            title="Shuffle: play the playlist in random order"
+          >
+            <Shuffle size={15} /> Shuffle
+          </button>
 
           <div className="flex items-center gap-1.5">
             <button
@@ -317,7 +331,7 @@ export default function PlayerBar({
               }`}
               title="Crossfade between tracks"
             >
-              <Shuffle size={15} /> Xfade
+              <Waves size={15} /> Xfade
             </button>
             {crossfade && (
               <select
