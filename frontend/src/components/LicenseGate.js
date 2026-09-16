@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { KeyRound, ShieldCheck, Lock } from "lucide-react";
+import { KeyRound, ShieldCheck, Lock, ShieldPlus } from "lucide-react";
+import KeyManager from "./KeyManager";
 
 const YEAR = new Date().getFullYear();
 
@@ -7,6 +8,7 @@ export default function LicenseGate({ license, onActivate, onAcceptLegal }) {
   const [keyInput, setKeyInput] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   const activated = !!license?.activated;
   const notice = license?.lockedNotice
@@ -134,10 +136,26 @@ export default function LicenseGate({ license, onActivate, onAcceptLegal }) {
           </div>
         )}
 
-        <div className="px-6 py-3 border-t border-[var(--hl-line)] text-[10px] text-[var(--hl-muted)] tracking-wide text-center">
-          HOT LIVE 95 · A.I. RADIO · DETROIT · © {YEAR}
+        <div className="px-6 py-3 border-t border-[var(--hl-line)] flex items-center justify-between gap-3">
+          <span className="text-[10px] text-[var(--hl-muted)] tracking-wide">
+            HOT LIVE 95 · A.I. RADIO · DETROIT · © {YEAR}
+          </span>
+          <button
+            data-testid="license-gate-admin-tab"
+            onClick={() => setShowAdmin(true)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] transition"
+            title="Station manager: generate & manage activation codes"
+          >
+            <ShieldPlus size={13} /> Admin · Manage codes
+          </button>
         </div>
       </div>
+
+      {showAdmin && (
+        <div data-testid="license-gate-admin-modal">
+          <KeyManager onClose={() => setShowAdmin(false)} />
+        </div>
+      )}
     </div>
   );
 }
