@@ -1,0 +1,23 @@
+{
+  "summary": "Verified the service-worker/reload-loop fix in /app/frontend/src/index.js. The preview no longer flashes: after first load (which unregisters any stale SW) and a subsequent reload, only a single main-frame navigation was recorded over a 10s observation window. navigator.serviceWorker.getRegistrations().length === 0 and caches.keys().length === 0 in the dev preview, confirming the SW is not being registered. All three regression checks pass: activation gate renders, main app renders after setting hotlive95_license (My License button visible, DJ Playout Studio UI stable), and /license and /live routes render without a reload loop.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "dev-only (non-blocking)", "issues": ["Known React hydration warning: '<span> cannot be a child of <option>' — not related to reload loop, noted as separate hygiene item"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "index.js SW gate is correct: registration only under NODE_ENV==='production'; dev path unregisters existing SWs and clears caches. Guard against Electron via window.hotlive.isElectron is preserved."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "Set localStorage.hotlive95_license = {activated:true, legalAccepted:true, online:false, key:'QA-KEY', activatedAt:<ISO now>} to bypass activation gate during regression checks.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Bug fix for repeated flashing/reload caused by CRA dev-preview service worker is fully verified. Measurements: 2nd load nav_count=1 over 10s; SW regs=0; caches=0. Activation gate + activated main app + /license + /route render stably. Any future flashing report should first check that public/sw.js is not being registered in dev.",
+  "rca of the issue": "Root cause: public/sw.js was registered unconditionally on 'load' in index.js. In the CRA dev preview, the service worker intercepts fetches while webpack-dev-server / hot reload still tries to control the page, producing a navigation/refresh loop. Fix: gate the register() call on process.env.NODE_ENV==='production' and, in dev, actively unregister existing registrations and clear caches so already-affected users self-heal on next visit."
+}
