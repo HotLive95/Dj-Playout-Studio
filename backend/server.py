@@ -311,8 +311,11 @@ async def process_expiry() -> dict:
     lead = await get_alert_lead_days()
     alerts = 0
     renews = 0
-    cursor = db.licenses.find({"revoked": {"$ne": True}, "expires_at": {"$nin": [None, ""]}})
-    async for doc in cursor:
+    # Materialize the matching docs first: process_expiry mutates expires_at, and
+    # iterating a live cursor while updating matched docs risks re-yielding a moved
+    # document (double auto-renew).
+    docs = await db.licenses.find({"revoked": {"$ne": True}, "expires_at": {"$nin": [None, ""]}}).to_list(length=1000)
+    for doc in docs:
         dl = days_left(doc.get("expires_at"))
         if dl is None or dl > lead:
             continue
@@ -449,10 +452,12 @@ async def admin_create_key(body: CreateKeyBody, x_admin_token: Optional[str] = H
         "last_activated_at": None,
         "created_at": now_iso(),
     }
+    # Persist FIRST so a slow/hanging Resend call never delays or loses the key.
+    await db.licenses.insert_one(doc)
     sent = await send_welcome_email(doc["email"], doc["dj"], key, doc["expires_at"])
     if sent:
+        await db.licenses.update_one({"key_norm": doc["key_norm"]}, {"$set": {"email_sent_at": now_iso()}})
         doc["email_sent_at"] = now_iso()
-    await db.licenses.insert_one(doc)
     out = public_view(doc)
     out["email_sent"] = sent
     return out
@@ -594,6 +599,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+_scheduler_task = None
+
+
 @app.on_event("startup")
 async def _start_expiry_scheduler():
     async def loop():
@@ -606,9 +614,14 @@ async def _start_expiry_scheduler():
             except Exception as e:
                 logger.error(f"Expiry pass failed: {e}")
             await asyncio.sleep(12 * 3600)
-    asyncio.create_task(loop())
+    global _scheduler_task
+    # Keep a strong reference so the background loop is not garbage-collected mid-flight.
+    _scheduler_task = asyncio.create_task(loop())
 
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    global _scheduler_task
+    if _scheduler_task:
+        _scheduler_task.cancel()
     client.close()

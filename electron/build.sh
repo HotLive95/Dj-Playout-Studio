@@ -28,9 +28,9 @@ fi
 
 echo "==> [4/4] Packaging desktop app ($TARGET)..."
 case "$TARGET" in
-  win)   npx electron-builder --win portable nsis ;;
-  mac)   npx electron-builder --mac dmg zip ;;
-  linux) npx electron-builder --linux AppImage ;;
+  win)   npx electron-builder --win portable --publish never ;;
+  mac)   npx electron-builder --mac dmg zip --publish never ;;
+  linux) npx electron-builder --linux AppImage --publish never ;;
   *)     npx electron-builder ;;
 esac
 

@@ -1016,6 +1016,7 @@ function App() {
     activeJinglesRef.current.push(a);
     setJingleActive(true);
     a.onended = () => {
+      a.src = "";
       activeJinglesRef.current = activeJinglesRef.current.filter((x) => x !== a);
       if (activeJinglesRef.current.length === 0) setJingleActive(false);
     };
@@ -1033,7 +1034,10 @@ function App() {
       return n;
     });
   const stopJingles = () => {
-    activeJinglesRef.current.forEach((a) => a.pause());
+    activeJinglesRef.current.forEach((a) => {
+      a.pause();
+      a.src = "";
+    });
     activeJinglesRef.current = [];
     setJingleActive(false);
   };

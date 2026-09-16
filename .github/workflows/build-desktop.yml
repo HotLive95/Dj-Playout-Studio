@@ -69,7 +69,6 @@ jobs:
           # Never fail the Mac build trying to code-sign; produces an unsigned
           # (right-click -> Open) app. Add Apple/Windows certs later to sign.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd electron
           yarn dist:${{ matrix.target }}

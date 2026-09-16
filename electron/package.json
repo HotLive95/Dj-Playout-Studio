@@ -9,9 +9,9 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "dist:win": "electron-builder --win portable nsis",
-    "dist:mac": "electron-builder --mac dmg zip",
-    "dist:linux": "electron-builder --linux AppImage"
+    "dist:win": "electron-builder --win portable --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --publish never",
+    "dist:linux": "electron-builder --linux AppImage --publish never"
   },
   "devDependencies": {
     "@electron/notarize": "2.5.0",
@@ -36,9 +36,6 @@
       "target": [
         {
           "target": "portable"
-        },
-        {
-          "target": "nsis"
         }
       ],
       "icon": "build-assets/icon.ico"

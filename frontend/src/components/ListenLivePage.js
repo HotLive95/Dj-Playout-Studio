@@ -17,6 +17,33 @@ export default function ListenLivePage() {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
 
+  // Recover gracefully when a live stream drops, stalls, or ends mid-play.
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    const onError = () => {
+      setPlaying(false);
+      setLoading(false);
+      setError("The stream dropped. Tap play to reconnect.");
+    };
+    const onStalled = () => setLoading(true);
+    const onPlaying = () => {
+      setLoading(false);
+      setError("");
+    };
+    const onEnded = () => setPlaying(false);
+    a.addEventListener("error", onError);
+    a.addEventListener("stalled", onStalled);
+    a.addEventListener("playing", onPlaying);
+    a.addEventListener("ended", onEnded);
+    return () => {
+      a.removeEventListener("error", onError);
+      a.removeEventListener("stalled", onStalled);
+      a.removeEventListener("playing", onPlaying);
+      a.removeEventListener("ended", onEnded);
+    };
+  }, []);
+
   const toggle = async () => {
     const a = audioRef.current;
     if (!a || !STREAM_URL) return;

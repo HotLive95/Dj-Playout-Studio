@@ -314,6 +314,11 @@ export default class AudioEngine {
   async _startCrossfade() {
     if (this._fading) return;
     this._fading = true;
+    // A duck volume-ramp must not fight the fade loop.
+    if (this._volRaf) {
+      cancelAnimationFrame(this._volRaf);
+      this._volRaf = null;
+    }
     const from = this.active;
     const to = this.idle;
     const nextIndex = this.index + 1;
@@ -334,8 +339,11 @@ export default class AudioEngine {
     const start = performance.now();
     const step = (now) => {
       const p = Math.min(1, (now - start) / durMs);
-      from.volume = Math.max(0, this.volume * (1 - p));
-      to.volume = Math.min(this.volume, this.volume * p);
+      // Fade toward the CURRENT effective volume so an active duck (mic/talk/
+      // jingle) is preserved across the track change instead of jumping to full.
+      const peak = this._effVol();
+      from.volume = Math.max(0, peak * (1 - p));
+      to.volume = Math.min(peak, peak * p);
       if (p < 1) {
         this._fadeRaf = requestAnimationFrame(step);
       } else {
@@ -349,6 +357,9 @@ export default class AudioEngine {
         this.idle = from;
         this.index = nextIndex;
         this._fading = false;
+        // Re-assert the effective (possibly ducked) volume on the new active
+        // element in case the duck state changed during the fade.
+        this.active.volume = this._effVol();
         this._emit();
       }
     };
