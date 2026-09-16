@@ -5,7 +5,7 @@ export default function Header({ onAir, nowPlaying, onOpenKeyManager, onOpenLice
   return (
     <header
       data-testid="app-header"
-      className="flex items-center justify-between px-6 py-3 border-b border-[var(--hl-line)] bg-[var(--hl-panel)]"
+      className="flex items-center justify-between gap-2 px-3 md:px-6 py-3 border-b border-[var(--hl-line)] bg-[var(--hl-panel)]"
     >
       <div className="flex items-center gap-3">
         <img
@@ -24,7 +24,7 @@ export default function Header({ onAir, nowPlaying, onOpenKeyManager, onOpenLice
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4">
         <button
           data-testid="open-license-status"
           onClick={onOpenLicenseStatus}

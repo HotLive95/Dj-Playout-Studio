@@ -72,6 +72,24 @@ for "Hot Live 95 Detroit A.I. Radio".
   unregistered in dev). The dev-only `<span> in <option>` console warning is NOT from our source
   (every <option> is plain text) — injected by the test browser tooling; nothing to fix.
 
+## Update 14 (2026-06) — verified
+- Admin passkey changed from `hotlive95admin` to `Hotlive95dj1108**` (frontend KeyManager.js ADMIN_PASS,
+  backend .env ADMIN_TOKEN + server default, tests). Verified: old rejected 401, new accepted 200.
+- Email sender switched to `Hot Live 95 <Dinthestreets@hotlive95dj.com>` (owner's Resend domain now verified).
+- Activation gate (LicenseGate.js): added an "Admin · Manage codes" tab in the footer that opens the
+  passkey-protected KeyManager (activation-code generator) without needing a valid key first.
+- Mobile responsiveness: the fixed-height desktop console now stacks on phones. App root scrolls
+  vertically (min-h-screen md:h-screen + overflow-x-hidden); sidebar stacks above track list
+  (flex-col md:flex-row, sidebar w-full max-h-[45vh]); JingleBar/CuePanel/PlayerBar wrap
+  (flex-wrap md:flex-nowrap, px-3 md:px-6, transport/right controls w-full md:w-1/3). No horizontal
+  page scroll at 390px or 1920px; desktop layout unchanged.
+- Flashing/refresh-loop fix (index.js dev branch): unregister() alone did NOT release the SW already
+  CONTROLLING the loaded page (it kept serving stale shell). Now: unregister all + clear all caches +
+  a single sessionStorage-guarded window.location.reload() when a controller exists, to load
+  uncontrolled. Verified with a simulated stuck SW: before has/controller=True → after has/controller=False,
+  one guarded reload, then stable (no loop).
+
+
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,
   icons 192/512 + maskable generated from the app icon/emblem), mobile meta tags + apple-touch-icon

@@ -28,7 +28,7 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
 
   return (
     <div
-      className="flex items-center gap-2 px-6 py-2 border-t border-[var(--hl-line)] bg-[#0e0e12]"
+      className="flex flex-wrap md:flex-nowrap items-center gap-2 px-3 md:px-6 py-2 border-t border-[var(--hl-line)] bg-[#0e0e12]"
       data-testid="jingle-bar"
     >
       <input
@@ -49,7 +49,7 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
         <span className="font-display text-xs tracking-[0.2em] text-[var(--hl-muted)]">JINGLES</span>
       </div>
 
-      <div className="flex items-center gap-2 flex-1 overflow-x-auto">
+      <div className="flex items-center gap-2 flex-1 min-w-0 w-full md:w-auto overflow-x-auto">
         {Array.from({ length: PAD_COUNT }).map((_, i) => {
           const j = jingles[i];
           return (

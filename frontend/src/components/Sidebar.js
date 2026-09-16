@@ -43,7 +43,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className="w-72 shrink-0 h-full flex flex-col border-r border-[var(--hl-line)] bg-[var(--hl-panel)]"
+      className="w-full md:w-72 shrink-0 h-auto md:h-full max-h-[45vh] md:max-h-none flex flex-col border-b md:border-b-0 md:border-r border-[var(--hl-line)] bg-[var(--hl-panel)]"
       data-testid="sidebar"
     >
       <div className="flex items-center justify-between px-4 pt-4 pb-2">

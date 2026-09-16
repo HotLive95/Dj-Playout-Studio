@@ -45,9 +45,25 @@ if ("serviceWorker" in navigator && !(typeof window !== "undefined" && window.ho
       navigator.serviceWorker.register(`${process.env.PUBLIC_URL || ""}/sw.js`).catch(() => {});
     });
   } else {
-    navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister())).catch(() => {});
-    if (window.caches) {
-      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
-    }
+    // Dev/preview: tear down any previously-installed worker + caches. unregister()
+    // alone does NOT release the worker that's already controlling this page, so if
+    // one is in control we do a single (flag-guarded) reload to load uncontrolled —
+    // that's what actually stops the stale-shell flashing/refresh loop.
+    (async () => {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+        if (window.caches) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((k) => caches.delete(k)));
+        }
+        if (navigator.serviceWorker.controller && !sessionStorage.getItem("hl_sw_cleared")) {
+          sessionStorage.setItem("hl_sw_cleared", "1");
+          window.location.reload();
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    })();
   }
 }

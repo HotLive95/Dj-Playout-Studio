@@ -21,7 +21,7 @@ export default function CuePanel({
 
   return (
     <div
-      className="flex items-center gap-4 px-6 py-2 border-t border-[var(--hl-line)] bg-[#0e0e12]"
+      className="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-4 px-3 md:px-6 py-2 border-t border-[var(--hl-line)] bg-[#0e0e12]"
       data-testid="cue-panel"
     >
       <div className="flex items-center gap-2 shrink-0">
@@ -87,7 +87,7 @@ export default function CuePanel({
       )}
 
       {hasDevices && (
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto md:shrink-0">
           <label className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)]">
             Air out
           </label>

@@ -64,11 +64,11 @@ export default function PlayerBar({
 
   return (
     <div
-      className="border-t border-[var(--hl-line)] bg-[var(--hl-panel)] px-6 py-3"
+      className="border-t border-[var(--hl-line)] bg-[var(--hl-panel)] px-3 md:px-6 py-3"
       data-testid="player-bar"
     >
       {/* Seek bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-xs text-[var(--hl-muted)] tabular-nums w-11 text-right" data-testid="current-time">
           {formatTime(currentTime)}
         </span>
@@ -173,9 +173,9 @@ export default function PlayerBar({
         )}
       </div>
 
-      <div className="flex items-center justify-between mt-2.5 gap-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mt-2.5 gap-3 md:gap-4">
         {/* Now playing */}
-        <div className="flex items-center gap-3 min-w-0 w-1/3">
+        <div className="flex items-center gap-3 min-w-0 w-full md:w-1/3">
           <div className="h-11 w-11 shrink-0 rounded-md hl-fire-gradient grid place-items-center">
             <Waves size={20} className="text-white" />
           </div>
@@ -190,7 +190,7 @@ export default function PlayerBar({
         </div>
 
         {/* Transport controls */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap justify-center items-center gap-3 md:gap-4">
           <button
             data-testid="prev-button"
             onClick={onPrev}
@@ -266,7 +266,7 @@ export default function PlayerBar({
         </div>
 
         {/* Right controls */}
-        <div className="flex items-center gap-2.5 w-1/3 justify-end">
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-1/3 justify-center md:justify-end">
           <button
             data-testid="auto-duck-toggle"
             onClick={onToggleAutoDuck}
