@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { formatTime } from "../lib/format";
 import Waveform from "./Waveform";
+import { SleepTimer } from "./SleepTimer";
 
 export default function PlayerBar({
   track,
@@ -26,6 +27,10 @@ export default function PlayerBar({
   volume,
   autoplay,
   shuffle,
+  shuffleAll,
+  sleepRemaining,
+  onStartSleep,
+  onCancelSleep,
   crossfade,
   crossfadeSeconds,
   trimSilence,
@@ -185,8 +190,18 @@ export default function PlayerBar({
             <div className="truncate font-600 text-sm" data-testid="player-track-name">
               {track ? track.name : "Nothing loaded"}
             </div>
-            <div className="text-[11px] text-[var(--hl-muted)] uppercase tracking-wide">
-              {track ? "Live Playout" : "Load a track to begin"}
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[11px] text-[var(--hl-muted)] uppercase tracking-wide">
+                {track ? "Live Playout" : "Load a track to begin"}
+              </span>
+              {(shuffle || shuffleAll) && (
+                <span
+                  data-testid="shuffle-indicator"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-700 tracking-wider uppercase bg-[rgba(255,90,31,0.15)] text-[var(--hl-fire)] border border-[var(--hl-fire)]"
+                >
+                  <Shuffle size={9} /> {shuffleAll ? "Shuffle All" : "Shuffle On"}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -348,6 +363,12 @@ export default function PlayerBar({
               </select>
             )}
           </div>
+
+          <SleepTimer
+            remainingMs={sleepRemaining}
+            onStart={onStartSleep}
+            onCancel={onCancelSleep}
+          />
 
           <div className="flex items-center gap-2 w-28">
             <button

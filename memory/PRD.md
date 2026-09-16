@@ -124,6 +124,16 @@ for "Hot Live 95 Detroit A.I. Radio".
   (dedup, in order) and shuffle is force-enabled, so the engine randomizes across the whole show.
   Verified: toggles active on mobile.
 
+## Update 17 (2026-06) — verified
+- Shuffle indicator: PlayerBar now-playing area shows a badge (data-testid `shuffle-indicator`) —
+  "SHUFFLE ON" when shuffle is on, "SHUFFLE ALL" when shuffleAll is on — so DJs know why tracks are random.
+- Sleep timer: new `components/SleepTimer.js` (Moon button in PlayerBar right controls, opens an
+  upward menu with 15/30/45/60/90/120 min). App.js holds `sleepEndsAt`/`sleepRemaining` with a 500ms
+  interval; at zero it calls the engine's new `fadeOutStop(6)` which ramps the on-air track to silence
+  over ~6s then pauses (restores volume for next play). Engine guards crossfade/advance with a
+  `_stopping` flag during the fade; togglePlay/playIndex cancel any pending sleep fade and un-mute.
+  Verified on desktop: badge shows, menu opens, 15-min countdown ticks (14:59), cancel clears it.
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

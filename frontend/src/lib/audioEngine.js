@@ -31,6 +31,8 @@ export default class AudioEngine {
     this.cueTrackId = null;
     this._fading = false;
     this._fadeRaf = null;
+    this._stopping = false;
+    this._sleepRaf = null;
     this._bind();
   }
 
@@ -172,6 +174,7 @@ export default class AudioEngine {
 
   async playIndex(i) {
     if (i < 0 || i >= this.queue.length) return;
+    this._cancelSleepFade();
     this._cancelFade();
     this.idle.pause();
     const url = await this.getUrl(this.queue[i]);
@@ -217,6 +220,8 @@ export default class AudioEngine {
       return;
     }
     if (this.active.paused) {
+      this._cancelSleepFade();
+      if (this.active.volume === 0) this.active.volume = this._effVol();
       try {
         await this.active.play();
       } catch {
@@ -244,6 +249,38 @@ export default class AudioEngine {
       this.active.currentTime = 0;
       this._emit();
     }
+  }
+
+  // Sleep timer: gently fade the on-air track to silence, then pause. Used for
+  // unattended overnight play so the station eases out instead of hard-stopping.
+  fadeOutStop(seconds = 6) {
+    this._cancelFade();
+    this._cancelSleepFade();
+    this._stopping = true;
+    const el = this.active;
+    const startVol = el.volume;
+    const durMs = Math.max(0.3, seconds) * 1000;
+    const start = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / durMs);
+      el.volume = Math.max(0, startVol * (1 - p));
+      if (p < 1) {
+        this._sleepRaf = requestAnimationFrame(step);
+      } else {
+        el.pause();
+        this._sleepRaf = null;
+        this._stopping = false;
+        el.volume = this._effVol();
+        this._emit();
+      }
+    };
+    this._sleepRaf = requestAnimationFrame(step);
+  }
+
+  _cancelSleepFade() {
+    if (this._sleepRaf) cancelAnimationFrame(this._sleepRaf);
+    this._sleepRaf = null;
+    this._stopping = false;
   }
 
   seek(t) {
@@ -333,12 +370,13 @@ export default class AudioEngine {
         this.crossfade &&
         this.autoplay &&
         !this._fading &&
+        !this._stopping &&
         hasNext &&
         remaining <= this.crossfadeSeconds &&
         remaining > 0.05
       ) {
         this._startCrossfade();
-      } else if (!this._fading && hasEarlyEnd && el.currentTime >= effEnd) {
+      } else if (!this._fading && !this._stopping && hasEarlyEnd && el.currentTime >= effEnd) {
         const n = this._nextIndex();
         if (this.autoplay && n >= 0) this.playIndex(n);
         else el.pause();

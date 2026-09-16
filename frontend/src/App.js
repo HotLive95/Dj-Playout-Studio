@@ -954,6 +954,30 @@ function App() {
       const on = !s.shuffleAll;
       return { ...s, shuffleAll: on, shuffle: on ? true : s.shuffle };
     });
+
+  const [sleepEndsAt, setSleepEndsAt] = useState(null);
+  const [sleepRemaining, setSleepRemaining] = useState(0);
+  useEffect(() => {
+    if (!sleepEndsAt) {
+      setSleepRemaining(0);
+      return;
+    }
+    const tick = () => {
+      const rem = sleepEndsAt - Date.now();
+      if (rem <= 0) {
+        engineRef.current?.fadeOutStop(6);
+        setSleepEndsAt(null);
+        setSleepRemaining(0);
+      } else {
+        setSleepRemaining(rem);
+      }
+    };
+    tick();
+    const iv = setInterval(tick, 500);
+    return () => clearInterval(iv);
+  }, [sleepEndsAt]);
+  const startSleep = (minutes) => setSleepEndsAt(Date.now() + minutes * 60000);
+  const cancelSleep = () => setSleepEndsAt(null);
   const toggleCrossfade = () => setSettings((s) => ({ ...s, crossfade: !s.crossfade }));
   const setCrossfadeSeconds = (n) => setSettings((s) => ({ ...s, crossfadeSeconds: n }));
   const setProgramSink = (id) => setSettings((s) => ({ ...s, programSink: id }));
@@ -1187,6 +1211,10 @@ function App() {
         volume={settings.volume}
         autoplay={settings.autoplay}
         shuffle={settings.shuffle}
+        shuffleAll={settings.shuffleAll}
+        sleepRemaining={sleepRemaining}
+        onStartSleep={startSleep}
+        onCancelSleep={cancelSleep}
         crossfade={settings.crossfade}
         crossfadeSeconds={settings.crossfadeSeconds}
         trimSilence={settings.trimSilence}
