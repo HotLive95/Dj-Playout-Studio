@@ -5,13 +5,13 @@ import { generateKey } from "../lib/license";
 import { platform } from "../lib/platform";
 import { api } from "../lib/api";
 
-const ADMIN_PASS = "hotlive95admin";
+export const ADMIN_PASS = "hotlive95admin";
 const KEY_ISSUER_DEVICE = "";
 const STORE = "hotlive95_keys";
 const ISSUER_STORE = "hotlive95_issuer";
 
-export default function KeyManager({ onClose }) {
-  const [unlocked, setUnlocked] = useState(false);
+export default function KeyManager({ onClose, skipAuth = false }) {
+  const [unlocked, setUnlocked] = useState(skipAuth);
   const [pass, setPass] = useState("");
   const [passErr, setPassErr] = useState("");
   const [mode, setMode] = useState("online");

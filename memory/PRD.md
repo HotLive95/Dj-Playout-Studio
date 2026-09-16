@@ -49,6 +49,15 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 15 (2026-06) — admin/keygen pages
+- New route `/keygen` (KeyGenPage): standalone key generator (Key Manager) accessible without the
+  activation gate — bookmark to make keys without launching the studio.
+- New route `/admin` (AdminPage): passkey-gated admin console. Own full-page passkey login
+  (session-remembered via sessionStorage), then embeds `<KeyManager skipAuth>` (generator + usage
+  dashboard + renew/auto-renew/QR/revoke/settings) plus a top bar linking to /live, /license, the
+  Studio app, and a Lock button. Passkey = ADMIN_PASS ("hotlive95admin", now exported from KeyManager.js).
+- KeyManager gained a `skipAuth` prop (initializes unlocked) so the admin page gates once with no double prompt.
+
 ## Update 14 (2026-06) — stabilization pass (code review + fixes, verified 100%)
 - HIGH: audioEngine `_startCrossfade` now fades toward `_effVol()` and re-asserts the duck on the
   new active element at fade end, and cancels a running `_volRaf` at fade start — fixes music

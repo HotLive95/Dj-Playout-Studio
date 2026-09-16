@@ -6,6 +6,8 @@ import "@/index.css";
 import App from "@/App";
 import LicenseStatusPage from "@/components/LicenseStatusPage";
 import ListenLivePage from "@/components/ListenLivePage";
+import KeyGenPage from "@/components/KeyGenPage";
+import AdminPage from "@/components/AdminPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,6 +24,8 @@ root.render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/keygen" element={<KeyGenPage />} />
           <Route path="/live" element={<ListenLivePage />} />
           <Route path="/license" element={<LicenseStatusPage />} />
           <Route path="*" element={<App />} />
