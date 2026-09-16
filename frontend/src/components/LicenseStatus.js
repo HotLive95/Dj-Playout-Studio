@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Search, ShieldCheck, ShieldAlert, ShieldX, MonitorSmartphone, Clock, Radio } from "lucide-react";
 import { api } from "../lib/api";
 import { platform } from "../lib/platform";
@@ -39,6 +39,12 @@ export function LicenseStatus({ defaultKey = "", embedded = false }) {
     }
     setLoading(false);
   };
+
+  // Auto-load status when arriving via a shared/QR link that carries the key
+  useEffect(() => {
+    if (defaultKey && defaultKey.trim()) lookup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const tone =
     res?.status === "ok" ? "var(--hl-teal, #22c55e)" : res?.status ? "var(--hl-onair)" : "var(--hl-muted)";

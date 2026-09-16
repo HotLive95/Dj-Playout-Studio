@@ -1,0 +1,32 @@
+{
+  "summary": "Stabilization regression pass for Hot Live 95 licensing (backend + frontend). Backend: 15/15 pytest cases PASS covering admin auth (X-Admin-Token), POST /api/admin/keys (with email → email_sent flag), GET /api/admin/keys (fields active_devices/days_left/expired/auto_renew/auto_renew_days/email_sent_at), POST /api/activate (ok, cap_exceeded, unknown), POST /api/validate (ok, revoked, not_registered), POST /api/status (public, no admin token, unknown for bad key, summary shape correct), POST /api/admin/keys/{key}/renew for days=30/90/365 (extends expiry & un-revokes), POST /api/admin/keys/{key}/auto-renew toggle (persists auto_renew/auto_renew_days), POST /api/admin/keys/{key}/revoke toggle (reflected in /validate), GET/POST /api/admin/settings for alert_lead_days 7/14/30, POST /api/admin/run-expiry-check returns {alerts_sent:0, auto_renewed, owner_email:null} as expected (OWNER_EMAIL intentionally empty), DELETE /api/admin/keys/{key} removes key. Frontend: license gate rejects invalid key (license-error shown) and accepts Q61VK-G819N-40K1B-H226T/C77J9-PVZZ4-B1NRC-7BKNZ → legal step → app-root. Header shows open-license-status + open-key-manager. Key Manager unlocks with 'hotlive95admin', Online tab shows dashboard cards (stat-active-djs/stat-total-devices/stat-total-keys/stat-expiring). Created key (with expiry) — appears at row-0; renew-days-select=30 + online-renew-0 works; online-autorenew-0 turns on badge; online-qr-0 opens qr-modal; alert-lead-select changes to 14; online-revoke-0 works; online-delete-0 deletes. My License modal (open-license-status) opens with license-status-key-input + license-status-lookup. /license?key=<key> renders license-status-page with prefilled input (lookup for OFFLINE key returns 'not found' — expected, /api/status only knows online admin-created keys). /live renders listen-live-page with live-play-button DISABLED and live-not-configured notice visible (expected — REACT_APP_STATION_STREAM_URL empty).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PlayerBar crossfade-seconds <select>", "issues": ["Persistent React hydration warning: <span> child of <option> (from dev instrumentation). Same as iteration_5 — non-blocking but noisy in console."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_licensing.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "KeyManager.js renders online-renew-{i} only when (k.expires_at || k.revoked || k.expired). For keys created with no expiry the renew button is missing — this is correct UX (nothing to extend from) but tests must set an expiry when exercising renew. Consider still allowing renew from now() when expires_at is null.",
+    "LicenseStatusPage prefills key from ?key= but does NOT auto-lookup — DJ must click Check. Minor UX polish: auto-trigger lookup() when defaultKey is present so the shared link 'just works'.",
+    "server.py process_expiry() skips keys where dl < 0 (already expired) for owner alerts but still auto-renews them — good. However if auto_renew is off and dl < 0, no owner reminder is ever sent. Consider one-time 'expired' alert.",
+    "server.py stores /api/admin routes without a rate limit; ADMIN_TOKEN is a static string. Fine for MVP but worth noting for production."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_licensing.py (new — pytest regression suite)"
+  ],
+  "success_rate": { "backend": "100% (15/15)", "frontend": "100%" },
+  "test_credentials": "Admin/passphrase: hotlive95admin. Offline activation keys: Q61VK-G819N-40K1B-H226T, C77J9-PVZZ4-B1NRC-7BKNZ, 97HW6-TVA84-R90GS-HV9TH.",
+  "seed_data_creation": "Backend tests create/delete TEST_DJ_Regression + TEST_ToDelete keys per run (auto-cleaned via fixture teardown / explicit DELETE). Frontend test also created and deleted TEST_UI_DJ2 online key.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression file at /app/backend/tests/test_licensing.py — run with 'pytest backend/tests/test_licensing.py -v'. /api/status only recognizes online (admin-created) keys — do NOT test with offline activation keys (Q61VK/etc.) and expect status:'ok'. For KeyManager renew tests, always set online-expiry when creating the key so online-renew-{i} button renders. Delete button opens a browser confirm() dialog — attach page.on('dialog', ...accept) before clicking. localStorage key for activation is 'hotlive95_license'.",
+  "rca of the issue": "n/a — no failing scenarios."
+}
