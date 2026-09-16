@@ -49,6 +49,20 @@ for "Hot Live 95 Detroit A.I. Radio".
   Key generation is LOCKED to the owner's registered computer (`KeyManager.js`,
   `KEY_ISSUER_DEVICE` / registered issuer). Verified owner-can-generate + other-machine-blocked.
 
+## Update 14 (2026-06) — stabilization pass (code review + fixes, verified 100%)
+- HIGH: audioEngine `_startCrossfade` now fades toward `_effVol()` and re-asserts the duck on the
+  new active element at fade end, and cancels a running `_volRaf` at fade start — fixes music
+  jumping back to full volume over the DJ's voice on every crossfade during talk/mic/jingle duck.
+- MEDIUM: backend startup scheduler task retained in `_scheduler_task` (no GC) + cancelled on shutdown.
+- MEDIUM: `ListenLivePage` adds error/stalled/playing/ended listeners (resets playing, shows error).
+- LOW: `process_expiry` materializes the query via `.to_list()` before mutating (no double auto-renew);
+  `admin_create_key` inserts the key BEFORE sending the welcome email; jingle Audio elements released
+  (`src=""`) on end/stop.
+- Regression: /app/test_reports/iteration_8.json — backend 17/17 pytest PASS (incl. new
+  insert-before-email + no-double-auto-renew tests), frontend 100% testable. No flashing (SW stays
+  unregistered in dev). The dev-only `<span> in <option>` console warning is NOT from our source
+  (every <option> is plain text) — injected by the test browser tooling; nothing to fix.
+
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,
   icons 192/512 + maskable generated from the app icon/emblem), mobile meta tags + apple-touch-icon

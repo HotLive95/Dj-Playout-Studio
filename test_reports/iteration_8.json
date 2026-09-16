@@ -1,0 +1,31 @@
+{
+  "summary": "Regression + fix-verification pass for Hot Live 95 DJ Playout Studio after 6 stability fixes. Backend: 17/17 pytest cases pass on the deployed preview URL, including two new regression tests: (1) TestInsertBeforeEmailOrdering — confirms POST /api/admin/keys returns 200 and the key is immediately visible in GET /api/admin/keys (insert-first-then-email is correct), and (2) TestNoDoubleAutoRenew — creates a key with expires_at = now+3d, enables auto_renew (30d), calls POST /api/admin/run-expiry-check, asserts auto_renewed==1 and days_left jumped from ~3 to ~33; a second invocation of run-expiry-check produced NO further change to that key's days_left, verifying process_expiry no longer double-renews after materialising the cursor into a list. owner_email is None and alerts_sent==0 as expected (OWNER_EMAIL empty). Full licensing flow (activate/validate/status/renew/auto-renew/revoke/delete) and admin settings persistence (7/14/30) all pass. Frontend: activation gate renders on fresh load, bypass via localStorage.hotlive95_license unlocks the main DJ studio UI (playlists, transport, jingle bar, My License, Key Manager buttons all present) and it stays STABLE — main-frame navigation count = 1 over 5s (no reload loop). navigator.serviceWorker.getRegistrations().length === 0 and caches.keys().length === 0, confirming the SW remains unregistered in the dev preview. Key Manager opens with passphrase 'hotlive95admin' and the Online dashboard shows stats (Active DJs / Computers Online / Total Keys / Expiring ≤14d), the create form (dj/email/devices/expires + Create), renew-length selector, warn-me selector, and per-row action testids (online-qr-0, online-autorenew-0, online-renew-*, online-resend-*, online-revoke-0, online-delete-0). /live route renders 'Stream link not set yet' notice with no active play control (expected — REACT_APP_STATION_STREAM_URL empty). /license?key= renders. Only console message is the pre-existing benign hydration warning '<span> cannot be a child of <option>' (dev-only, non-blocking). No new console errors, no page-error exceptions, no flashing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Key Manager → Create form", "issues": ["'Expires' field uses the browser-native date picker (mm/dd/yyyy) rather than a shadcn Calendar component — non-blocking cosmetic per review guidelines"]},
+      {"screen": "dev preview (non-blocking)", "issues": ["Pre-existing React hydration warning '<span> cannot be a child of <option>' in a <select><option> — carried over from iteration_7, does not affect functionality"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_licensing.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "process_expiry now correctly materialises the cursor via .to_list(length=1000) before mutating expires_at — validated by running run-expiry-check twice: first run auto_renewed==1, second run leaves the just-renewed key untouched.",
+    "admin_create_key persists the doc via insert_one BEFORE sending the Resend welcome email, and updates email_sent_at via update_one after — a slow email cannot lose or delay the key; verified with delivered@resend.dev.",
+    "index.js service-worker gate (production-only + dev unregister/caches.clear) continues to hold — SW regs=0 and caches=0 in preview.",
+    "Frontend ListenLivePage: with no stream URL configured, the play control is not rendered and the 'Stream link not set yet' notice shows — the new error/stalled/ended handlers cannot be exercised in automation without a real stream (agent note acknowledged)."
+  ],
+  "updated_files": ["/app/backend/tests/test_licensing.py"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% for testable regressions"},
+  "test_credentials": "Admin token / Key Manager passphrase: hotlive95admin. Bypass gate: localStorage.hotlive95_license = {activated:true, legalAccepted:true, online:false, key:'QA-KEY', activatedAt:<ISO>}",
+  "seed_data_creation": "Each new pytest test creates its own key via POST /api/admin/keys and deletes it in a finally block. No residual TEST_ keys left in DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 6 stability fixes verified. Backend regression suite (/app/backend/tests/test_licensing.py) now covers: root, admin auth, key create/list, activate/validate/cap, public status, renew/auto-renew/revoke, settings, expiry-check, delete, insert-before-email ordering, and no-double-auto-renew. Run with: pytest /app/backend/tests/test_licensing.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. The audio-engine crossfade+duck fix in /app/frontend/src/lib/audioEngine.js CANNOT be verified in headless automation (needs real audio playback across a track change) — do not flag as failure. Frontend flashing/SW-loop is fixed and stable.",
+  "rca of the issue": "N/A — this iteration verified fixes; no new regressions surfaced. The two backend fixes previously identified (double-renew via live cursor mutation, and welcome-email-before-insert) were both confirmed resolved via targeted tests."
+}

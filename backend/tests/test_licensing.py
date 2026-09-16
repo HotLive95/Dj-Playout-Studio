@@ -174,3 +174,69 @@ class TestDelete:
         # verify gone via status
         s = requests.post(f"{API}/status", json={"key": key})
         assert s.json()["status"] == "unknown"
+
+
+class TestInsertBeforeEmailOrdering:
+    """After POST /admin/keys, the key must appear in GET /admin/keys immediately (insert-first)."""
+
+    def test_key_appears_immediately_after_create(self):
+        r = requests.post(f"{API}/admin/keys", json={
+            "dj": "TEST_InsertOrder", "email": "delivered@resend.dev", "max_devices": 1,
+        }, headers=HDR)
+        assert r.status_code == 200, r.text
+        key = r.json()["key"]
+        try:
+            listed = requests.get(f"{API}/admin/keys", headers=HDR).json()
+            found = next((k for k in listed if k["key"] == key), None)
+            assert found is not None, "key missing from list right after create"
+        finally:
+            requests.delete(f"{API}/admin/keys/{key}", headers=HDR)
+
+
+class TestNoDoubleAutoRenew:
+    """Regression: process_expiry must renew a matching key exactly once per invocation."""
+
+    def test_auto_renew_runs_once(self):
+        from datetime import datetime, timezone, timedelta
+        exp = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+        r = requests.post(f"{API}/admin/keys", json={
+            "dj": "TEST_AutoRenewOnce", "email": "delivered@resend.dev",
+            "max_devices": 1, "expires_at": exp,
+        }, headers=HDR)
+        assert r.status_code == 200, r.text
+        key = r.json()["key"]
+        try:
+            # enable auto-renew with 30 days
+            ar = requests.post(f"{API}/admin/keys/{key}/auto-renew",
+                               json={"enabled": True, "days": 30}, headers=HDR)
+            assert ar.status_code == 200
+            # ensure lead >= 3
+            requests.post(f"{API}/admin/settings", json={"alert_lead_days": 7}, headers=HDR)
+
+            before = next(k for k in requests.get(f"{API}/admin/keys", headers=HDR).json()
+                          if k["key"] == key)
+            dl_before = before["days_left"]
+
+            run = requests.post(f"{API}/admin/run-expiry-check", headers=HDR)
+            assert run.status_code == 200
+            j = run.json()
+            assert j["auto_renewed"] == 1, f"expected exactly 1 renewal, got {j}"
+            assert j["owner_email"] is None
+            assert j["alerts_sent"] == 0
+
+            after = next(k for k in requests.get(f"{API}/admin/keys", headers=HDR).json()
+                         if k["key"] == key)
+            dl_after = after["days_left"]
+            # 3 days + ~30 days renew = ~33
+            assert dl_after > dl_before + 20, f"expected jump forward, before={dl_before} after={dl_after}"
+
+            # Second run: key no longer near expiry -> no more renews for this key
+            run2 = requests.post(f"{API}/admin/run-expiry-check", headers=HDR)
+            j2 = run2.json()
+            after2 = next(k for k in requests.get(f"{API}/admin/keys", headers=HDR).json()
+                          if k["key"] == key)
+            # This key must not have been renewed again (days_left unchanged)
+            assert after2["days_left"] == dl_after, \
+                f"key was renewed twice: {dl_after} -> {after2['days_left']}"
+        finally:
+            requests.delete(f"{API}/admin/keys/{key}", headers=HDR)
