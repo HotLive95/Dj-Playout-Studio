@@ -13,6 +13,7 @@ import LicenseGate from "@/components/LicenseGate";
 import KeyManager from "@/components/KeyManager";
 import CustomFxModal from "@/components/CustomFxModal";
 import { MobileMiniPlayer } from "@/components/MobileMiniPlayer";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { LicenseStatus } from "@/components/LicenseStatus";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
@@ -919,6 +920,14 @@ function App() {
     if (t) engineRef.current?.cuePlay(t);
   };
   const cueToggle = () => engineRef.current?.cueToggle();
+  const cueCurrent = () => {
+    if (!currentTrackId) return;
+    if (cue.trackId === currentTrackId) cueToggle();
+    else {
+      const t = tracks[currentTrackId];
+      if (t) engineRef.current?.cuePlay(t);
+    }
+  };
   const cueStop = () => engineRef.current?.cueStop();
   const cueSeek = (t) => engineRef.current?.cueSeek(t);
 
@@ -1192,10 +1201,14 @@ function App() {
         isPlaying={playback.isPlaying}
         currentTime={playback.currentTime}
         duration={playback.duration}
+        cueing={cue.trackId === currentTrackId && cue.isPlaying}
+        onCue={cueCurrent}
         onTogglePlay={togglePlay}
         onNext={next}
         onPrev={prev}
       />
+
+      <InstallPrompt />
 
       {editorTrack && (
         <TrackEditor

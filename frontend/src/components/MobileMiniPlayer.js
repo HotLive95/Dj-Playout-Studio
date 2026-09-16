@@ -1,14 +1,16 @@
 import React from "react";
-import { Play, Pause, SkipBack, SkipForward, Waves } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Waves, Headphones } from "lucide-react";
 
 // Slim, always-visible transport bar for phones only (hidden on md+). Pinned to
-// the bottom of the viewport so DJs can play/pause/skip one-handed without scrolling
-// down to the full PlayerBar.
+// the bottom of the viewport so DJs can play/pause/skip/cue one-handed without
+// scrolling down to the full PlayerBar.
 export const MobileMiniPlayer = ({
   track,
   isPlaying,
   currentTime,
   duration,
+  cueing,
+  onCue,
   onTogglePlay,
   onNext,
   onPrev,
@@ -37,6 +39,19 @@ export const MobileMiniPlayer = ({
             {track ? (isPlaying ? "On air" : "Paused") : "Load a track to begin"}
           </div>
         </div>
+        <button
+          data-testid="mini-cue-button"
+          onClick={onCue}
+          disabled={!track}
+          className={`h-9 w-9 grid place-items-center rounded-full transition disabled:opacity-30 ${
+            cueing
+              ? "text-[var(--hl-amber)] bg-[rgba(255,171,0,0.15)]"
+              : "text-[var(--hl-muted)] active:bg-white/10"
+          }`}
+          title="Pre-listen this track on headphones"
+        >
+          <Headphones size={17} />
+        </button>
         <button
           data-testid="mini-prev-button"
           onClick={onPrev}

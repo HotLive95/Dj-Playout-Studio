@@ -92,6 +92,14 @@ for "Hot Live 95 Detroit A.I. Radio".
   (track name + prev/play-pause/next + thin progress) shown on phones only (`md:hidden`, fixed bottom-0).
   Wired in App.js with app-root `pb-16 md:pb-0` so it never covers the full PlayerBar. Verified:
   present & pinned to viewport bottom at 390px, hidden at 1920px.
+- Mini-player cue (Update 14b): added a Headphones button to MobileMiniPlayer that pre-listens the
+  current track (`cueCurrent` in App.js: cuePlay(currentTrack), or cueToggle if already cueing it);
+  goes amber while cueing. Verified present at 390px.
+- Install prompt: new `components/InstallPrompt.js` — dismissible "Add to Home Screen" tip, phones only
+  (`md:hidden`, fixed above the mini-player). Android/Chrome uses real `beforeinstallprompt` (one-tap
+  install button); iOS Safari gets Share → Add to Home Screen steps (UA-detected). Skips when already
+  standalone; remembers dismissal in localStorage `hotlive95_a2hs_dismissed`. Rendered in App.js.
+  Verified: iOS banner shows with correct copy, dismiss hides + persists.
 
 
 ## Update 13 (2026-06) — verified
