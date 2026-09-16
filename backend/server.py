@@ -24,7 +24,7 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', 'hotlive95admin')
+ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', 'Hotlive95dj1108**')
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
 RENEW_DAYS = int(os.environ.get('RENEW_DAYS', '90'))

@@ -6,7 +6,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://dj-playout-studio.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
-ADMIN = "hotlive95admin"
+ADMIN = "Hotlive95dj1108**"
 HDR = {"X-Admin-Token": ADMIN, "Content-Type": "application/json"}
 
 

@@ -55,7 +55,7 @@ for "Hot Live 95 Detroit A.I. Radio".
 - New route `/admin` (AdminPage): passkey-gated admin console. Own full-page passkey login
   (session-remembered via sessionStorage), then embeds `<KeyManager skipAuth>` (generator + usage
   dashboard + renew/auto-renew/QR/revoke/settings) plus a top bar linking to /live, /license, the
-  Studio app, and a Lock button. Passkey = ADMIN_PASS ("hotlive95admin", now exported from KeyManager.js).
+  Studio app, and a Lock button. Passkey = ADMIN_PASS ("Hotlive95dj1108**", exported from KeyManager.js; matches backend ADMIN_TOKEN).
 - KeyManager gained a `skipAuth` prop (initializes unlocked) so the admin page gates once with no double prompt.
 
 ## Update 14 (2026-06) — stabilization pass (code review + fixes, verified 100%)
@@ -108,9 +108,8 @@ for "Hot Live 95 Detroit A.I. Radio".
 - Scroll window: track list capped to ~6 rows (maxHeight 27rem) then scrolls.
 - Jingle pads: drag-and-drop audio files from the OS onto a pad to assign/replace; remove (✕)
   button always visible.
-- Verified sender: SENDER_EMAIL can be a verified Resend domain address. NOTE: hotlive95dj.com is
-  NOT yet verified in Resend, so it's kept as `onboarding@resend.dev` (works) until the owner
-  verifies the domain, then flip SENDER_EMAIL to `Hot Live 95 <Dinthestreets@hotlive95dj.com>`.
+- Verified sender: SENDER_EMAIL is now `Hot Live 95 <Dinthestreets@hotlive95dj.com>` (owner confirmed
+  hotlive95dj.com is verified/green in Resend as of Jun 2026).
 
 ## Update 9 (2026-06) — backend curl-verified + UI E2E
 - Expiry Alerts: backend daily scheduler (`check_expiring`, startup asyncio loop, 12h) emails

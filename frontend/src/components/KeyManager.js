@@ -5,7 +5,7 @@ import { generateKey } from "../lib/license";
 import { platform } from "../lib/platform";
 import { api } from "../lib/api";
 
-export const ADMIN_PASS = "hotlive95admin";
+export const ADMIN_PASS = "Hotlive95dj1108**";
 const KEY_ISSUER_DEVICE = "";
 const STORE = "hotlive95_keys";
 const ISSUER_STORE = "hotlive95_issuer";
