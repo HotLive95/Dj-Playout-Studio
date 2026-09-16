@@ -99,9 +99,9 @@ for "Hot Live 95 Detroit A.I. Radio".
 - Scroll window: track list capped to ~6 rows (maxHeight 27rem) then scrolls.
 - Jingle pads: drag-and-drop audio files from the OS onto a pad to assign/replace; remove (✕)
   button always visible.
-- Verified sender: SENDER_EMAIL can be a verified Resend domain address. NOTE: hotlive95.com is
+- Verified sender: SENDER_EMAIL can be a verified Resend domain address. NOTE: hotlive95dj.com is
   NOT yet verified in Resend, so it's kept as `onboarding@resend.dev` (works) until the owner
-  verifies the domain, then flip SENDER_EMAIL to `Hot Live 95 <Dinthestreets@hotlive95.com>`.
+  verifies the domain, then flip SENDER_EMAIL to `Hot Live 95 <Dinthestreets@hotlive95dj.com>`.
 
 ## Update 9 (2026-06) — backend curl-verified + UI E2E
 - Expiry Alerts: backend daily scheduler (`check_expiring`, startup asyncio loop, 12h) emails
