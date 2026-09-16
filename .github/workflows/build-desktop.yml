@@ -1,0 +1,99 @@
+name: Build Desktop Apps
+
+# Builds the Hot Live 95 Playout Studio flash-drive apps on GitHub's own
+# Windows and Mac cloud machines. No PC or Mac of your own needed.
+#
+# HOW TO GET YOUR FILES:
+#   1. Push this repo to GitHub (Emergent "Save to GitHub").
+#   2. Go to the repo's "Actions" tab -> this workflow runs automatically.
+#      (Or click "Run workflow" to start it manually.)
+#   3. When it finishes (a few minutes), open the run and download the
+#      "hotlive95-windows" and "hotlive95-mac" artifacts. Inside are your
+#      .exe and .dmg -> copy them to the flash drive.
+#   4. Tip: pushing a tag like v1.0.0 also publishes them on a Releases page.
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            label: Windows (.exe)
+            artifact: hotlive95-windows
+          - os: macos-latest
+            target: mac
+            label: Mac (.dmg)
+            artifact: hotlive95-mac
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build the web app (renderer)
+        shell: bash
+        run: |
+          cd frontend
+          export PUBLIC_URL=./
+          yarn install --network-timeout 600000
+          yarn build
+
+      - name: Copy renderer into Electron
+        shell: bash
+        run: |
+          rm -rf electron/renderer
+          cp -r frontend/build electron/renderer
+
+      - name: Install Electron build tools
+        shell: bash
+        run: |
+          cd electron
+          yarn install --network-timeout 600000
+
+      - name: Package desktop app (${{ matrix.target }})
+        shell: bash
+        env:
+          # Never fail the Mac build trying to code-sign; produces an unsigned
+          # (right-click -> Open) app. Add Apple/Windows certs later to sign.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd electron
+          yarn dist:${{ matrix.target }}
+
+      - name: List build output
+        shell: bash
+        run: ls -la electron/dist || true
+
+      - name: Upload installers as downloadable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: warn
+          path: |
+            electron/dist/*.exe
+            electron/dist/*.dmg
+            electron/dist/*.zip
+            electron/dist/*.AppImage
+
+      - name: Publish to Releases (only when you push a version tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            electron/dist/*.exe
+            electron/dist/*.dmg
+            electron/dist/*.zip
