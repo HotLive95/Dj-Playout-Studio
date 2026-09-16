@@ -31,10 +31,19 @@ root.render(
   </React.StrictMode>,
 );
 
-// Register the PWA service worker so DJs can install to their phone home screen
-// (skipped inside the Electron desktop build, which is already fully offline).
+// PWA service worker: register ONLY in a production build (never in the CRA dev
+// preview, where a service worker fights hot-reload and causes the page to flash/
+// refresh repeatedly). In dev/preview, actively unregister any previously installed
+// worker and clear its caches so the flashing stops for users who already got it.
 if ("serviceWorker" in navigator && !(typeof window !== "undefined" && window.hotlive && window.hotlive.isElectron)) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register(`${process.env.PUBLIC_URL || ""}/sw.js`).catch(() => {});
-  });
+  if (process.env.NODE_ENV === "production") {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register(`${process.env.PUBLIC_URL || ""}/sw.js`).catch(() => {});
+    });
+  } else {
+    navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister())).catch(() => {});
+    if (window.caches) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
+    }
+  }
 }
