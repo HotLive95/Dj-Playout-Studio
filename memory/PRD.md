@@ -134,6 +134,15 @@ for "Hot Live 95 Detroit A.I. Radio".
   `_stopping` flag during the fade; togglePlay/playIndex cancel any pending sleep fade and un-mute.
   Verified on desktop: badge shows, menu opens, 15-min countdown ticks (14:59), cancel clears it.
 
+## Update 18 (2026-06) — verified
+- Custom sleep length: SleepTimer menu now has a number input + "Set custom" so DJs can enter any
+  minutes (1-600) instead of only presets. Verified: entering 7 → 6:59 countdown.
+- Fade-In Wake: new `components/WakeTimer.js` (Sunrise button in PlayerBar) with a `type=time` input.
+  App.js holds `wakeAt`/`wakeLabel`; a 1s interval fires `engine.fadeInStart(6)` at the set time
+  (computes next occurrence — today if still ahead, else tomorrow), starting playout from the top if
+  nothing is loaded and ramping volume 0→full over ~6s. Engine `fadeInStart` reuses the sleep-fade raf.
+  Verified: set 06:30 → button shows 06:30; cancel clears.
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

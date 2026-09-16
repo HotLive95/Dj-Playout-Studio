@@ -14,6 +14,7 @@ const fmt = (ms) => {
 
 export const SleepTimer = ({ remainingMs, onStart, onCancel }) => {
   const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState("");
   const ref = useRef(null);
   const active = remainingMs > 0;
 
@@ -67,6 +68,32 @@ export const SleepTimer = ({ remainingMs, onStart, onCancel }) => {
               {m >= 60 ? `${m / 60} hour${m > 60 ? "s" : ""}` : `${m} min`}
             </button>
           ))}
+          <div className="flex items-center gap-2 px-1 pt-1.5 mt-1 border-t border-[var(--hl-line)]">
+            <input
+              data-testid="sleep-custom-input"
+              type="number"
+              min="1"
+              max="600"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              placeholder="min"
+              className="w-16 bg-black/50 border border-[var(--hl-line)] rounded px-2 py-1.5 text-sm outline-none focus:border-[var(--hl-amber)]"
+            />
+            <button
+              data-testid="sleep-custom-set"
+              onClick={() => {
+                const n = parseInt(custom, 10);
+                if (n > 0) {
+                  onStart(n);
+                  setCustom("");
+                  setOpen(false);
+                }
+              }}
+              className="flex-1 px-2.5 py-1.5 rounded bg-[var(--hl-amber)] text-black text-xs font-700"
+            >
+              Set custom
+            </button>
+          </div>
           {active && (
             <button
               data-testid="sleep-cancel"

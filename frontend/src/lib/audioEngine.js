@@ -283,6 +283,40 @@ export default class AudioEngine {
     this._stopping = false;
   }
 
+  // Wake / fade-in: start playout (from the top if nothing is loaded) and ramp the
+  // volume up gently. Used to auto-launch a show at a set time for unattended play.
+  async fadeInStart(seconds = 6) {
+    this._cancelSleepFade();
+    if (this.index < 0) {
+      if (!this.queue.length) return;
+      await this.playIndex(0);
+    } else if (this.active.paused) {
+      try {
+        await this.active.play();
+      } catch {
+        /* ignore */
+      }
+    }
+    this._cancelFade();
+    const el = this.active;
+    const target = this._effVol();
+    el.volume = 0;
+    const durMs = Math.max(0.3, seconds) * 1000;
+    const start = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / durMs);
+      el.volume = Math.min(target, target * p);
+      if (p < 1) {
+        this._sleepRaf = requestAnimationFrame(step);
+      } else {
+        el.volume = this._effVol();
+        this._sleepRaf = null;
+        this._emit();
+      }
+    };
+    this._sleepRaf = requestAnimationFrame(step);
+  }
+
   seek(t) {
     if (this.index < 0) return;
     try {

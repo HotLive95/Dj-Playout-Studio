@@ -17,6 +17,7 @@ import {
 import { formatTime } from "../lib/format";
 import Waveform from "./Waveform";
 import { SleepTimer } from "./SleepTimer";
+import { WakeTimer } from "./WakeTimer";
 
 export default function PlayerBar({
   track,
@@ -31,6 +32,9 @@ export default function PlayerBar({
   sleepRemaining,
   onStartSleep,
   onCancelSleep,
+  wakeLabel,
+  onSetWake,
+  onCancelWake,
   crossfade,
   crossfadeSeconds,
   trimSilence,
@@ -368,6 +372,12 @@ export default function PlayerBar({
             remainingMs={sleepRemaining}
             onStart={onStartSleep}
             onCancel={onCancelSleep}
+          />
+
+          <WakeTimer
+            scheduledLabel={wakeLabel}
+            onSet={onSetWake}
+            onCancel={onCancelWake}
           />
 
           <div className="flex items-center gap-2 w-28">

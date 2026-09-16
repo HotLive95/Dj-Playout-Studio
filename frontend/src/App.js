@@ -978,6 +978,33 @@ function App() {
   }, [sleepEndsAt]);
   const startSleep = (minutes) => setSleepEndsAt(Date.now() + minutes * 60000);
   const cancelSleep = () => setSleepEndsAt(null);
+
+  const [wakeAt, setWakeAt] = useState(null);
+  const [wakeLabel, setWakeLabel] = useState("");
+  useEffect(() => {
+    if (!wakeAt) return;
+    const iv = setInterval(() => {
+      if (Date.now() >= wakeAt) {
+        engineRef.current?.fadeInStart(6);
+        setWakeAt(null);
+        setWakeLabel("");
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [wakeAt]);
+  const setWake = (timeStr) => {
+    if (!timeStr) return;
+    const [h, m] = timeStr.split(":").map(Number);
+    const t = new Date();
+    t.setHours(h, m, 0, 0);
+    if (t.getTime() <= Date.now()) t.setDate(t.getDate() + 1);
+    setWakeAt(t.getTime());
+    setWakeLabel(timeStr);
+  };
+  const cancelWake = () => {
+    setWakeAt(null);
+    setWakeLabel("");
+  };
   const toggleCrossfade = () => setSettings((s) => ({ ...s, crossfade: !s.crossfade }));
   const setCrossfadeSeconds = (n) => setSettings((s) => ({ ...s, crossfadeSeconds: n }));
   const setProgramSink = (id) => setSettings((s) => ({ ...s, programSink: id }));
@@ -1215,6 +1242,9 @@ function App() {
         sleepRemaining={sleepRemaining}
         onStartSleep={startSleep}
         onCancelSleep={cancelSleep}
+        wakeLabel={wakeLabel}
+        onSetWake={setWake}
+        onCancelWake={cancelWake}
         crossfade={settings.crossfade}
         crossfadeSeconds={settings.crossfadeSeconds}
         trimSilence={settings.trimSilence}
