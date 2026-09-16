@@ -12,6 +12,7 @@ import VoiceRecorder from "@/components/VoiceRecorder";
 import LicenseGate from "@/components/LicenseGate";
 import KeyManager from "@/components/KeyManager";
 import CustomFxModal from "@/components/CustomFxModal";
+import { MobileMiniPlayer } from "@/components/MobileMiniPlayer";
 import { LicenseStatus } from "@/components/LicenseStatus";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
@@ -1068,7 +1069,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden" data-testid="app-root">
+    <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
       <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} />
 
       {banner && (
@@ -1184,6 +1185,16 @@ function App() {
         onToggleCueFade={toggleCueFade}
         onCueFadeSeconds={setCueFadeSeconds}
         onEditCustomFx={() => setCustomFxOpen(true)}
+      />
+
+      <MobileMiniPlayer
+        track={currentTrack}
+        isPlaying={playback.isPlaying}
+        currentTime={playback.currentTime}
+        duration={playback.duration}
+        onTogglePlay={togglePlay}
+        onNext={next}
+        onPrev={prev}
       />
 
       {editorTrack && (

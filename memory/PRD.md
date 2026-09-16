@@ -88,6 +88,10 @@ for "Hot Live 95 Detroit A.I. Radio".
   a single sessionStorage-guarded window.location.reload() when a controller exists, to load
   uncontrolled. Verified with a simulated stuck SW: before has/controller=True → after has/controller=False,
   one guarded reload, then stable (no loop).
+- Mobile mini-player: new `components/MobileMiniPlayer.js` — slim sticky bottom transport bar
+  (track name + prev/play-pause/next + thin progress) shown on phones only (`md:hidden`, fixed bottom-0).
+  Wired in App.js with app-root `pb-16 md:pb-0` so it never covers the full PlayerBar. Verified:
+  present & pinned to viewport bottom at 390px, hidden at 1920px.
 
 
 ## Update 13 (2026-06) — verified
