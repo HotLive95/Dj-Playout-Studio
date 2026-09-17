@@ -11,11 +11,11 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
         <img
           src="/logo.jpg"
           alt="Hot Live 95 Detroit A.I. Radio"
-          className="h-20 w-auto rounded-lg object-contain"
+          className="h-[120px] w-auto rounded-lg object-contain"
           data-testid="app-logo"
         />
         <div className="hidden sm:block border-l border-[var(--hl-line)] pl-3">
-          <div className="font-display text-2xl font-600 leading-none tracking-wide">
+          <div className="font-display text-4xl font-600 leading-none tracking-wide">
             DJ <span className="hl-text-fire">PLAYOUT</span> STUDIO
           </div>
           <div className="text-[10px] text-[var(--hl-muted)] tracking-[0.2em] uppercase mt-1">

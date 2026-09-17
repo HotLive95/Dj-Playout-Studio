@@ -216,7 +216,7 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
       await new Promise((r) => setTimeout(r, 30));
       const keep = keepRegionsFrom(inPoint, outPoint, cuts);
       const rendered = sliceAndConcat(buffer, keep);
-      const blob = format === "mp3" ? bufferToMp3(rendered) : bufferToWav(rendered);
+      const blob = format === "mp3" ? await bufferToMp3(rendered) : bufferToWav(rendered);
       const name = `${baseName} (edited).${format}`;
       if (download) {
         const url = URL.createObjectURL(blob);

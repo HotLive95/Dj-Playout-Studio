@@ -220,6 +220,16 @@ for "Hot Live 95 Detroit A.I. Radio".
   Verified: 2×2s tracks -> "Export Show.wav" 705,644 bytes (= 4s stereo 44.1k). Also: app logo enlarged
   h-14->h-20 and name text-base->text-2xl (~50% larger).
 
+## Update 26 (2026-06) — verified
+- Logo enlarged again +50%: h-20 -> h-[120px], name text-2xl -> text-4xl. Verified 120px.
+- Export progress bar: ExportPlaylistModal shows a % bar (export-progress-bar/export-progress-pct)
+  across decode (0-55%), render (60-70%), encode (70-99%), done (100%). bufferToMp3 is now async with an
+  onProgress callback that yields every 64 blocks; TrackEditor awaits it.
+- Crossfade export: optional "Crossfade tracks" checkbox (export-crossfade, defaults to
+  settings.crossfade, uses settings.crossfadeSeconds). Tracks overlap by the crossfade with per-source
+  GainNode linear fades in the OfflineAudioContext. Verified 2x2s + 3s xfade -> 3s mix.
+- Timestamped filenames: exports named `{playlist} {YYYY-MM-DD}.{ext}`. Verified "Export Show 2026-09-17.mp3".
+
 
 
 ## Update 13 (2026-06) — verified

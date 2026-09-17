@@ -4,12 +4,27 @@ import { decodeToBuffer, bufferToWav, bufferToMp3 } from "../lib/audioProcessing
 import { platform } from "../lib/platform";
 import { formatTotal } from "../lib/format";
 
+const today = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
 // Renders every track in a playlist (in order, honouring each track's In/Out cues)
-// into one continuous file and downloads it. Runs fully offline via OfflineAudioContext.
-export default function ExportPlaylistModal({ playlist, tracks, onClose }) {
+// into one continuous file and downloads it. Optional crossfade blends adjacent
+// tracks. Runs fully offline via OfflineAudioContext.
+export default function ExportPlaylistModal({
+  playlist,
+  tracks,
+  defaultCrossfade = false,
+  crossfadeSeconds = 3,
+  onClose,
+}) {
   const [format, setFormat] = useState("mp3");
+  const [xfade, setXfade] = useState(!!defaultCrossfade);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
 
   if (!playlist) return null;
@@ -18,40 +33,71 @@ export default function ExportPlaylistModal({ playlist, tracks, onClose }) {
   const run = async () => {
     setBusy(true);
     setError("");
+    setProgress(0);
     try {
       const targetSR = 44100;
       const decoded = [];
       for (let i = 0; i < items.length; i++) {
         setStatus(`Decoding ${i + 1}/${items.length} · ${items[i].name}`);
+        setProgress(Math.round(((i + 0.5) / items.length) * 55));
         // eslint-disable-next-line no-await-in-loop
         const url = await platform.getUrl(items[i]);
         // eslint-disable-next-line no-await-in-loop
         const buf = await decodeToBuffer(url);
         const inP = items[i].cueIn != null ? Math.max(0, items[i].cueIn) : 0;
         const outP = items[i].cueOut != null ? items[i].cueOut : buf.duration;
-        decoded.push({ buf, offset: inP, dur: Math.max(0.01, outP - inP) });
+        decoded.push({ buf, offset: inP, dur: Math.max(0.05, outP - inP) });
       }
-      const totalSec = decoded.reduce((s, d) => s + d.dur, 0);
+
+      const n = decoded.length;
+      const durs = decoded.map((d) => d.dur);
+      const xf = xfade ? Math.max(0, crossfadeSeconds) : 0;
+      // Timeline: each track starts after the previous, overlapping by the crossfade.
+      const starts = [0];
+      for (let i = 1; i < n; i++) {
+        const gap = Math.min(xf, durs[i - 1] / 2, durs[i] / 2);
+        starts[i] = starts[i - 1] + durs[i - 1] - gap;
+      }
+      const totalSec = starts[n - 1] + durs[n - 1];
       setStatus(`Rendering ${formatTotal(totalSec)} of audio…`);
-      const frames = Math.max(1, Math.ceil(totalSec * targetSR));
+      setProgress(60);
+
       const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-      const oac = new OAC(2, frames, targetSR);
-      let when = 0;
-      for (const d of decoded) {
+      const oac = new OAC(2, Math.max(1, Math.ceil(totalSec * targetSR)), targetSR);
+      for (let i = 0; i < n; i++) {
+        const d = decoded[i];
+        const startAt = starts[i];
+        const endAt = startAt + d.dur;
+        const fadeIn = i > 0 ? starts[i - 1] + durs[i - 1] - startAt : 0;
+        const fadeOut = i < n - 1 ? endAt - starts[i + 1] : 0;
         const src = oac.createBufferSource();
         src.buffer = d.buf;
-        src.connect(oac.destination);
-        src.start(when, d.offset, d.dur);
-        when += d.dur;
+        const g = oac.createGain();
+        src.connect(g);
+        g.connect(oac.destination);
+        g.gain.setValueAtTime(fadeIn > 0 ? 0.0001 : 1, startAt);
+        if (fadeIn > 0) g.gain.linearRampToValueAtTime(1, startAt + fadeIn);
+        if (fadeOut > 0) {
+          g.gain.setValueAtTime(1, Math.max(startAt, endAt - fadeOut));
+          g.gain.linearRampToValueAtTime(0.0001, endAt);
+        }
+        src.start(startAt, d.offset, d.dur);
       }
       const rendered = await oac.startRendering();
+
       setStatus(`Encoding ${format.toUpperCase()}…`);
+      setProgress(70);
       await new Promise((r) => setTimeout(r, 30));
-      const blob = format === "mp3" ? bufferToMp3(rendered) : bufferToWav(rendered);
+      const blob =
+        format === "mp3"
+          ? await bufferToMp3(rendered, 192, (p) => setProgress(70 + Math.round(p * 29)))
+          : bufferToWav(rendered);
+
+      setProgress(100);
       const safe = playlist.name.replace(/[^a-z0-9\-_ ]/gi, "").trim() || "playlist";
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${safe}.${format}`;
+      a.download = `${safe} ${today()}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -113,13 +159,42 @@ export default function ExportPlaylistModal({ playlist, tracks, onClose }) {
             </select>
           </div>
 
-          {status && (
-            <div
-              className="flex items-center gap-2 text-sm text-[var(--hl-amber)]"
-              data-testid="export-status"
-            >
-              {busy && <Loader2 size={15} className="animate-spin" />}
-              {status}
+          <label
+            className="flex items-center gap-2.5 text-sm cursor-pointer select-none"
+            data-testid="export-crossfade-label"
+          >
+            <input
+              type="checkbox"
+              data-testid="export-crossfade"
+              checked={xfade}
+              onChange={(e) => setXfade(e.target.checked)}
+              disabled={busy}
+              className="h-4 w-4 accent-[var(--hl-fire)]"
+            />
+            Crossfade tracks ({crossfadeSeconds}s blend) for a seamless mix
+          </label>
+
+          {(busy || progress > 0) && (
+            <div>
+              <div className="h-2 w-full rounded-full bg-[#2a2a31] overflow-hidden">
+                <div
+                  data-testid="export-progress-bar"
+                  className="h-full hl-fire-gradient transition-[width] duration-200"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <div
+                className="flex items-center justify-between mt-1.5 text-xs text-[var(--hl-amber)]"
+                data-testid="export-status"
+              >
+                <span className="flex items-center gap-2 truncate">
+                  {busy && <Loader2 size={13} className="animate-spin shrink-0" />}
+                  <span className="truncate">{status}</span>
+                </span>
+                <span className="tabular-nums shrink-0 ml-2" data-testid="export-progress-pct">
+                  {progress}%
+                </span>
+              </div>
             </div>
           )}
           {error && (

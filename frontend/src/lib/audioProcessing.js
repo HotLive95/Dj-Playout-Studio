@@ -149,7 +149,7 @@ export function bufferToWav(buffer) {
   return new Blob([view], { type: "audio/wav" });
 }
 
-export function bufferToMp3(buffer, kbps = 192) {
+export async function bufferToMp3(buffer, kbps = 192, onProgress) {
   const chs = Math.min(2, buffer.numberOfChannels);
   const sr = buffer.sampleRate;
   const enc = new lamejs.Mp3Encoder(chs, sr, kbps);
@@ -157,6 +157,8 @@ export function bufferToMp3(buffer, kbps = 192) {
   const right = chs > 1 ? floatTo16(buffer.getChannelData(1)) : null;
   const blockSize = 1152;
   const data = [];
+  const totalBlocks = Math.max(1, Math.ceil(left.length / blockSize));
+  let b = 0;
   for (let i = 0; i < left.length; i += blockSize) {
     const l = left.subarray(i, i + blockSize);
     let buf;
@@ -167,8 +169,16 @@ export function bufferToMp3(buffer, kbps = 192) {
       buf = enc.encodeBuffer(l);
     }
     if (buf.length) data.push(new Int8Array(buf));
+    b++;
+    if (onProgress && b % 64 === 0) {
+      onProgress(b / totalBlocks);
+      // yield so the UI can repaint the progress bar
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
   const end = enc.flush();
   if (end.length) data.push(new Int8Array(end));
+  if (onProgress) onProgress(1);
   return new Blob(data, { type: "audio/mpeg" });
 }

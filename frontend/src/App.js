@@ -1351,6 +1351,8 @@ function App() {
         <ExportPlaylistModal
           playlist={playlists.find((p) => p.id === exportForId)}
           tracks={tracks}
+          defaultCrossfade={settings.crossfade}
+          crossfadeSeconds={settings.crossfadeSeconds}
           onClose={() => setExportForId(null)}
         />
       )}
