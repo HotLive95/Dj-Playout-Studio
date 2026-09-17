@@ -170,6 +170,14 @@ for "Hot Live 95 Detroit A.I. Radio".
   `open-playlist-{id}`) listing matches from other playlists with an Open button that switches the
   current playlist. Verified: "sunrise" → current match + Evening Drive match, Open switches playlist.
 
+## Update 21 (2026-06) — verified
+- Unlimited tracks per playlist: there was never a data cap; the track list had a hard-coded
+  `maxHeight: 27rem` that shrank it into a small scroll box past ~6 tracks. Removed that inline cap and
+  gave the track-scroll `flex-1 min-h-0 overflow-y-auto` + added `min-h-0` to the track-list-panel so on
+  desktop the list fills the full console height and scrolls internally (bottom bars stay put), while on
+  mobile the page scrolls. Verified with 30 tracks: desktop internal scroll (384/2073), jingle+player
+  bars on-screen; mobile page scrollable.
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

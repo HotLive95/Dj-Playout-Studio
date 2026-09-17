@@ -136,7 +136,7 @@ export default function TrackList({
 
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 relative"
+      className="flex-1 flex flex-col min-w-0 min-h-0 relative"
       data-testid="track-list-panel"
       onDragEnter={onZoneDragEnter}
       onDragOver={onZoneDragOver}
@@ -245,11 +245,10 @@ export default function TrackList({
         </div>
       </div>
 
-      {/* Track rows — windowed to ~6 rows, then scrolls */}
+      {/* Track rows — fill available height and scroll; no track-count cap */}
       <div
-        className="relative z-10 flex-1 overflow-y-auto hl-scroll px-4 pb-6"
+        className="relative z-10 flex-1 min-h-0 overflow-y-auto hl-scroll px-4 pb-6"
         data-testid="track-scroll"
-        style={items.length > 6 ? { maxHeight: "27rem" } : undefined}
       >
         {allItems.length === 0 ? (
           <div
