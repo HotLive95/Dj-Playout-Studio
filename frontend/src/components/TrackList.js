@@ -19,6 +19,7 @@ import { formatTime, formatTotal } from "../lib/format";
 export default function TrackList({
   playlist,
   tracks,
+  search,
   currentTrackId,
   cueTrackId,
   isPlaying,
@@ -45,8 +46,12 @@ export default function TrackList({
   const [overIndex, setOverIndex] = useState(null);
   const [fileDragging, setFileDragging] = useState(false);
 
-  const items = playlist ? playlist.trackIds.map((id) => tracks[id]).filter(Boolean) : [];
-  const totalDuration = items.reduce((sum, t) => sum + (t.duration || 0), 0);
+  const allItems = playlist
+    ? playlist.trackIds.map((id, i) => ({ track: tracks[id], index: i })).filter((x) => x.track)
+    : [];
+  const totalDuration = allItems.reduce((sum, x) => sum + (x.track.duration || 0), 0);
+  const q = (search || "").trim().toLowerCase();
+  const items = q ? allItems.filter((x) => x.track.name.toLowerCase().includes(q)) : allItems;
 
   const handleAddClick = () => {
     if (isElectron) onImportDialog();
@@ -191,7 +196,9 @@ export default function TrackList({
           </h1>
           <div className="flex items-center gap-4 mt-1.5 text-sm text-[var(--hl-muted)]">
             <span data-testid="track-count">
-              {items.length} track{items.length === 1 ? "" : "s"}
+              {q
+                ? `${items.length} of ${allItems.length} match`
+                : `${allItems.length} track${allItems.length === 1 ? "" : "s"}`}
             </span>
             <span className="flex items-center gap-1.5" data-testid="total-duration">
               <Clock size={14} /> {formatTotal(totalDuration)} total runtime
@@ -232,7 +239,7 @@ export default function TrackList({
         data-testid="track-scroll"
         style={items.length > 6 ? { maxHeight: "27rem" } : undefined}
       >
-        {items.length === 0 ? (
+        {allItems.length === 0 ? (
           <div
             className="mx-2 mt-4 border-2 border-dashed border-[var(--hl-line)] rounded-xl py-16 text-center"
             data-testid="empty-playlist"
@@ -244,9 +251,20 @@ export default function TrackList({
               here to load tracks.
             </p>
           </div>
+        ) : items.length === 0 ? (
+          <div
+            className="mx-2 mt-4 border-2 border-dashed border-[var(--hl-line)] rounded-xl py-16 text-center"
+            data-testid="no-search-results"
+          >
+            <Music2 size={40} className="mx-auto text-[var(--hl-line)]" />
+            <p className="mt-3 text-[var(--hl-muted)]">
+              No tracks match{" "}
+              <span className="text-[var(--hl-fire)] font-600">"{search}"</span> in this playlist.
+            </p>
+          </div>
         ) : (
           <div className="space-y-1.5">
-            {items.map((track, index) => {
+            {items.map(({ track, index }) => {
               const active = track.id === currentTrackId;
               const rowPlaying = active && isPlaying;
               const cued = track.id === cueTrackId;
@@ -254,7 +272,7 @@ export default function TrackList({
                 <div
                   key={track.id}
                   data-testid={`track-row-${index}`}
-                  draggable
+                  draggable={!q}
                   onDragStart={() => onRowDragStart(index)}
                   onDragOver={(e) => onRowDragOver(e, index)}
                   onDrop={() => onRowDrop(index)}

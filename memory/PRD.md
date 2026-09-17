@@ -143,6 +143,20 @@ for "Hot Live 95 Detroit A.I. Radio".
   nothing is loaded and ramping volume 0→full over ~6s. Engine `fadeInStart` reuses the sleep-fade raf.
   Verified: set 06:30 → button shows 06:30; cancel clears.
 
+## Update 19 (2026-06) — verified
+- In/Out cursor default: `setCueIn` now seeks the engine to the in point (parks the playhead there), and
+  the engine resets the playhead back to `cueIn` (or 0) whenever playback reaches the Out cue / track end
+  without auto-advancing (`_onTime` effEnd branch + `_onEnded`). So the cursor defaults to the In point
+  until cues are cleared. Verified: In@0:02, Out@0:04 → on reaching Out, playback stops and playhead resets to 0:02.
+- Draggable trim handles: `Waveform.js` gains `onInChange`/`onOutChange` and pointer-drag handles
+  (data-testid `trim-handle-in`/`trim-handle-out`, 16px hit area, amber grips). TrackEditor wires them to
+  setInPoint/setOutPoint; the editor already loops/stops playback within [in,out]. Verified: dragging set
+  In 0:02 / Out 0:06, Keep 0:04 of 0:08.
+- Track search: Header has a search field (data-testid `track-search-input` + clear). App holds `search`
+  state passed to TrackList, which filters the current playlist by name while PRESERVING original indices
+  (so reorder/edit/remove/testids stay correct; drag disabled while filtering). Shows "N of M match" and a
+  `no-search-results` state. Verified: "sunrise" → rows 1 & 4, "2 of 4 match".
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

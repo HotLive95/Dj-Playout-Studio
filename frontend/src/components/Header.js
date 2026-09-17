@@ -1,7 +1,7 @@
 import React from "react";
-import { KeyRound, IdCard } from "lucide-react";
+import { KeyRound, IdCard, Search, X } from "lucide-react";
 
-export default function Header({ onAir, nowPlaying, onOpenKeyManager, onOpenLicenseStatus }) {
+export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus }) {
   return (
     <header
       data-testid="app-header"
@@ -21,6 +21,33 @@ export default function Header({ onAir, nowPlaying, onOpenKeyManager, onOpenLice
           <div className="text-[10px] text-[var(--hl-muted)] tracking-[0.2em] uppercase mt-1">
             Space play · ← → skip · ↑ ↓ vol
           </div>
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-0 max-w-md mx-2 md:mx-4">
+        <div className="relative">
+          <Search
+            size={15}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--hl-muted)] pointer-events-none"
+          />
+          <input
+            data-testid="track-search-input"
+            type="text"
+            value={search || ""}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search tracks in this playlist…"
+            className="w-full h-9 pl-9 pr-8 rounded-full bg-black/40 border border-[var(--hl-line)] text-sm text-[var(--hl-text)] placeholder:text-[var(--hl-muted)] outline-none focus:border-[var(--hl-fire)] transition"
+          />
+          {search && (
+            <button
+              data-testid="track-search-clear"
+              onClick={() => onSearch("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--hl-muted)] hover:text-white"
+              title="Clear search"
+            >
+              <X size={15} />
+            </button>
+          )}
         </div>
       </div>
 

@@ -230,6 +230,7 @@ function App() {
 
   const [editorTrack, setEditorTrack] = useState(null);
   const [scheduleForId, setScheduleForId] = useState(null);
+  const [search, setSearch] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [talkActive, setTalkActive] = useState(false);
   const [micActive, setMicActive] = useState(false);
@@ -1019,7 +1020,8 @@ function App() {
   const setCueIn = () => {
     if (!currentTrackId) return;
     setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueIn: playback.currentTime } }));
-    setBanner("Start cue set");
+    engineRef.current?.seek(playback.currentTime);
+    setBanner("Start cue set — cursor parks here");
   };
   const setCueOut = () => {
     if (!currentTrackId) return;
@@ -1151,7 +1153,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} />
 
       {banner && (
         <div
@@ -1180,6 +1182,7 @@ function App() {
           <TrackList
             playlist={currentPlaylist}
             tracks={tracks}
+            search={search}
             currentTrackId={currentTrackId}
             cueTrackId={cue.trackId}
             isPlaying={playback.isPlaying}

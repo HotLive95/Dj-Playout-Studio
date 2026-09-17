@@ -221,9 +221,14 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
                   cuts={cuts.map((c) => ({ start: frac(c.start), end: frac(c.end) }))}
                   height={120}
                   onSeek={seekFrac}
+                  onInChange={(f) => setInPoint(Math.min(f * duration, outPoint - 0.05))}
+                  onOutChange={(f) => setOutPoint(Math.max(f * duration, inPoint + 0.05))}
                 />
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--hl-muted)] tabular-nums">
                   <span data-testid="editor-current-time">{formatTime(current)}</span>
+                  <span className="text-[var(--hl-amber)] normal-case tracking-normal">
+                    Drag the amber handles to set start &amp; end
+                  </span>
                   <span>
                     Keep: <span className="text-[var(--hl-fire)]">{formatTime(editedDuration)}</span>{" "}
                     of {formatTime(duration)}

@@ -10,11 +10,14 @@ export default function Waveform({
   markers = [],
   height = 96,
   onSeek,
+  onInChange,
+  onOutChange,
   interactive = true,
   compact = false,
 }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
+  const draggingRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,10 +61,38 @@ export default function Waveform({
   }, [peaks, progress, inPoint, outPoint, cuts, height, compact]);
 
   const handleClick = (e) => {
+    if (draggingRef.current) return;
     if (!interactive || !onSeek) return;
     const r = wrapRef.current.getBoundingClientRect();
     onSeek(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
   };
+
+  const fracFromX = (clientX) => {
+    const r = wrapRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  };
+
+  const startHandleDrag = (which) => (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    draggingRef.current = which;
+    const move = (ev) => {
+      const f = fracFromX(ev.clientX);
+      if (which === "in" && onInChange) onInChange(Math.min(f, outPoint - 0.001));
+      if (which === "out" && onOutChange) onOutChange(Math.max(f, inPoint + 0.001));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setTimeout(() => {
+        draggingRef.current = null;
+      }, 0);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const draggable = !compact && (onInChange || onOutChange);
 
   return (
     <div
@@ -84,13 +115,29 @@ export default function Waveform({
       {!compact && (
         <>
           <div
-            className="absolute top-0 bottom-0 w-[2px] bg-[var(--hl-amber)]"
-            style={{ left: `${inPoint * 100}%` }}
-          />
+            data-testid="trim-handle-in"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={draggable ? startHandleDrag("in") : undefined}
+            className={`absolute top-0 bottom-0 z-10 ${draggable ? "cursor-ew-resize touch-none" : ""}`}
+            style={{ left: `${inPoint * 100}%`, width: draggable ? 16 : 2, marginLeft: draggable ? -8 : 0 }}
+          >
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[var(--hl-amber)]" />
+            {draggable && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 h-3 w-3 rounded-b-sm bg-[var(--hl-amber)]" />
+            )}
+          </div>
           <div
-            className="absolute top-0 bottom-0 w-[2px] bg-[var(--hl-amber)]"
-            style={{ left: `${outPoint * 100}%` }}
-          />
+            data-testid="trim-handle-out"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={draggable ? startHandleDrag("out") : undefined}
+            className={`absolute top-0 bottom-0 z-10 ${draggable ? "cursor-ew-resize touch-none" : ""}`}
+            style={{ left: `${outPoint * 100}%`, width: draggable ? 16 : 2, marginLeft: draggable ? -8 : 0 }}
+          >
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[var(--hl-amber)]" />
+            {draggable && (
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 h-3 w-3 rounded-t-sm bg-[var(--hl-amber)]" />
+            )}
+          </div>
         </>
       )}
     </div>

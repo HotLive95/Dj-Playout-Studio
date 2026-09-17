@@ -412,8 +412,13 @@ export default class AudioEngine {
         this._startCrossfade();
       } else if (!this._fading && !this._stopping && hasEarlyEnd && el.currentTime >= effEnd) {
         const n = this._nextIndex();
-        if (this.autoplay && n >= 0) this.playIndex(n);
-        else el.pause();
+        if (this.autoplay && n >= 0) {
+          this.playIndex(n);
+        } else {
+          el.pause();
+          el.currentTime = track && track.cueIn != null ? track.cueIn : 0;
+          this._emit();
+        }
       }
     }
     this._emit();
@@ -491,6 +496,8 @@ export default class AudioEngine {
     if (this.autoplay && n >= 0) {
       this.playIndex(n);
     } else {
+      const track = this.queue[this.index];
+      el.currentTime = track && track.cueIn != null ? track.cueIn : 0;
       this._emit();
     }
   }
