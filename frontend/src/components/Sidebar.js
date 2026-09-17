@@ -10,6 +10,7 @@ import {
   Clock,
   FolderDown,
   Shuffle,
+  Download,
 } from "lucide-react";
 import { formatTotal } from "../lib/format";
 
@@ -21,6 +22,7 @@ export default function Sidebar({
   onRename,
   onDelete,
   onSchedule,
+  onExport,
   onImportPlaylist,
   durationOf,
   shuffleAll,
@@ -187,6 +189,18 @@ export default function Sidebar({
                     )}
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                    <button
+                      data-testid={`export-playlist-${pl.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onExport(pl.id);
+                      }}
+                      className="h-7 w-7 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:bg-white/10 disabled:opacity-30"
+                      title="Save playlist as MP3 / WAV"
+                      disabled={pl.trackIds.length === 0}
+                    >
+                      <Download size={14} />
+                    </button>
                     <button
                       data-testid={`schedule-playlist-${pl.id}`}
                       onClick={(e) => {

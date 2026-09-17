@@ -7,6 +7,7 @@ import PlayerBar from "@/components/PlayerBar";
 import CuePanel from "@/components/CuePanel";
 import TrackEditor from "@/components/TrackEditor";
 import ScheduleModal from "@/components/ScheduleModal";
+import ExportPlaylistModal from "@/components/ExportPlaylistModal";
 import JingleBar from "@/components/JingleBar";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import LicenseGate from "@/components/LicenseGate";
@@ -231,6 +232,7 @@ function App() {
 
   const [editorTrack, setEditorTrack] = useState(null);
   const [scheduleForId, setScheduleForId] = useState(null);
+  const [exportForId, setExportForId] = useState(null);
   const [search, setSearch] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [talkActive, setTalkActive] = useState(false);
@@ -1196,6 +1198,7 @@ function App() {
           onRename={renamePlaylist}
           onDelete={deletePlaylist}
           onSchedule={setScheduleForId}
+          onExport={setExportForId}
           onImportPlaylist={importPlaylist}
           durationOf={durationOf}
           shuffleAll={settings.shuffleAll}
@@ -1341,6 +1344,14 @@ function App() {
           playlist={playlists.find((p) => p.id === scheduleForId)}
           onClose={() => setScheduleForId(null)}
           onSave={setSchedule}
+        />
+      )}
+
+      {exportForId && (
+        <ExportPlaylistModal
+          playlist={playlists.find((p) => p.id === exportForId)}
+          tracks={tracks}
+          onClose={() => setExportForId(null)}
         />
       )}
 

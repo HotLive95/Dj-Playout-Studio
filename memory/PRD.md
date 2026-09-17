@@ -210,6 +210,16 @@ for "Hot Live 95 Detroit A.I. Radio".
   transport shortcuts while the editor is open. Selected cue button highlights amber + hint shown.
   Verified right x3 -> 0:00.030, left x1 -> 0:00.020.
 
+## Update 25 (2026-06) — verified
+- Save Playlist as MP3/WAV: new `components/ExportPlaylistModal.js`. A Download button on each Sidebar
+  playlist row (data-testid `export-playlist-{id}`) opens the modal (`export-playlist-modal`) with a
+  format select (`export-format`: mp3 192k / wav) and Run button (`export-run`). It decodes every track
+  (platform.getUrl -> decodeToBuffer), honours each track's cueIn/cueOut, schedules them sequentially in
+  an OfflineAudioContext(2, frames, 44100), renders one continuous buffer, encodes via bufferToMp3/
+  bufferToWav (lib/audioProcessing.js), and downloads `{playlist name}.{ext}`. Fully offline.
+  Verified: 2×2s tracks -> "Export Show.wav" 705,644 bytes (= 4s stereo 44.1k). Also: app logo enlarged
+  h-14->h-20 and name text-base->text-2xl (~50% larger).
+
 
 
 ## Update 13 (2026-06) — verified
