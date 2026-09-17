@@ -189,6 +189,15 @@ for "Hot Live 95 Detroit A.I. Radio".
   both current-playlist rows and other-playlist results. Verified: search "tone" → <mark>tone</mark>.
 - No playlist cap: reconfirmed — unlimited tracks, list fills height and scrolls (Update 21).
 
+## Update 23 (2026-06) — verified
+- Track Editor zoom/percentage tool: new `zoom` (1×–30×) + `viewStart` state in TrackEditor. A Zoom
+  slider (data-testid `editor-zoom`) with a % readout (`editor-zoom-readout`), a Pan slider
+  (`editor-pan`, shown when zoom>1), and a Fit button (`editor-zoom-fit`). The visible waveform is a
+  peaks slice of the window; `toWin`/`fromWin` map full-track fraction ↔ visible-window fraction so
+  click-seek, the playhead, cut regions, and the draggable In/Out trim handles all stay accurate while
+  zoomed. Zooming keeps the playhead centred in the new window. Verified: 100%→600% magnifies, pan
+  appears, handle drag maps to sub-second precision, Fit resets to 100%.
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

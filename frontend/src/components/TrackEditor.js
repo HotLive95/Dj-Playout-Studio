@@ -10,6 +10,7 @@ import {
   FlagTriangleRight,
   Trash2,
   RotateCcw,
+  ZoomIn,
 } from "lucide-react";
 import Waveform from "./Waveform";
 import { formatTime } from "../lib/format";
@@ -36,6 +37,8 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
   const [current, setCurrent] = useState(0);
   const [format, setFormat] = useState("wav");
   const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [viewStart, setViewStart] = useState(0);
   const audioRef = useRef(null);
   const urlRef = useRef(null);
 
@@ -172,6 +175,20 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
   };
 
   const frac = (t) => (duration ? t / duration : 0);
+
+  // ---- Zoom / pan window for micro-editing ----
+  const N = peaks ? peaks.length : 0;
+  const windowFrac = 1 / zoom;
+  const maxStart = Math.max(0, 1 - windowFrac);
+  const vStart = Math.min(viewStart, maxStart);
+  const vEnd = vStart + windowFrac;
+  const visPeaks =
+    peaks && zoom > 1
+      ? peaks.slice(Math.floor(vStart * N), Math.max(Math.floor(vStart * N) + 1, Math.ceil(vEnd * N)))
+      : peaks;
+  const toWin = (f) => (f - vStart) / windowFrac; // full frac -> visible-window frac
+  const fromWin = (fw) => vStart + fw * windowFrac; // visible-window frac -> full frac
+
   const editedDuration = keepRegionsFrom(inPoint, outPoint, cuts).reduce(
     (s, r) => s + (r.end - r.start),
     0
@@ -214,15 +231,21 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
             <>
               <div className="rounded-xl bg-black/40 border border-[var(--hl-line)] p-3">
                 <Waveform
-                  peaks={peaks}
-                  progress={frac(current)}
-                  inPoint={frac(inPoint)}
-                  outPoint={frac(outPoint)}
-                  cuts={cuts.map((c) => ({ start: frac(c.start), end: frac(c.end) }))}
+                  peaks={visPeaks}
+                  progress={toWin(frac(current))}
+                  inPoint={toWin(frac(inPoint))}
+                  outPoint={toWin(frac(outPoint))}
+                  cuts={cuts.map((c) => ({ start: toWin(frac(c.start)), end: toWin(frac(c.end)) }))}
                   height={120}
-                  onSeek={seekFrac}
-                  onInChange={(f) => setInPoint(Math.min(f * duration, outPoint - 0.05))}
-                  onOutChange={(f) => setOutPoint(Math.max(f * duration, inPoint + 0.05))}
+                  onSeek={(fw) => seekFrac(fromWin(fw))}
+                  onInChange={(fw) => {
+                    const t = fromWin(fw) * duration;
+                    setInPoint(Math.max(0, Math.min(t, outPoint - 0.05)));
+                  }}
+                  onOutChange={(fw) => {
+                    const t = fromWin(fw) * duration;
+                    setOutPoint(Math.min(duration, Math.max(t, inPoint + 0.05)));
+                  }}
                 />
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--hl-muted)] tabular-nums">
                   <span data-testid="editor-current-time">{formatTime(current)}</span>
@@ -233,6 +256,60 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
                     Keep: <span className="text-[var(--hl-fire)]">{formatTime(editedDuration)}</span>{" "}
                     of {formatTime(duration)}
                   </span>
+                </div>
+
+                {/* Zoom / pan for micro-editing */}
+                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[var(--hl-line)]">
+                  <ZoomIn size={15} className="text-[var(--hl-muted)] shrink-0" />
+                  <span className="text-xs text-[var(--hl-muted)] shrink-0">Zoom</span>
+                  <input
+                    data-testid="editor-zoom"
+                    type="range"
+                    min="1"
+                    max="30"
+                    step="0.5"
+                    value={zoom}
+                    onChange={(e) => {
+                      const z = Number(e.target.value);
+                      const w = 1 / z;
+                      // keep the current playhead centred in the new window when possible
+                      const center = frac(current);
+                      setZoom(z);
+                      setViewStart(Math.min(Math.max(0, center - w / 2), Math.max(0, 1 - w)));
+                    }}
+                    className="hl-range w-40 shrink-0"
+                  />
+                  <span
+                    className="text-xs tabular-nums text-[var(--hl-amber)] w-16 shrink-0"
+                    data-testid="editor-zoom-readout"
+                  >
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  {zoom > 1 && (
+                    <>
+                      <span className="text-xs text-[var(--hl-muted)] shrink-0">Pan</span>
+                      <input
+                        data-testid="editor-pan"
+                        type="range"
+                        min="0"
+                        max={maxStart}
+                        step="0.001"
+                        value={vStart}
+                        onChange={(e) => setViewStart(Number(e.target.value))}
+                        className="hl-range flex-1 min-w-0"
+                      />
+                    </>
+                  )}
+                  <button
+                    data-testid="editor-zoom-fit"
+                    onClick={() => {
+                      setZoom(1);
+                      setViewStart(0);
+                    }}
+                    className="px-2.5 py-1 rounded border border-[var(--hl-line)] text-xs hover:border-[var(--hl-fire)] shrink-0"
+                  >
+                    Fit
+                  </button>
                 </div>
               </div>
 
