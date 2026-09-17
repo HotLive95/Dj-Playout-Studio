@@ -23,6 +23,7 @@ export default class AudioEngine {
     this.shuffle = false;
     this._recent = [];
     this.trimSilence = false;
+    this.loopRegion = false;
     this.cueAutoFade = false;
     this.cueFadeSeconds = 1.5;
     this.duckActive = false;
@@ -102,6 +103,10 @@ export default class AudioEngine {
 
   setTrimSilence(on) {
     this.trimSilence = on;
+  }
+
+  setLoopRegion(on) {
+    this.loopRegion = !!on;
   }
 
   setCueAutoFade(on, sec) {
@@ -401,6 +406,14 @@ export default class AudioEngine {
         }
       }
       if (
+        this.loopRegion &&
+        !this._fading &&
+        hasEarlyEnd &&
+        el.currentTime >= effEnd
+      ) {
+        // Rehearse loop: jump back to the In point (or start) and keep playing.
+        el.currentTime = track && track.cueIn != null ? track.cueIn : 0;
+      } else if (
         this.crossfade &&
         this.autoplay &&
         !this._fading &&
@@ -492,11 +505,16 @@ export default class AudioEngine {
   _onEnded(el) {
     if (el !== this.active) return;
     if (this._fading) return;
+    const track = this.queue[this.index];
+    if (this.loopRegion) {
+      el.currentTime = track && track.cueIn != null ? track.cueIn : 0;
+      el.play().catch(() => {});
+      return;
+    }
     const n = this._nextIndex();
     if (this.autoplay && n >= 0) {
       this.playIndex(n);
     } else {
-      const track = this.queue[this.index];
       el.currentTime = track && track.cueIn != null ? track.cueIn : 0;
       this._emit();
     }

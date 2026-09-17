@@ -178,6 +178,17 @@ for "Hot Live 95 Detroit A.I. Radio".
   mobile the page scrolls. Verified with 30 tracks: desktop internal scroll (384/2073), jingle+player
   bars on-screen; mobile page scrollable.
 
+## Update 22 (2026-06) — verified
+- Loop Region: `settings.loopRegion` + PlayerBar "Loop" toggle (data-testid `loop-region-toggle`, Repeat1
+  icon, in the cue-button group). Engine `setLoopRegion`; in `_onTime` when the playhead reaches the Out
+  cue (effEnd) while looping it jumps back to cueIn (or 0) and keeps playing; `_onEnded` also loops the
+  full track when no Out cue. Verified: In@1s/Out@3s + Loop → after 3.2s still ON AIR, playhead looped
+  back to ~1s.
+- Jump-to-Match: TrackList highlights the matched substring in track names via a `<mark>` (amber) and
+  auto-scrolls the first match into view (`firstMatchRef` + scrollIntoView on query change). Applies to
+  both current-playlist rows and other-playlist results. Verified: search "tone" → <mark>tone</mark>.
+- No playlist cap: reconfirmed — unlimited tracks, list fills height and scrolls (Update 21).
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

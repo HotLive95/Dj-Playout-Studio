@@ -7,6 +7,7 @@ import {
   Volume2,
   VolumeX,
   Repeat,
+  Repeat1,
   Shuffle,
   Waves,
   Mic,
@@ -38,6 +39,7 @@ export default function PlayerBar({
   crossfade,
   crossfadeSeconds,
   trimSilence,
+  loopRegion,
   talkActive,
   autoDuck,
   micActive,
@@ -57,6 +59,7 @@ export default function PlayerBar({
   onToggleCrossfade,
   onCrossfadeSeconds,
   onToggleTrimSilence,
+  onToggleLoop,
   onToggleTalk,
   onToggleAutoDuck,
   onToggleMic,
@@ -165,6 +168,18 @@ export default function PlayerBar({
               title="Gently fade out at the end / Out cue"
             >
               ⌇ Fade
+            </button>
+            <button
+              data-testid="loop-region-toggle"
+              onClick={onToggleLoop}
+              className={`px-2 py-1 rounded text-[11px] font-600 border transition ${
+                loopRegion
+                  ? "border-[var(--hl-fire)] text-[var(--hl-fire)] bg-[rgba(255,90,31,0.1)]"
+                  : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white"
+              }`}
+              title="Loop between the In and Out cues (rehearse a segment)"
+            >
+              <Repeat1 size={13} className="inline -mt-0.5" /> Loop
             </button>
             {cueAutoFade && (
               <input

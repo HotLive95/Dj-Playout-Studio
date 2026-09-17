@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   Plus,
   Play,
@@ -47,6 +47,7 @@ export default function TrackList({
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [fileDragging, setFileDragging] = useState(false);
+  const firstMatchRef = useRef(null);
 
   const allItems = playlist
     ? playlist.trackIds.map((id, i) => ({ track: tracks[id], index: i })).filter((x) => x.track)
@@ -54,6 +55,27 @@ export default function TrackList({
   const totalDuration = allItems.reduce((sum, x) => sum + (x.track.duration || 0), 0);
   const q = (search || "").trim().toLowerCase();
   const items = q ? allItems.filter((x) => x.track.name.toLowerCase().includes(q)) : allItems;
+
+  useEffect(() => {
+    if (q && firstMatchRef.current) {
+      firstMatchRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [q]);
+
+  const highlightName = (name) => {
+    if (!q) return name;
+    const idx = name.toLowerCase().indexOf(q);
+    if (idx === -1) return name;
+    return (
+      <>
+        {name.slice(0, idx)}
+        <mark className="bg-[rgba(255,171,0,0.4)] text-inherit rounded px-0.5">
+          {name.slice(idx, idx + q.length)}
+        </mark>
+        {name.slice(idx + q.length)}
+      </>
+    );
+  };
   const otherMatches = q
     ? (playlists || [])
         .filter((pl) => pl.id !== playlist?.id)
@@ -275,13 +297,14 @@ export default function TrackList({
           </div>
         ) : (
           <div className="space-y-1.5">
-            {items.map(({ track, index }) => {
+            {items.map(({ track, index }, pos) => {
               const active = track.id === currentTrackId;
               const rowPlaying = active && isPlaying;
               const cued = track.id === cueTrackId;
               return (
                 <div
                   key={track.id}
+                  ref={pos === 0 ? firstMatchRef : null}
                   data-testid={`track-row-${index}`}
                   draggable={!q}
                   onDragStart={() => onRowDragStart(index)}
@@ -335,7 +358,7 @@ export default function TrackList({
                       }`}
                       data-testid={`track-name-${index}`}
                     >
-                      {track.name}
+                      {highlightName(track.name)}
                     </div>
                     <div className="text-[11px] text-[var(--hl-muted)] uppercase tracking-wide">
                       {track.type?.includes("wav") || /\.wav$/i.test(track.name) ? "WAV" : "MP3"}
@@ -404,7 +427,7 @@ export default function TrackList({
                 >
                   <Music2 size={16} className="text-[var(--hl-muted)] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="truncate font-500">{track.name}</div>
+                    <div className="truncate font-500">{highlightName(track.name)}</div>
                     <div className="text-[11px] text-[var(--hl-amber)] uppercase tracking-wide truncate">
                       {pl.name}
                     </div>

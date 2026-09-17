@@ -36,6 +36,7 @@ const defaultSettings = {
   programSink: "",
   cueSink: "",
   trimSilence: false,
+  loopRegion: false,
   autoDuck: false,
   voiceFx: "off",
   cueAutoFade: false,
@@ -387,6 +388,7 @@ function App() {
     e.setMainSink(settings.programSink || "");
     e.setCueSink(settings.cueSink || "");
     e.setTrimSilence(settings.trimSilence);
+    e.setLoopRegion(settings.loopRegion);
     e.setCueAutoFade(settings.cueAutoFade, settings.cueFadeSeconds);
   }, [settings]);
 
@@ -1052,6 +1054,7 @@ function App() {
     if (!currentTrackId) return;
     setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueIn: undefined, cueOut: undefined } }));
   };
+  const toggleLoopRegion = () => setSettings((s) => ({ ...s, loopRegion: !s.loopRegion }));
   const toggleTrimSilence = () =>
     setSettings((s) => {
       const on = !s.trimSilence;
@@ -1273,6 +1276,7 @@ function App() {
         crossfade={settings.crossfade}
         crossfadeSeconds={settings.crossfadeSeconds}
         trimSilence={settings.trimSilence}
+        loopRegion={settings.loopRegion}
         talkActive={talkActive}
         autoDuck={settings.autoDuck}
         micActive={micActive}
@@ -1292,6 +1296,7 @@ function App() {
         onToggleCrossfade={toggleCrossfade}
         onCrossfadeSeconds={setCrossfadeSeconds}
         onToggleTrimSilence={toggleTrimSilence}
+        onToggleLoop={toggleLoopRegion}
         onToggleTalk={() => setTalkActive((v) => !v)}
         onToggleAutoDuck={toggleAutoDuck}
         onToggleMic={toggleMicLive}
