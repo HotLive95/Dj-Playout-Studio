@@ -1,6 +1,7 @@
 // Hot Live 95 — DJ Playout Studio  |  Electron main process (offline desktop app)
 const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require("electron");
 const path = require("path");
+const { pathToFileURL } = require("url");
 const fs = require("fs");
 const os = require("os");
 const crypto = require("crypto");
@@ -50,10 +51,16 @@ function createWindow() {
 
 app.whenReady().then(() => {
   protocol.handle("hlmedia", (request) => {
-    let p = request.url.slice("hlmedia://".length);
-    p = decodeURI(p);
-    const fileUrl = "file://" + (p.startsWith("/") ? "" : "/") + p;
-    return net.fetch(fileUrl);
+    try {
+      // URL form: hlmedia://local/<encodeURIComponent(full native path)>
+      const u = new URL(request.url);
+      const filePath = decodeURIComponent(u.pathname.replace(/^\//, ""));
+      // pathToFileURL correctly handles Windows drive letters/backslashes and
+      // POSIX absolute paths, so files resolve from any flash-drive letter.
+      return net.fetch(pathToFileURL(filePath).href);
+    } catch {
+      return new Response("", { status: 404 });
+    }
   });
 
   createWindow();

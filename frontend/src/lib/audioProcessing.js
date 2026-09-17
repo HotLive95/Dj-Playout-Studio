@@ -12,9 +12,25 @@ export function audioCtx() {
 }
 
 export async function decodeToBuffer(url) {
-  const res = await fetch(url);
+  if (!url) throw new Error("MISSING_FILE");
+  let res;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new Error("MISSING_FILE");
+  }
+  if (!res.ok) throw new Error("MISSING_FILE");
+  // A null/blob-less URL on the web resolves to the SPA's index.html; never
+  // hand HTML to the audio decoder (that's the classic "unable to decode" bug).
+  const type = (res.headers.get("content-type") || "").toLowerCase();
+  if (type.includes("text/html")) throw new Error("MISSING_FILE");
   const arr = await res.arrayBuffer();
-  return await audioCtx().decodeAudioData(arr.slice(0));
+  if (!arr || arr.byteLength < 16) throw new Error("MISSING_FILE");
+  try {
+    return await audioCtx().decodeAudioData(arr.slice(0));
+  } catch {
+    throw new Error("DECODE_FAILED");
+  }
 }
 
 // Downsample to `count` min/max peak pairs for waveform rendering.

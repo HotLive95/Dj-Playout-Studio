@@ -361,3 +361,21 @@ for "Hot Live 95 Detroit A.I. Radio".
 - Signed-build support: env-driven Windows (CSC_LINK) + macOS notarization (`notarize.js`,
   entitlements, hardened runtime); documented in BUILD_GUIDE.md.
 - Logo refreshed to the flame emblem wordmark ("HOT LIVE 95 / DETROIT · A.I. RADIO").
+
+## Fix (2026-06) — "Unable to decode audio data" on playlist export (offline)
+Root causes (two distinct offline-path bugs):
+1. Electron/desktop (portable .exe on a flash drive): getUrl built `hlmedia://<path>`, so a
+   Windows drive letter (E:/F:) landed in the URL authority — Chromium drops the ":" and
+   lowercases it, so main.js resolved the wrong file path. net.fetch failed → bad bytes →
+   decodeAudioData threw. Fix: getUrl now emits `hlmedia://local/<encodeURIComponent(fullPath)>`
+   and main.js decodes the single path segment via `pathToFileURL()` (handles Windows drives +
+   backslashes + POSIX). Files: `frontend/src/lib/platform.js`, `electron/main.js`.
+2. Web build: a missing IndexedDB blob made getUrl return null, so `fetch(null)` resolved to
+   the SPA's index.html and decodeAudioData choked on HTML. Fix: `decodeToBuffer` now guards
+   null/!ok/text-html/empty responses and throws MISSING_FILE. File: `audioProcessing.js`.
+- Export UX: `ExportPlaylistModal` now skips unreadable tracks (per-track try/catch), names them
+  in an amber "export-skipped" warning, and only aborts with a friendly "re-import" message when
+  ALL tracks fail — instead of crashing the whole render on the first bad file.
+- Verified in-browser: real WAV upload → MP3 export with crossfade downloaded a valid 37KB file,
+  status "Saved!" 100%, no decode error. Raw fetch→decodeAudioData→OfflineAudioContext primitives
+  all pass. Desktop fix validated against WHATWG URL parsing (drive-letter mangling reproduced).

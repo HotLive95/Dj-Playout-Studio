@@ -26,6 +26,7 @@ export default function ExportPlaylistModal({
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
+  const [skipped, setSkipped] = useState([]);
 
   if (!playlist) return null;
   const items = playlist.trackIds.map((id) => tracks[id]).filter(Boolean);
@@ -33,20 +34,34 @@ export default function ExportPlaylistModal({
   const run = async () => {
     setBusy(true);
     setError("");
+    setSkipped([]);
     setProgress(0);
     try {
       const targetSR = 44100;
       const decoded = [];
+      const skippedNames = [];
       for (let i = 0; i < items.length; i++) {
         setStatus(`Decoding ${i + 1}/${items.length} · ${items[i].name}`);
         setProgress(Math.round(((i + 0.5) / items.length) * 55));
-        // eslint-disable-next-line no-await-in-loop
-        const url = await platform.getUrl(items[i]);
-        // eslint-disable-next-line no-await-in-loop
-        const buf = await decodeToBuffer(url);
+        let buf;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const url = await platform.getUrl(items[i]);
+          // eslint-disable-next-line no-await-in-loop
+          buf = await decodeToBuffer(url);
+        } catch {
+          skippedNames.push(items[i].name);
+          continue;
+        }
         const inP = items[i].cueIn != null ? Math.max(0, items[i].cueIn) : 0;
         const outP = items[i].cueOut != null ? items[i].cueOut : buf.duration;
         decoded.push({ buf, offset: inP, dur: Math.max(0.05, outP - inP) });
+      }
+
+      if (decoded.length === 0) {
+        throw new Error(
+          "None of these tracks could be read — their audio files aren't available on this device. Re-import the files into the playlist, then try again."
+        );
       }
 
       const n = decoded.length;
@@ -102,8 +117,13 @@ export default function ExportPlaylistModal({
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      setStatus("Saved!");
-      setTimeout(() => onClose(), 800);
+      if (skippedNames.length) {
+        setSkipped(skippedNames);
+        setStatus(`Saved ${decoded.length} of ${items.length} tracks`);
+      } else {
+        setStatus("Saved!");
+        setTimeout(() => onClose(), 800);
+      }
     } catch (e) {
       setError(e.message || "Export failed. A track file may be missing.");
       setStatus("");
@@ -200,6 +220,15 @@ export default function ExportPlaylistModal({
           {error && (
             <div className="text-sm text-[var(--hl-onair)]" data-testid="export-error">
               {error}
+            </div>
+          )}
+          {skipped.length > 0 && (
+            <div
+              className="text-sm text-[var(--hl-amber)] bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2"
+              data-testid="export-skipped"
+            >
+              Skipped {skipped.length} track{skipped.length === 1 ? "" : "s"} whose audio file
+              couldn't be read (re-import to include): {skipped.join(", ")}
             </div>
           )}
 

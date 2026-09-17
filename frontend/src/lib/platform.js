@@ -105,7 +105,11 @@ export const platform = {
   async getUrl(track) {
     if (!track) return null;
     if (track.path) {
-      return `hlmedia://${encodeURI(track.path.replace(/\\/g, "/"))}`;
+      // Fixed host + the FULL native path encoded into one path segment. This
+      // avoids the drive letter (E:, F:) being parsed as the URL authority,
+      // which Chromium lowercases and strips the colon from — breaking file
+      // resolution for portable .exe copies run from a flash drive on Windows.
+      return `hlmedia://local/${encodeURIComponent(track.path)}`;
     }
     if (urlCache.has(track.id)) return urlCache.get(track.id);
     const blob = await getBlob(track.id);
