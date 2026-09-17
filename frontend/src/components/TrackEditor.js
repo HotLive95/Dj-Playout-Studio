@@ -39,6 +39,8 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [viewStart, setViewStart] = useState(0);
+  const [selectedCue, setSelectedCue] = useState(null);
+  const waveWrapRef = useRef(null);
   const audioRef = useRef(null);
   const urlRef = useRef(null);
 
@@ -117,8 +119,67 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
     setCurrent(a.currentTime);
   };
 
-  const setInHere = () => setInPoint(Math.min(current, outPoint - 0.05));
-  const setOutHere = () => setOutPoint(Math.max(current, inPoint + 0.05));
+  const setInHere = () => {
+    setInPoint(Math.min(current, outPoint - 0.05));
+    setSelectedCue("in");
+  };
+  const setOutHere = () => {
+    setOutPoint(Math.max(current, inPoint + 0.05));
+    setSelectedCue("out");
+  };
+
+  const formatMs = (t) => {
+    const tt = Math.max(0, t || 0);
+    const m = Math.floor(tt / 60);
+    const s = tt % 60;
+    return `${m}:${s.toFixed(3).padStart(6, "0")}`;
+  };
+  const fmtCue = (t) => (zoom > 1 ? formatMs(t) : formatTime(t));
+
+  const nudge = (delta) => {
+    if (selectedCue === "in") setInPoint(Math.max(0, Math.min(inPoint + delta, outPoint - 0.05)));
+    else if (selectedCue === "out")
+      setOutPoint(Math.min(duration, Math.max(outPoint + delta, inPoint + 0.05)));
+  };
+
+  // Arrow-key nudge for the selected cue (10ms; Shift = 100ms). Capture phase +
+  // stopPropagation so it preempts the app's global transport shortcuts while editing.
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target && e.target.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!selectedCue) return;
+        nudge((e.key === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 0.1 : 0.01));
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCue, inPoint, outPoint, duration]);
+
+  // Mouse-wheel zoom anchored at the cursor position.
+  useEffect(() => {
+    const el = waveWrapRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cw = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const wf = 1 / zoom;
+      const vs = Math.min(viewStart, Math.max(0, 1 - wf));
+      const fCursor = vs + cw * wf;
+      const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+      const z2 = Math.max(1, Math.min(30, zoom * factor));
+      const w2 = 1 / z2;
+      setZoom(z2);
+      setViewStart(Math.max(0, Math.min(fCursor - cw * w2, Math.max(0, 1 - w2))));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoom, viewStart]);
 
   const markCutStart = () => setMarkStart(current);
   const markCutEnd = () => {
@@ -230,23 +291,26 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
           {peaks && (
             <>
               <div className="rounded-xl bg-black/40 border border-[var(--hl-line)] p-3">
-                <Waveform
-                  peaks={visPeaks}
-                  progress={toWin(frac(current))}
-                  inPoint={toWin(frac(inPoint))}
-                  outPoint={toWin(frac(outPoint))}
-                  cuts={cuts.map((c) => ({ start: toWin(frac(c.start)), end: toWin(frac(c.end)) }))}
-                  height={120}
-                  onSeek={(fw) => seekFrac(fromWin(fw))}
-                  onInChange={(fw) => {
-                    const t = fromWin(fw) * duration;
-                    setInPoint(Math.max(0, Math.min(t, outPoint - 0.05)));
-                  }}
-                  onOutChange={(fw) => {
-                    const t = fromWin(fw) * duration;
-                    setOutPoint(Math.min(duration, Math.max(t, inPoint + 0.05)));
-                  }}
-                />
+                <div ref={waveWrapRef} title="Scroll to zoom at the cursor">
+                  <Waveform
+                    peaks={visPeaks}
+                    progress={toWin(frac(current))}
+                    inPoint={toWin(frac(inPoint))}
+                    outPoint={toWin(frac(outPoint))}
+                    cuts={cuts.map((c) => ({ start: toWin(frac(c.start)), end: toWin(frac(c.end)) }))}
+                    height={120}
+                    onSeek={(fw) => seekFrac(fromWin(fw))}
+                    onHandleSelect={setSelectedCue}
+                    onInChange={(fw) => {
+                      const t = fromWin(fw) * duration;
+                      setInPoint(Math.max(0, Math.min(t, outPoint - 0.05)));
+                    }}
+                    onOutChange={(fw) => {
+                      const t = fromWin(fw) * duration;
+                      setOutPoint(Math.min(duration, Math.max(t, inPoint + 0.05)));
+                    }}
+                  />
+                </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--hl-muted)] tabular-nums">
                   <span data-testid="editor-current-time">{formatTime(current)}</span>
                   <span className="text-[var(--hl-amber)] normal-case tracking-normal">
@@ -325,16 +389,24 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
                 <button
                   data-testid="editor-set-in"
                   onClick={setInHere}
-                  className="px-3 py-2 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-amber)]"
+                  className={`px-3 py-2 rounded-lg border text-sm transition ${
+                    selectedCue === "in"
+                      ? "border-[var(--hl-amber)] text-[var(--hl-amber)] bg-[rgba(255,171,0,0.12)]"
+                      : "border-[var(--hl-line)] hover:border-[var(--hl-amber)]"
+                  }`}
                 >
-                  Set In ({formatTime(inPoint)})
+                  Set In ({fmtCue(inPoint)})
                 </button>
                 <button
                   data-testid="editor-set-out"
                   onClick={setOutHere}
-                  className="px-3 py-2 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-amber)]"
+                  className={`px-3 py-2 rounded-lg border text-sm transition ${
+                    selectedCue === "out"
+                      ? "border-[var(--hl-amber)] text-[var(--hl-amber)] bg-[rgba(255,171,0,0.12)]"
+                      : "border-[var(--hl-line)] hover:border-[var(--hl-amber)]"
+                  }`}
                 >
-                  Set Out ({formatTime(outPoint)})
+                  Set Out ({fmtCue(outPoint)})
                 </button>
                 <button
                   data-testid="editor-auto-silence"
@@ -350,6 +422,11 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
                 >
                   <RotateCcw size={15} /> Reset
                 </button>
+                {selectedCue && (
+                  <span data-testid="editor-nudge-hint" className="basis-full text-[11px] text-[var(--hl-amber)]">
+                    {selectedCue === "in" ? "Start" : "End"} cue selected — press ← / → to nudge 10ms (Shift = 100ms)
+                  </span>
+                )}
               </div>
 
               {/* cut region controls */}
@@ -372,7 +449,7 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
                       onClick={markCutEnd}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--hl-onair)] text-white text-sm"
                     >
-                      <FlagTriangleRight size={14} /> Mark cut end (from {formatTime(markStart)})
+                      <FlagTriangleRight size={14} /> Mark cut end (from {fmtCue(markStart)})
                     </button>
                   )}
                 </div>
@@ -383,7 +460,7 @@ export default function TrackEditor({ track, getUrl, onClose, onSave }) {
                         key={i}
                         className="flex items-center gap-1.5 text-xs bg-[rgba(255,23,68,0.12)] border border-[var(--hl-onair)] rounded-full px-2.5 py-1"
                       >
-                        {formatTime(c.start)}–{formatTime(c.end)}
+                        {fmtCue(c.start)}–{fmtCue(c.end)}
                         <button onClick={() => removeCut(i)} data-testid={`editor-remove-cut-${i}`}>
                           <Trash2 size={12} />
                         </button>

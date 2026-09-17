@@ -13,6 +13,7 @@ export default function Waveform({
   onInChange,
   onOutChange,
   onCueDrag,
+  onHandleSelect,
   interactive = true,
   compact = false,
 }) {
@@ -77,6 +78,7 @@ export default function Waveform({
     e.stopPropagation();
     e.preventDefault();
     draggingRef.current = which;
+    if (onHandleSelect) onHandleSelect(which);
     const move = (ev) => {
       const f = fracFromX(ev.clientX);
       if (which === "in" && onInChange) onInChange(Math.min(f, outPoint - 0.001));

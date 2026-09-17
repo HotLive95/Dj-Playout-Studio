@@ -198,6 +198,19 @@ for "Hot Live 95 Detroit A.I. Radio".
   zoomed. Zooming keeps the playhead centred in the new window. Verified: 100%→600% magnifies, pan
   appears, handle drag maps to sub-second precision, Fit resets to 100%.
 
+## Update 24 (2026-06) — verified
+- Scroll-wheel zoom: TrackEditor wraps the Waveform in a ref'd div with a non-passive `wheel` listener
+  that zooms (1x-30x) anchored at the cursor's track position (recomputes viewStart to keep the cursor
+  fixed). Verified 600%->750% on wheel-up.
+- Millisecond readout: `formatMs` (m:ss.mmm) via `fmtCue` shows In/Out and cut times to the millisecond
+  when zoom>1 (mm:ss otherwise). Verified Set In 0:00.000 / Set Out 0:08.000 at 600%.
+- Nudge keys: `selectedCue` ('in'/'out') set by clicking Set In/Out or grabbing a trim handle
+  (Waveform `onHandleSelect`). A capture-phase document keydown handler nudges the selected cue +/-10ms
+  (Shift +/-100ms) with left/right arrows, preventDefault+stopPropagation so it preempts the app's global
+  transport shortcuts while the editor is open. Selected cue button highlights amber + hint shown.
+  Verified right x3 -> 0:00.030, left x1 -> 0:00.020.
+
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,
