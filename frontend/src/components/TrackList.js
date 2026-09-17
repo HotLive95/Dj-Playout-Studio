@@ -18,8 +18,10 @@ import { formatTime, formatTotal } from "../lib/format";
 
 export default function TrackList({
   playlist,
+  playlists,
   tracks,
   search,
+  onSelectPlaylist,
   currentTrackId,
   cueTrackId,
   isPlaying,
@@ -52,6 +54,16 @@ export default function TrackList({
   const totalDuration = allItems.reduce((sum, x) => sum + (x.track.duration || 0), 0);
   const q = (search || "").trim().toLowerCase();
   const items = q ? allItems.filter((x) => x.track.name.toLowerCase().includes(q)) : allItems;
+  const otherMatches = q
+    ? (playlists || [])
+        .filter((pl) => pl.id !== playlist?.id)
+        .flatMap((pl) =>
+          pl.trackIds
+            .map((id) => tracks[id])
+            .filter((t) => t && t.name.toLowerCase().includes(q))
+            .map((t) => ({ pl, track: t }))
+        )
+    : [];
 
   const handleAddClick = () => {
     if (isElectron) onImportDialog();
@@ -376,6 +388,39 @@ export default function TrackList({
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {q && otherMatches.length > 0 && (
+          <div className="mt-5" data-testid="other-playlist-results">
+            <div className="px-2 mb-2 text-[11px] uppercase tracking-wider text-[var(--hl-muted)]">
+              In other playlists ({otherMatches.length})
+            </div>
+            <div className="space-y-1.5">
+              {otherMatches.map(({ pl, track }) => (
+                <div
+                  key={`${pl.id}-${track.id}`}
+                  data-testid={`other-match-${pl.id}-${track.id}`}
+                  className="flex items-center gap-3 rounded-lg pl-3 pr-3 py-2.5 border bg-[var(--hl-panel-2)] border-[var(--hl-line)]"
+                >
+                  <Music2 size={16} className="text-[var(--hl-muted)] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate font-500">{track.name}</div>
+                    <div className="text-[11px] text-[var(--hl-amber)] uppercase tracking-wide truncate">
+                      {pl.name}
+                    </div>
+                  </div>
+                  <button
+                    data-testid={`open-playlist-${pl.id}`}
+                    onClick={() => onSelectPlaylist(pl.id)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-fire)] hover:text-[var(--hl-fire)] transition"
+                    title={`Open "${pl.name}"`}
+                  >
+                    Open
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

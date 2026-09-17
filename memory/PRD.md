@@ -157,6 +157,19 @@ for "Hot Live 95 Detroit A.I. Radio".
   (so reorder/edit/remove/testids stay correct; drag disabled while filtering). Shows "N of M match" and a
   `no-search-results` state. Verified: "sunrise" → rows 1 & 4, "2 of 4 match".
 
+## Update 20 (2026-06) — verified
+- Hotkeys I / O: added to the live keydown handler (App.js) via `cueInRef`/`cueOutRef` (refs so the
+  empty-dep effect calls the latest setCueIn/setCueOut). Guarded by the existing input/select/textarea
+  check so typing in the search box won't trigger them. Verified: 'i'→cueIn, 'o'→cueOut set + markers.
+- Cue-on-waveform: `Waveform.js` renders draggable cue handles in COMPACT mode (data-testid
+  `cue-handle-in`/`cue-handle-out`) driven by `onCueDrag(label, frac)`. PlayerBar maps drags to new
+  `onSetCueInAt`/`onSetCueOutAt` (App.js `setCueInAt`/`setCueOutAt`, time-based, clamped so in<out).
+  Verified: dragging in-handle moved cueIn 0.97→2.43s (clamped under out).
+- Search across all playlists: TrackList now also receives `playlists` + `onSelectPlaylist`; when a query
+  is active it shows an "In other playlists (N)" section (data-testid `other-playlist-results`,
+  `open-playlist-{id}`) listing matches from other playlists with an Open button that switches the
+  current playlist. Verified: "sunrise" → current match + Evening Drive match, Open switches playlist.
+
 
 ## Update 13 (2026-06) — verified
 - PWA / installable phone version: added `public/manifest.json` (standalone, theme #ff5a1f,

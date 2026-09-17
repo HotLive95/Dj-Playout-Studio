@@ -63,6 +63,8 @@ export default function PlayerBar({
   onVoiceFx,
   onSetCueIn,
   onSetCueOut,
+  onSetCueInAt,
+  onSetCueOutAt,
   onClearCues,
   onToggleCueFade,
   onCueFadeSeconds,
@@ -101,6 +103,13 @@ export default function PlayerBar({
                 compact
                 height={32}
                 onSeek={(frac) => onSeek(frac * (duration || 0))}
+                onCueDrag={(label, frac) => {
+                  const t = frac * (duration || 0);
+                  if (label === "in")
+                    onSetCueInAt(Math.min(t, cueOut != null ? cueOut - 0.05 : duration || t));
+                  if (label === "out")
+                    onSetCueOutAt(Math.max(t, cueIn != null ? cueIn + 0.05 : 0));
+                }}
               />
             </div>
           ) : (

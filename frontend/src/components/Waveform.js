@@ -12,6 +12,7 @@ export default function Waveform({
   onSeek,
   onInChange,
   onOutChange,
+  onCueDrag,
   interactive = true,
   compact = false,
 }) {
@@ -92,6 +93,24 @@ export default function Waveform({
     window.addEventListener("pointerup", up);
   };
 
+  const startCueDrag = (label) => (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    draggingRef.current = label;
+    const move = (ev) => {
+      if (onCueDrag) onCueDrag(label, fracFromX(ev.clientX));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setTimeout(() => {
+        draggingRef.current = null;
+      }, 0);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   const draggable = !compact && (onInChange || onOutChange);
 
   return (
@@ -111,6 +130,30 @@ export default function Waveform({
           data-testid={`wave-marker-${m.label || i}`}
         />
       ))}
+      {/* draggable cue handles on the compact seek bar */}
+      {compact &&
+        onCueDrag &&
+        markers
+          .filter((m) => m.label === "in" || m.label === "out")
+          .map((m) => (
+            <div
+              key={`cue-${m.label}`}
+              data-testid={`cue-handle-${m.label}`}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={startCueDrag(m.label)}
+              className="absolute top-0 bottom-0 z-20 cursor-ew-resize touch-none"
+              style={{ left: `${m.frac * 100}%`, width: 14, marginLeft: -7 }}
+            >
+              <div
+                className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px]"
+                style={{ background: m.color }}
+              />
+              <div
+                className="absolute -top-1 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rounded-full"
+                style={{ background: m.color }}
+              />
+            </div>
+          ))}
       {/* trim handles */}
       {!compact && (
         <>

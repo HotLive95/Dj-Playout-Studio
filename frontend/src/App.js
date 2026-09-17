@@ -253,6 +253,8 @@ function App() {
   const activeJinglesRef = useRef([]);
   const peaksCacheRef = useRef({});
   const playJingleRef = useRef(() => {});
+  const cueInRef = useRef(() => {});
+  const cueOutRef = useRef(() => {});
   const [autoStartPending, setAutoStartPending] = useState(null);
   jinglesRef.current = jingles;
 
@@ -617,6 +619,14 @@ function App() {
         case "KeyC":
           e.preventDefault();
           eng.cueStop();
+          break;
+        case "KeyI":
+          e.preventDefault();
+          cueInRef.current && cueInRef.current();
+          break;
+        case "KeyO":
+          e.preventDefault();
+          cueOutRef.current && cueOutRef.current();
           break;
         default:
           if (/^Digit[1-6]$/.test(e.code)) {
@@ -1028,6 +1038,16 @@ function App() {
     setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueOut: playback.currentTime } }));
     setBanner("End cue set");
   };
+  const setCueInAt = (t) => {
+    if (!currentTrackId) return;
+    setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueIn: Math.max(0, t) } }));
+  };
+  const setCueOutAt = (t) => {
+    if (!currentTrackId) return;
+    setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueOut: Math.max(0, t) } }));
+  };
+  cueInRef.current = setCueIn;
+  cueOutRef.current = setCueOut;
   const clearCues = () => {
     if (!currentTrackId) return;
     setTracks((prev) => ({ ...prev, [currentTrackId]: { ...prev[currentTrackId], cueIn: undefined, cueOut: undefined } }));
@@ -1181,8 +1201,10 @@ function App() {
         <main className="flex-1 flex flex-col min-w-0 min-h-[38vh] md:min-h-0">
           <TrackList
             playlist={currentPlaylist}
+            playlists={playlists}
             tracks={tracks}
             search={search}
+            onSelectPlaylist={setCurrentPlaylistId}
             currentTrackId={currentTrackId}
             cueTrackId={cue.trackId}
             isPlaying={playback.isPlaying}
@@ -1276,6 +1298,8 @@ function App() {
         onVoiceFx={setVoiceFx}
         onSetCueIn={setCueIn}
         onSetCueOut={setCueOut}
+        onSetCueInAt={setCueInAt}
+        onSetCueOutAt={setCueOutAt}
         onClearCues={clearCues}
         onToggleCueFade={toggleCueFade}
         onCueFadeSeconds={setCueFadeSeconds}
