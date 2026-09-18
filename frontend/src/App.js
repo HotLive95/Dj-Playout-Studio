@@ -47,6 +47,7 @@ const defaultSettings = {
   cueFadeSeconds: 1.5,
   jingleDuckDepth: 0.4,
   jingleDuckMs: 220,
+  faderCurve: "smooth",
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -400,6 +401,7 @@ function App() {
     e.setTrimSilence(settings.trimSilence);
     e.setLoopRegion(settings.loopRegion);
     e.setCueAutoFade(settings.cueAutoFade, settings.cueFadeSeconds);
+    e.setFaderCurve(settings.faderCurve || "smooth");
   }, [settings]);
 
   // ---- Ducking (manual Talk + mic auto-duck + jingle drops) ----
@@ -663,6 +665,10 @@ function App() {
         case "KeyO":
           e.preventDefault();
           cueOutRef.current && cueOutRef.current();
+          break;
+        case "Backslash":
+          e.preventDefault();
+          if (eng.standbyArmed) eng.takeStandby();
           break;
         default:
           if (/^Digit[1-6]$/.test(e.code)) {
@@ -1042,9 +1048,17 @@ function App() {
     const t = queueTracks[index];
     if (t) engineRef.current?.loadStandby(t);
   };
+  const armStandbyFromCue = () => {
+    if (!cue.trackId) return;
+    const t = tracks[cue.trackId];
+    if (t) engineRef.current?.loadStandby(t);
+  };
   const setFader = (pos) => engineRef.current?.setFader(pos);
   const takeStandby = () => engineRef.current?.takeStandby();
   const clearStandby = () => engineRef.current?.clearStandby();
+  const syncStandby = () => engineRef.current?.syncStandby();
+  const nudgeStandby = (dir) => engineRef.current?.nudgeStandby(dir);
+  const setFaderCurve = (c) => setSettings((s) => ({ ...s, faderCurve: c }));
 
   const setVolume = (v) => setSettings((s) => ({ ...s, volume: v }));
   const toggleAutoplay = () => setSettings((s) => ({ ...s, autoplay: !s.autoplay }));
@@ -1371,6 +1385,13 @@ function App() {
         onFader={setFader}
         onTake={takeStandby}
         onClearStandby={clearStandby}
+        faderCurve={settings.faderCurve || "smooth"}
+        onSetFaderCurve={setFaderCurve}
+        onSync={syncStandby}
+        onNudge={nudgeStandby}
+        onairBpm={standby.onairBpm}
+        standbyBpm={standby.standbyBpm}
+        syncRate={standby.syncRate}
         onStop={stopJingles}
       />
 
@@ -1385,6 +1406,7 @@ function App() {
         cueSink={settings.cueSink}
         onProgramSink={setProgramSink}
         onCueSink={setCueSink}
+        onArmStandby={armStandbyFromCue}
       />
 
       <PlayerBar

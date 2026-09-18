@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight } from "lucide-react";
+import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, ChevronRight, Repeat } from "lucide-react";
 
 const PAD_COUNT = 6;
 
@@ -76,7 +76,7 @@ function Crossfader({ pos, armed, onChange }) {
   );
 }
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, onStop }) {
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -199,10 +199,10 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
 
       {/* ---- Standby deck + crossfader (blend the "in cue" track on air) ---- */}
       <div
-        className="shrink-0 flex items-center gap-2.5 pl-1 pr-3 border-l border-r border-[var(--hl-line)]"
+        className="shrink-0 flex items-center gap-2 pl-1 pr-3 border-l border-r border-[var(--hl-line)]"
         data-testid="standby-deck"
       >
-        <div className="flex flex-col justify-center w-[132px] min-w-[132px]">
+        <div className="flex flex-col justify-center w-[124px] min-w-[124px]">
           <div className="flex items-center gap-1.5">
             <Radio size={13} className={standbyTrack ? "text-[var(--hl-cue)]" : "text-[var(--hl-muted)]"} />
             <span className="font-display text-[10px] tracking-[0.2em] text-[var(--hl-muted)]">
@@ -210,23 +210,36 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
             </span>
           </div>
           {standbyTrack ? (
-            <div className="flex items-center gap-1 mt-0.5">
-              <span
-                className="text-xs truncate text-[var(--hl-cue)] max-w-[110px]"
-                data-testid="standby-track-name"
-                title={standbyTrack.name}
-              >
-                {standbyTrack.title || standbyTrack.name}
-              </span>
-              <button
-                data-testid="standby-clear"
-                onClick={onClearStandby}
-                className="h-4 w-4 shrink-0 grid place-items-center rounded-full text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
-                title="Clear the standby deck"
-              >
-                <X size={11} />
-              </button>
-            </div>
+            <>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span
+                  className="text-xs truncate text-[var(--hl-cue)] max-w-[100px]"
+                  data-testid="standby-track-name"
+                  title={standbyTrack.name}
+                >
+                  {standbyTrack.title || standbyTrack.name}
+                </span>
+                <button
+                  data-testid="standby-clear"
+                  onClick={onClearStandby}
+                  className="h-4 w-4 shrink-0 grid place-items-center rounded-full text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
+                  title="Clear the standby deck"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+              <div className="text-[10px] tabular-nums text-[var(--hl-muted)] mt-0.5" data-testid="standby-bpm">
+                <span className="text-[var(--hl-fire)]">{onairBpm ? Math.round(onairBpm) : "--"}</span>
+                <span className="mx-1">→</span>
+                <span className="text-[var(--hl-cue)]">{standbyBpm ? Math.round(standbyBpm) : "--"}</span>
+                <span className="ml-0.5">BPM</span>
+                {syncRate && Math.abs(syncRate - 1) > 0.001 && (
+                  <span className="ml-1 text-[var(--hl-cue)]" data-testid="standby-sync-rate">
+                    ×{syncRate.toFixed(2)}
+                  </span>
+                )}
+              </div>
+            </>
           ) : (
             <span className="text-[11px] text-[var(--hl-muted)] italic mt-0.5" data-testid="standby-empty">
               Arm a track with{" "}
@@ -237,12 +250,71 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
 
         <Crossfader pos={faderPos || 0} armed={!!standbyTrack} onChange={onFader} />
 
+        {/* Sync / nudge / curve controls */}
+        <div className="flex flex-col items-stretch gap-1">
+          <div className="flex items-center gap-1">
+            <button
+              data-testid="standby-nudge-back"
+              onClick={() => onNudge(-1)}
+              disabled={!standbyTrack}
+              className="h-6 w-6 grid place-items-center rounded border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)] disabled:opacity-30"
+              title="Nudge the standby track back (drag it onto the beat)"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              data-testid="standby-sync"
+              onClick={onSync}
+              disabled={!standbyTrack}
+              className="h-6 px-2 flex items-center gap-1 rounded border border-[var(--hl-cue)] text-[var(--hl-cue)] text-[10px] font-700 tracking-wider hover:bg-[rgba(46,229,196,0.12)] disabled:opacity-30 disabled:border-[var(--hl-line)] disabled:text-[var(--hl-muted)]"
+              title="Tempo-match the standby track to what's on air"
+            >
+              <Repeat size={12} /> SYNC
+            </button>
+            <button
+              data-testid="standby-nudge-fwd"
+              onClick={() => onNudge(1)}
+              disabled={!standbyTrack}
+              className="h-6 w-6 grid place-items-center rounded border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)] disabled:opacity-30"
+              title="Nudge the standby track forward (drag it onto the beat)"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          <div className="flex items-center rounded-md border border-[var(--hl-line)] overflow-hidden">
+            <button
+              data-testid="fader-curve-smooth"
+              onClick={() => onSetFaderCurve("smooth")}
+              className={`flex-1 h-5 text-[9px] font-700 tracking-wider transition ${
+                faderCurve !== "sharp"
+                  ? "bg-[var(--hl-cue)] text-black"
+                  : "text-[var(--hl-muted)] hover:text-white"
+              }`}
+              title="Smooth (equal-power) crossfade curve"
+            >
+              SMOOTH
+            </button>
+            <button
+              data-testid="fader-curve-sharp"
+              onClick={() => onSetFaderCurve("sharp")}
+              className={`flex-1 h-5 text-[9px] font-700 tracking-wider transition ${
+                faderCurve === "sharp"
+                  ? "bg-[var(--hl-cue)] text-black"
+                  : "text-[var(--hl-muted)] hover:text-white"
+              }`}
+              title="Sharp (fast cut) crossfade curve"
+            >
+              SHARP
+            </button>
+          </div>
+        </div>
+
         <button
           data-testid="standby-take"
           onClick={onTake}
           disabled={!standbyTrack}
           className="shrink-0 flex flex-col items-center justify-center gap-0.5 h-11 px-3 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] hover:bg-[rgba(46,229,196,0.12)] disabled:opacity-30 disabled:border-[var(--hl-line)] disabled:text-[var(--hl-muted)] transition"
-          title="TAKE — smoothly crossfade the standby track on air"
+          title="TAKE (\\) — smoothly crossfade the standby track on air"
         >
           <ArrowLeftRight size={15} />
           <span className="text-[9px] font-700 tracking-widest">TAKE</span>

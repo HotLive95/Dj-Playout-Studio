@@ -1,5 +1,5 @@
 import React from "react";
-import { Headphones, Play, Pause, Square } from "lucide-react";
+import { Headphones, Play, Pause, Square, Radio } from "lucide-react";
 import { formatTime } from "../lib/format";
 
 export default function CuePanel({
@@ -13,6 +13,7 @@ export default function CuePanel({
   cueSink,
   onProgramSink,
   onCueSink,
+  onArmStandby,
 }) {
   const pct = cue.duration ? (cue.currentTime / cue.duration) * 100 : 0;
   const hasDevices = devices && devices.length > 0;
@@ -70,6 +71,14 @@ export default function CuePanel({
           <span className="text-xs text-[var(--hl-muted)] tabular-nums">
             {formatTime(cue.duration)}
           </span>
+          <button
+            data-testid="cue-to-standby-button"
+            onClick={onArmStandby}
+            className="shrink-0 flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-[var(--hl-cue)] text-[var(--hl-cue)] text-xs hover:bg-[rgba(46,229,196,0.12)]"
+            title="Load this cued track into the Standby deck, ready to fade on air"
+          >
+            <Radio size={14} /> → Standby
+          </button>
           <button
             data-testid="cue-stop-button"
             onClick={onStop}

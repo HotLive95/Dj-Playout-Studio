@@ -42,6 +42,14 @@ export default class AudioEngine {
     this._faderPos = 0; // 0 = fully ON AIR, 1 = fully STANDBY
     this._manualFading = false;
     this._takeRaf = null;
+    // Fader curve + beat sync
+    this.faderCurve = "smooth"; // "smooth" (equal-power) | "sharp" (fast cut)
+    this._bpmCache = {};
+    this._actx = null;
+    this._syncRate = 1;
+    this._nudgeTimer = null;
+    this._onairBpm = null;
+    this._standbyBpm = null;
     this._bind();
   }
 
@@ -428,11 +436,19 @@ export default class AudioEngine {
     this.standbyTrackId = track.id;
     this.standbyIndex = i;
     this._faderPos = 0;
+    this.idle.playbackRate = 1;
+    this._syncRate = 1;
+    this._standbyBpm = null;
     this._emitStandby();
+    this._refreshBpm();
   }
 
   clearStandby() {
     this._cancelTake();
+    if (this._nudgeTimer) {
+      clearTimeout(this._nudgeTimer);
+      this._nudgeTimer = null;
+    }
     this.idle.pause();
     try {
       this.idle.currentTime = 0;
@@ -440,11 +456,14 @@ export default class AudioEngine {
       /* ignore */
     }
     this.idle.src = "";
+    this.idle.playbackRate = 1;
     this.standbyArmed = false;
     this.standbyTrackId = null;
     this.standbyIndex = -1;
     this._faderPos = 0;
     this._manualFading = false;
+    this._syncRate = 1;
+    this._standbyBpm = null;
     // Restore full air level on the on-air deck.
     if (!this._fading) this._setVol(this.active, this._effVol());
     this._emitStandby();
@@ -464,8 +483,9 @@ export default class AudioEngine {
     if (p > 0 && this.idle.paused) {
       this.idle.play().catch(() => {});
     }
-    this._setVol(this.active, Math.max(0, peak * (1 - p)));
-    this._setVol(this.idle, Math.min(peak, peak * p));
+    const g = this._faderGains(p);
+    this._setVol(this.active, peak * g.out);
+    this._setVol(this.idle, peak * g.in);
     if (p === 0) {
       // Snapped back to air — pause the standby deck but keep it armed.
       this.idle.pause();
@@ -496,8 +516,9 @@ export default class AudioEngine {
       const pos = from + (1 - from) * p;
       const peak = this._effVol();
       this._faderPos = pos;
-      this._setVol(this.active, Math.max(0, peak * (1 - pos)));
-      this._setVol(this.idle, Math.min(peak, peak * pos));
+      const g = this._faderGains(pos);
+      this._setVol(this.active, peak * g.out);
+      this._setVol(this.idle, peak * g.in);
       this._emitStandby();
       if (p < 1) {
         this._takeRaf = requestAnimationFrame(step);
@@ -511,10 +532,15 @@ export default class AudioEngine {
 
   _commitStandby() {
     this._cancelTake();
+    if (this._nudgeTimer) {
+      clearTimeout(this._nudgeTimer);
+      this._nudgeTimer = null;
+    }
     const newIndex = this.standbyIndex;
     // The standby deck (idle) becomes the on-air deck.
     const old = this.active;
     old.pause();
+    old.playbackRate = 1;
     try {
       old.currentTime = 0;
     } catch {
@@ -529,6 +555,11 @@ export default class AudioEngine {
     this.standbyTrackId = null;
     this.standbyIndex = -1;
     this._faderPos = 0;
+    // Newly on-air deck plays at its natural tempo; sync state resets.
+    this.active.playbackRate = 1;
+    this._syncRate = 1;
+    this._onairBpm = this._bpmCache[this.queue[this.index]?.id] ?? null;
+    this._standbyBpm = null;
     this._setVol(this.active, this._effVol());
     if (this.active.paused) this.active.play().catch(() => {});
     this._emitStandby();
@@ -540,11 +571,102 @@ export default class AudioEngine {
     this._takeRaf = null;
   }
 
+  // ---- Fader curve (crossfader shape) ----
+  setFaderCurve(curve) {
+    this.faderCurve = curve === "sharp" ? "sharp" : "smooth";
+  }
+
+  // Returns { out, in } gains (0..1) for a linear fader position p.
+  _faderGains(p) {
+    if (this.faderCurve === "sharp") {
+      // Fast cut: both decks stay near full through the centre, cut hard at the edges.
+      return { out: Math.min(1, (1 - p) * 2), in: Math.min(1, p * 2) };
+    }
+    // Smooth: equal-power (constant perceived loudness across the blend).
+    return { out: Math.cos((p * Math.PI) / 2), in: Math.sin((p * Math.PI) / 2) };
+  }
+
+  // ---- Beat / tempo sync ----
+  _ctx() {
+    if (!this._actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) this._actx = new AC();
+    }
+    return this._actx;
+  }
+
+  async bpmFor(track) {
+    if (!track) return null;
+    if (this._bpmCache[track.id] != null) return this._bpmCache[track.id];
+    const ctx = this._ctx();
+    if (!ctx) return null;
+    try {
+      const url = await this.getUrl(track);
+      if (!url) return null;
+      const res = await fetch(url);
+      const arr = await res.arrayBuffer();
+      const buf = await ctx.decodeAudioData(arr.slice(0));
+      const { estimateBpm } = await import("./bpm");
+      const bpm = estimateBpm(buf);
+      if (bpm) this._bpmCache[track.id] = bpm;
+      return bpm;
+    } catch {
+      return null;
+    }
+  }
+
+  async _refreshBpm() {
+    const onair = this.queue[this.index];
+    const sb = this.queue[this.standbyIndex];
+    const [a, b] = await Promise.all([this.bpmFor(onair), this.bpmFor(sb)]);
+    this._onairBpm = a;
+    if (this.standbyArmed) this._standbyBpm = b;
+    this._emitStandby();
+  }
+
+  // Tempo-match the standby deck to the on-air track (playback-rate, clamped).
+  async syncStandby() {
+    if (!this.standbyArmed) return null;
+    const a = await this.bpmFor(this.queue[this.index]);
+    const b = await this.bpmFor(this.queue[this.standbyIndex]);
+    this._onairBpm = a;
+    this._standbyBpm = b;
+    let rate = 1;
+    if (a && b) {
+      rate = a / b;
+      // Fold half/double-time so a 140 vs 70 still matches.
+      while (rate > 1.35) rate /= 2;
+      while (rate < 0.74) rate *= 2;
+      rate = Math.min(1.08, Math.max(0.92, rate));
+    }
+    this._syncRate = rate;
+    this.idle.playbackRate = rate;
+    this._emitStandby();
+    return { onairBpm: a, standbyBpm: b, rate };
+  }
+
+  // Momentary tempo bump to shove the standby track onto the beat (dir -1 / +1).
+  nudgeStandby(dir) {
+    if (!this.standbyArmed) return;
+    if (this._nudgeTimer) clearTimeout(this._nudgeTimer);
+    const base = this._syncRate || 1;
+    const bump = dir < 0 ? 0.94 : 1.06;
+    this.idle.playbackRate = base * bump;
+    this._nudgeTimer = setTimeout(() => {
+      this.idle.playbackRate = base;
+      this._nudgeTimer = null;
+    }, 260);
+  }
+
   _emitStandby() {
     if (!this.onStandby) return;
     this.onStandby({
       trackId: this.standbyArmed ? this.standbyTrackId : null,
       faderPos: this._faderPos,
+      curve: this.faderCurve,
+      syncRate: this._syncRate,
+      onairBpm: this._onairBpm,
+      standbyBpm: this.standbyArmed ? this._standbyBpm : null,
     });
   }
 
@@ -718,6 +840,15 @@ export default class AudioEngine {
   destroy() {
     this._cancelFade();
     this._cancelTake();
+    if (this._nudgeTimer) clearTimeout(this._nudgeTimer);
+    if (this._actx) {
+      try {
+        this._actx.close();
+      } catch {
+        /* ignore */
+      }
+      this._actx = null;
+    }
     [this.a, this.b, this.cue].forEach((el) => {
       el.pause();
       el.src = "";
