@@ -28,4 +28,5 @@ contextBridge.exposeInMainWorld("hotlive", {
   setLicense: (lic) => ipcRenderer.invoke("set-license", lic),
   getDeviceId: () => ipcRenderer.invoke("get-device-id"),
   deleteFile: (filePath) => ipcRenderer.invoke("delete-file", filePath),
+  fileExists: (filePath) => ipcRenderer.invoke("file-exists", filePath),
 });

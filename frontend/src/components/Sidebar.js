@@ -11,6 +11,7 @@ import {
   FolderDown,
   Shuffle,
   Download,
+  DownloadCloud,
 } from "lucide-react";
 import { formatTotal } from "../lib/format";
 
@@ -24,6 +25,7 @@ export default function Sidebar({
   onSchedule,
   onExport,
   onImportPlaylist,
+  onBatchExport,
   durationOf,
   shuffleAll,
   onToggleShuffleAll,
@@ -75,6 +77,14 @@ export default function Sidebar({
             title="Import a shared playlist"
           >
             <FolderDown size={15} />
+          </button>
+          <button
+            data-testid="batch-export-button"
+            onClick={onBatchExport}
+            className="h-7 w-7 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] transition"
+            title="Batch export playlists to MP3 / WAV"
+          >
+            <DownloadCloud size={15} />
           </button>
           <button
             data-testid="new-playlist-button"

@@ -8,6 +8,7 @@ import CuePanel from "@/components/CuePanel";
 import TrackEditor from "@/components/TrackEditor";
 import ScheduleModal from "@/components/ScheduleModal";
 import ExportPlaylistModal from "@/components/ExportPlaylistModal";
+import BatchExportModal from "@/components/BatchExportModal";
 import JingleBar from "@/components/JingleBar";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import LicenseGate from "@/components/LicenseGate";
@@ -22,6 +23,7 @@ import { platform } from "@/lib/platform";
 import { putBlob } from "@/lib/db";
 import { api } from "@/lib/api";
 import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessing";
+import { deriveNames, parseFilename } from "@/lib/id3";
 
 const uid = () =>
   (crypto.randomUUID && crypto.randomUUID()) ||
@@ -246,6 +248,8 @@ function App() {
   const [keyManagerOpen, setKeyManagerOpen] = useState(false);
   const [licenseStatusOpen, setLicenseStatusOpen] = useState(false);
   const [customFxOpen, setCustomFxOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [missingIds, setMissingIds] = useState(() => new Set());
 
   const engineRef = useRef(null);
   const micRef = useRef({ active: false });
@@ -551,6 +555,20 @@ function App() {
     e.syncQueue(queueTracks, getUrl, currentTrackId);
   }, [queueTracks, getUrl, currentTrackId]);
 
+  // ---- Missing-file scan (badge + auto re-link status) ----
+  const scanAvailability = useCallback(async (list) => {
+    const missing = new Set();
+    for (const t of list) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await platform.exists(t);
+      if (!ok) missing.add(t.id);
+    }
+    setMissingIds(missing);
+  }, []);
+  useEffect(() => {
+    if (loaded) scanAvailability(queueTracks);
+  }, [queueTracks, loaded, scanAvailability]);
+
   // ---- Persist ----
   useEffect(() => {
     if (!loaded) return;
@@ -742,7 +760,8 @@ function App() {
       const url = URL.createObjectURL(file);
       const duration = await readDuration(url);
       URL.revokeObjectURL(url);
-      newTracks[id] = { id, name: file.name, size: file.size, type: file.type, duration };
+      const { title, artist } = await deriveNames(file, file.name);
+      newTracks[id] = { id, name: file.name, size: file.size, type: file.type, duration, title, artist };
       newIds.push(id);
     }
     if (newIds.length) appendTracksToCurrent(newTracks, newIds);
@@ -755,7 +774,14 @@ function App() {
       const id = f.id || uid();
       const url = await platform.getUrl({ ...f, id });
       const duration = url ? await readDuration(url) : 0;
-      newTracks[id] = { id, name: f.name, size: f.size, path: f.path, duration };
+      let blob = null;
+      try {
+        blob = url ? await (await fetch(url)).blob() : null;
+      } catch {
+        blob = null;
+      }
+      const { title, artist } = await deriveNames(blob, f.name);
+      newTracks[id] = { id, name: f.name, size: f.size, path: f.path, duration, title, artist };
       newIds.push(id);
     }
     if (newIds.length) appendTracksToCurrent(newTracks, newIds);
@@ -802,6 +828,13 @@ function App() {
     cleanupTracks([removedId], nextPlaylists);
   };
 
+  // Edit Artist / Song Title shown in the studio track list.
+  const updateTrackInfo = (trackId, info) => {
+    setTracks((prev) =>
+      prev[trackId] ? { ...prev, [trackId]: { ...prev[trackId], ...info } } : prev
+    );
+  };
+
   const replaceBrowserFile = async (index, file) => {
     if (!currentPlaylist) return;
     const oldId = currentPlaylist.trackIds[index];
@@ -810,7 +843,8 @@ function App() {
     const url = URL.createObjectURL(file);
     const duration = await readDuration(url);
     URL.revokeObjectURL(url);
-    const newTrack = { id, name: file.name, size: file.size, type: file.type, duration };
+    const { title, artist } = await deriveNames(file, file.name);
+    const newTrack = { id, name: file.name, size: file.size, type: file.type, duration, title, artist };
     setTracks((prev) => ({ ...prev, [id]: newTrack }));
     const nextPlaylists = playlists.map((p) =>
       p.id === currentPlaylistId
@@ -830,7 +864,14 @@ function App() {
     const id = f.id || uid();
     const url = await platform.getUrl({ ...f, id });
     const duration = url ? await readDuration(url) : 0;
-    const newTrack = { id, name: f.name, size: f.size, path: f.path, duration };
+    let rblob = null;
+    try {
+      rblob = url ? await (await fetch(url)).blob() : null;
+    } catch {
+      rblob = null;
+    }
+    const { title, artist } = await deriveNames(rblob, f.name);
+    const newTrack = { id, name: f.name, size: f.size, path: f.path, duration, title, artist };
     setTracks((prev) => ({ ...prev, [id]: newTrack }));
     const nextPlaylists = playlists.map((p) =>
       p.id === currentPlaylistId
@@ -843,14 +884,15 @@ function App() {
 
   // ---------------- Track editor save ----------------
   const saveEditedTrack = async (blob, name, format, duration) => {
+    const { title, artist } = parseFilename(name);
     let meta;
     if (platform.isElectron) {
       const d = await platform.saveMedia(name, blob);
-      meta = { id: d.id, name, path: d.path, size: d.size, duration };
+      meta = { id: d.id, name, path: d.path, size: d.size, duration, title, artist };
     } else {
       const id = uid();
       await putBlob(id, blob);
-      meta = { id, name, type: format === "mp3" ? "audio/mpeg" : "audio/wav", duration };
+      meta = { id, name, type: format === "mp3" ? "audio/mpeg" : "audio/wav", duration, title, artist };
     }
     appendTracksToCurrent({ [meta.id]: meta }, [meta.id]);
     setBanner(`Saved "${name}" to ${currentPlaylist?.name}`);
@@ -886,6 +928,8 @@ function App() {
       const blob = await (await fetch(url)).blob();
       out.tracks.push({
         name: t.name,
+        title: t.title,
+        artist: t.artist,
         type: t.type || blob.type,
         duration: t.duration,
         leadIn: t.leadIn,
@@ -919,14 +963,18 @@ function App() {
     const ids = [];
     for (const t of data.tracks) {
       const blob = b64ToBlob(t.data, t.type || "audio/mpeg");
+      const names =
+        t.title || t.artist
+          ? { title: t.title || "", artist: t.artist || "" }
+          : await deriveNames(blob, t.name);
       let meta;
       if (platform.isElectron) {
         const d = await platform.saveMedia(t.name, blob);
-        meta = { id: d.id, name: t.name, path: d.path, size: d.size, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart };
+        meta = { id: d.id, name: t.name, path: d.path, size: d.size, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist };
       } else {
         const id = uid();
         await putBlob(id, blob);
-        meta = { id, name: t.name, type: t.type, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart };
+        meta = { id, name: t.name, type: t.type, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist };
       }
       newTracks[meta.id] = meta;
       ids.push(meta.id);
@@ -1066,14 +1114,15 @@ function App() {
 
   // ---------------- Voice track insert ----------------
   const saveVoiceTrack = async (blob, name, index, duration) => {
+    const title = name.replace(/\.[^.]+$/, "");
     let meta;
     if (platform.isElectron) {
       const d = await platform.saveMedia(name, blob);
-      meta = { id: d.id, name, path: d.path, size: d.size, duration };
+      meta = { id: d.id, name, path: d.path, size: d.size, duration, title, artist: "Voice" };
     } else {
       const id = uid();
       await putBlob(id, blob);
-      meta = { id, name, type: "audio/wav", duration };
+      meta = { id, name, type: "audio/wav", duration, title, artist: "Voice" };
     }
     setTracks((prev) => ({ ...prev, [meta.id]: meta }));
     setPlaylists((prev) =>
@@ -1200,6 +1249,7 @@ function App() {
           onSchedule={setScheduleForId}
           onExport={setExportForId}
           onImportPlaylist={importPlaylist}
+          onBatchExport={() => setBatchOpen(true)}
           durationOf={durationOf}
           shuffleAll={settings.shuffleAll}
           onToggleShuffleAll={toggleShuffleAll}
@@ -1228,6 +1278,9 @@ function App() {
             onEditTrack={(i) => setEditorTrack(queueTracks[i])}
             onExportPlaylist={exportPlaylist}
             onRecordVoice={() => setVoiceOpen(true)}
+            missingIds={missingIds}
+            onUpdateTrackInfo={updateTrackInfo}
+            onRescan={() => scanAvailability(queueTracks)}
           />
         </main>
       </div>
@@ -1354,6 +1407,16 @@ function App() {
           defaultCrossfade={settings.crossfade}
           crossfadeSeconds={settings.crossfadeSeconds}
           onClose={() => setExportForId(null)}
+        />
+      )}
+
+      {batchOpen && (
+        <BatchExportModal
+          playlists={playlists}
+          tracks={tracks}
+          defaultCrossfade={settings.crossfade}
+          crossfadeSeconds={settings.crossfadeSeconds}
+          onClose={() => setBatchOpen(false)}
         />
       )}
 

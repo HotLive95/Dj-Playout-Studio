@@ -54,7 +54,14 @@ app.whenReady().then(() => {
     try {
       // URL form: hlmedia://local/<encodeURIComponent(full native path)>
       const u = new URL(request.url);
-      const filePath = decodeURIComponent(u.pathname.replace(/^\//, ""));
+      let filePath = decodeURIComponent(u.pathname.replace(/^\//, ""));
+      // Auto re-link: if the stored path no longer resolves (e.g. the flash drive
+      // was assigned a different letter), fall back to the same file (by name) in
+      // the CURRENT data folder — so shows never break when the stick moves.
+      if (!fs.existsSync(filePath)) {
+        const alt = path.join(mediaDir(), path.basename(filePath));
+        if (fs.existsSync(alt)) filePath = alt;
+      }
       // pathToFileURL correctly handles Windows drive letters/backslashes and
       // POSIX absolute paths, so files resolve from any flash-drive letter.
       return net.fetch(pathToFileURL(filePath).href);
@@ -145,6 +152,18 @@ ipcMain.handle("delete-file", async (_e, p) => {
     /* ignore */
   }
   return true;
+});
+
+// Whether a track's file exists — at its stored path, or (auto re-link) by the
+// same filename in the current data folder if the drive letter changed.
+ipcMain.handle("file-exists", async (_e, p) => {
+  try {
+    if (p && fs.existsSync(p)) return true;
+    if (p && fs.existsSync(path.join(mediaDir(), path.basename(p)))) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
 });
 
 const licensePath = () => path.join(dataDir(), "license.json");

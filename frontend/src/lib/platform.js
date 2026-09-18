@@ -119,6 +119,21 @@ export const platform = {
     return url;
   },
 
+  // Whether a track's audio is actually available on this device right now.
+  async exists(track) {
+    if (!track) return false;
+    if (isElectron && track.path) {
+      try {
+        return await window.hotlive.fileExists(track.path);
+      } catch {
+        return false;
+      }
+    }
+    if (track.path) return true;
+    const blob = await getBlob(track.id);
+    return !!blob;
+  },
+
   async deleteFile(track) {
     if (isElectron && track.path) {
       try {

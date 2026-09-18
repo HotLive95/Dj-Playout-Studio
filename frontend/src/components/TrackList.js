@@ -13,6 +13,9 @@ import {
   Scissors,
   Share2,
   Mic,
+  AlertTriangle,
+  Tag,
+  Check,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
 
@@ -39,6 +42,9 @@ export default function TrackList({
   onEditTrack,
   onExportPlaylist,
   onRecordVoice,
+  missingIds,
+  onUpdateTrackInfo,
+  onRescan,
 }) {
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -47,14 +53,32 @@ export default function TrackList({
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [fileDragging, setFileDragging] = useState(false);
+  const [editInfoIndex, setEditInfoIndex] = useState(null);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [artistDraft, setArtistDraft] = useState("");
   const firstMatchRef = useRef(null);
+
+  const titleOf = (t) => t.title || t.name;
+  const artistOf = (t) => t.artist || "";
+  const startEditInfo = (index, track) => {
+    setTitleDraft(track.title || track.name || "");
+    setArtistDraft(track.artist || "");
+    setEditInfoIndex(index);
+  };
+  const saveInfo = (trackId) => {
+    if (onUpdateTrackInfo)
+      onUpdateTrackInfo(trackId, { title: titleDraft.trim(), artist: artistDraft.trim() });
+    setEditInfoIndex(null);
+  };
 
   const allItems = playlist
     ? playlist.trackIds.map((id, i) => ({ track: tracks[id], index: i })).filter((x) => x.track)
     : [];
   const totalDuration = allItems.reduce((sum, x) => sum + (x.track.duration || 0), 0);
   const q = (search || "").trim().toLowerCase();
-  const items = q ? allItems.filter((x) => x.track.name.toLowerCase().includes(q)) : allItems;
+  const matchTrack = (t) =>
+    `${t.title || ""} ${t.artist || ""} ${t.name || ""}`.toLowerCase().includes(q);
+  const items = q ? allItems.filter((x) => matchTrack(x.track)) : allItems;
 
   useEffect(() => {
     if (q && firstMatchRef.current) {
@@ -82,7 +106,7 @@ export default function TrackList({
         .flatMap((pl) =>
           pl.trackIds
             .map((id) => tracks[id])
-            .filter((t) => t && t.name.toLowerCase().includes(q))
+            .filter((t) => t && matchTrack(t))
             .map((t) => ({ pl, track: t }))
         )
     : [];
@@ -240,6 +264,16 @@ export default function TrackList({
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-2">
+        {missingIds && missingIds.size > 0 && (
+          <button
+            data-testid="rescan-files-button"
+            onClick={onRescan}
+            className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[rgba(255,23,68,0.5)] text-sm text-[var(--hl-onair)] hover:bg-[rgba(255,23,68,0.1)]"
+            title="Re-check / re-link missing files"
+          >
+            <AlertTriangle size={15} /> Re-link ({missingIds.size})
+          </button>
+        )}
         <button
           data-testid="add-files-button"
           onClick={handleAddClick}
@@ -301,6 +335,7 @@ export default function TrackList({
               const active = track.id === currentTrackId;
               const rowPlaying = active && isPlaying;
               const cued = track.id === cueTrackId;
+              const missing = !!(missingIds && missingIds.has(track.id));
               return (
                 <div
                   key={track.id}
@@ -352,24 +387,97 @@ export default function TrackList({
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div
-                      className={`truncate font-500 ${
-                        active ? "text-[var(--hl-fire)]" : cued ? "text-[var(--hl-amber)]" : ""
-                      }`}
-                      data-testid={`track-name-${index}`}
-                    >
-                      {highlightName(track.name)}
-                    </div>
-                    <div className="text-[11px] text-[var(--hl-muted)] uppercase tracking-wide">
-                      {track.type?.includes("wav") || /\.wav$/i.test(track.name) ? "WAV" : "MP3"}
-                    </div>
+                    {editInfoIndex === index ? (
+                      <div className="flex flex-col gap-1" data-testid={`track-info-editor-${index}`}>
+                        <input
+                          autoFocus
+                          data-testid={`title-input-${index}`}
+                          value={titleDraft}
+                          onChange={(e) => setTitleDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveInfo(track.id);
+                            if (e.key === "Escape") setEditInfoIndex(null);
+                          }}
+                          placeholder="Song title"
+                          className="w-full bg-black/50 border border-[var(--hl-line)] rounded px-2 py-1 text-sm outline-none focus:border-[var(--hl-fire)]"
+                        />
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            data-testid={`artist-input-${index}`}
+                            value={artistDraft}
+                            onChange={(e) => setArtistDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveInfo(track.id);
+                              if (e.key === "Escape") setEditInfoIndex(null);
+                            }}
+                            placeholder="Artist"
+                            className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--hl-amber)]"
+                          />
+                          <button
+                            data-testid={`save-info-${index}`}
+                            onClick={() => saveInfo(track.id)}
+                            className="h-7 px-2 grid place-items-center rounded hl-fire-gradient text-white"
+                            title="Save"
+                          >
+                            <Check size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {missing && (
+                            <span
+                              data-testid={`missing-badge-${index}`}
+                              className="shrink-0 inline-flex items-center gap-1 text-[10px] font-600 uppercase tracking-wide text-[var(--hl-onair)] bg-[rgba(255,23,68,0.15)] border border-[rgba(255,23,68,0.5)] rounded px-1.5 py-0.5"
+                              title="Audio file not found on this device — re-import or re-link before air"
+                            >
+                              <AlertTriangle size={11} /> File missing
+                            </span>
+                          )}
+                          <div
+                            className={`truncate font-500 ${
+                              active ? "text-[var(--hl-fire)]" : cued ? "text-[var(--hl-amber)]" : ""
+                            }`}
+                            data-testid={`track-name-${index}`}
+                          >
+                            {highlightName(titleOf(track))}
+                          </div>
+                        </div>
+                        <div
+                          className="truncate text-[13px] text-[var(--hl-muted)]"
+                          data-testid={`track-artist-${index}`}
+                        >
+                          {artistOf(track) ? (
+                            highlightName(artistOf(track))
+                          ) : (
+                            <span className="italic opacity-60">Unknown artist</span>
+                          )}
+                        </div>
+                        <div
+                          className="truncate text-[10px] uppercase tracking-wide text-[var(--hl-muted)] opacity-70"
+                          data-testid={`track-file-${index}`}
+                        >
+                          {track.type?.includes("wav") || /\.wav$/i.test(track.name) ? "WAV" : "MP3"} ·{" "}
+                          {track.name}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="text-sm text-[var(--hl-muted)] tabular-nums w-14 text-right">
                     {track.duration ? formatTime(track.duration) : "--:--"}
                   </div>
 
-                  <div className="flex items-center gap-1 w-[144px] justify-end">
+                  <div className="flex items-center gap-1 w-[176px] justify-end">
+                    <button
+                      data-testid={`edit-info-${index}`}
+                      onClick={() => startEditInfo(index, track)}
+                      className="h-8 w-8 grid place-items-center rounded text-[var(--hl-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hl-fire)] hover:bg-white/10"
+                      title="Edit artist & song title"
+                    >
+                      <Tag size={16} />
+                    </button>
                     <button
                       data-testid={`cue-track-${index}`}
                       onClick={() => onCueTrack(index)}
