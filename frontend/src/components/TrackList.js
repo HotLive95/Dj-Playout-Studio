@@ -20,6 +20,7 @@ import {
   Radio,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
+import { camelotCompatible } from "../lib/key";
 
 export default function TrackList({
   playlist,
@@ -30,6 +31,7 @@ export default function TrackList({
   currentTrackId,
   cueTrackId,
   standbyTrackId,
+  currentCamelot,
   isPlaying,
   onAddFiles,
   onImportDialog,
@@ -358,6 +360,10 @@ export default function TrackList({
               const cued = track.id === cueTrackId;
               const standby = track.id === standbyTrackId;
               const missing = !!(missingIds && missingIds.has(track.id));
+              const harmonic =
+                !active && currentCamelot && track.camelot
+                  ? camelotCompatible(currentCamelot, track.camelot)
+                  : false;
               return (
                 <div
                   key={track.id}
@@ -505,6 +511,36 @@ export default function TrackList({
                           </div>
                         )}
                       </>
+                    )}
+                  </div>
+
+                  <div
+                    className="w-14 text-right text-[11px] tabular-nums"
+                    data-testid={`track-key-${index}`}
+                    title={
+                      track.camelot
+                        ? `Key ${track.keyName} (${track.camelot})${
+                            harmonic ? " — harmonic match with what's playing" : ""
+                          }`
+                        : "Analyzing key…"
+                    }
+                  >
+                    {track.camelot ? (
+                      <span
+                        className={`inline-flex items-center gap-1 ${
+                          harmonic ? "text-[#7CFF9B]" : "text-[var(--hl-muted)]"
+                        }`}
+                      >
+                        {harmonic && (
+                          <span
+                            className="h-1.5 w-1.5 rounded-full bg-[#7CFF9B]"
+                            data-testid={`track-harmonic-${index}`}
+                          />
+                        )}
+                        {track.camelot}
+                      </span>
+                    ) : (
+                      <span className="opacity-40">·</span>
                     )}
                   </div>
 

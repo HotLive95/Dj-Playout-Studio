@@ -1,11 +1,12 @@
 // Dual-element audio engine with crossfade / gapless auto-play for live playout,
 // plus an independent CUE (headphone pre-listen) channel and audio-output routing.
 export default class AudioEngine {
-  constructor(onUpdate, onCue, onStandby, onBpm) {
+  constructor(onUpdate, onCue, onStandby, onBpm, onCommit) {
     this.onUpdate = onUpdate;
     this.onCue = onCue;
     this.onStandby = onStandby;
     this.onBpm = onBpm;
+    this.onCommit = onCommit;
     this.a = new Audio();
     this.b = new Audio();
     this.cue = new Audio();
@@ -47,6 +48,8 @@ export default class AudioEngine {
     this.faderCurve = "smooth"; // "smooth" (equal-power) | "sharp" (fast cut)
     this.syncLock = false; // auto tempo-match every track the moment it's armed
     this._bpmCache = {};
+    this._keyCache = {};
+    this._analyzed = {};
     this._actx = null;
     this._syncRate = 1;
     this._nudgeTimer = null;
@@ -567,6 +570,7 @@ export default class AudioEngine {
     if (this.active.paused) this.active.play().catch(() => {});
     this._emitStandby();
     this._emit();
+    if (this.onCommit) this.onCommit(this.index);
   }
 
   _cancelTake() {
@@ -620,7 +624,7 @@ export default class AudioEngine {
 
   async bpmFor(track) {
     if (!track) return null;
-    if (this._bpmCache[track.id] != null) return this._bpmCache[track.id];
+    if (this._analyzed[track.id]) return this._bpmCache[track.id] ?? null;
     const ctx = this._ctx();
     if (!ctx) return null;
     try {
@@ -637,15 +641,26 @@ export default class AudioEngine {
       const arr = await res.arrayBuffer();
       const buf = await ctx.decodeAudioData(arr.slice(0));
       const { estimateBpm } = await import("./bpm");
+      const { estimateKey } = await import("./key");
       const bpm = estimateBpm(buf);
-      if (bpm) {
-        this._bpmCache[track.id] = bpm;
-        if (this.onBpm) this.onBpm(track.id, bpm);
+      let key = null;
+      try {
+        key = estimateKey(buf);
+      } catch {
+        /* ignore */
       }
+      this._analyzed[track.id] = true;
+      if (bpm) this._bpmCache[track.id] = bpm;
+      if (key) this._keyCache[track.id] = key;
+      if (this.onBpm) this.onBpm(track.id, bpm || null, key || null);
       return bpm;
     } catch {
       return null;
     }
+  }
+
+  keyFor(track) {
+    return track ? this._keyCache[track.id] || null : null;
   }
 
   async _refreshBpm() {

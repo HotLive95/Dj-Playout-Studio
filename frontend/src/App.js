@@ -24,6 +24,7 @@ import { platform } from "@/lib/platform";
 import { putBlob } from "@/lib/db";
 import { api } from "@/lib/api";
 import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessing";
+import { camelotCompatible } from "@/lib/key";
 import { deriveNames, parseFilename } from "@/lib/id3";
 
 const uid = () =>
@@ -49,6 +50,8 @@ const defaultSettings = {
   jingleDuckMs: 220,
   faderCurve: "smooth",
   syncLock: false,
+  autoCueNext: false,
+  rollDiv: 0.25,
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -246,6 +249,8 @@ function App() {
   const [jingles, setJingles] = useState([]);
   const [jingleActive, setJingleActive] = useState(false);
   const [currentPeaks, setCurrentPeaks] = useState(null);
+  const [standbyPeaks, setStandbyPeaks] = useState(null);
+  const [rollingPads, setRollingPads] = useState([]);
   const [micLive, setMicLive] = useState(false);
   const [license, setLicenseState] = useState(undefined);
   const [keyManagerOpen, setKeyManagerOpen] = useState(false);
@@ -257,6 +262,9 @@ function App() {
   const [standby, setStandby] = useState({ trackId: null, faderPos: 0 });
 
   const engineRef = useRef(null);
+  const autoCueRef = useRef(false);
+  const queueTracksRef = useRef([]);
+  const missingIdsRef = useRef(new Set());
   const micRef = useRef({ active: false });
   const micLiveRef = useRef({});
   const deviceIdRef = useRef(null);
@@ -264,6 +272,7 @@ function App() {
   const jinglesRef = useRef([]);
   const activeJinglesRef = useRef([]);
   const peaksCacheRef = useRef({});
+  const rollsRef = useRef({});
   const playJingleRef = useRef(() => {});
   const cueInRef = useRef(() => {});
   const cueOutRef = useRef(() => {});
@@ -384,10 +393,26 @@ function App() {
       },
       (c) => setCue(c),
       (sb) => setStandby(sb),
-      (id, bpm) =>
-        setTracks((prev) =>
-          prev[id] && !(prev[id].bpm > 0) ? { ...prev, [id]: { ...prev[id], bpm } } : prev
-        )
+      (id, bpm, key) =>
+        setTracks((prev) => {
+          if (!prev[id]) return prev;
+          const cur = prev[id];
+          const patch = {};
+          if (bpm > 0 && !(cur.bpm > 0)) patch.bpm = bpm;
+          if (key && !cur.camelot) {
+            patch.camelot = key.camelot;
+            patch.keyName = key.keyName;
+          }
+          return Object.keys(patch).length ? { ...prev, [id]: { ...cur, ...patch } } : prev;
+        }),
+      (newIndex) => {
+        if (!autoCueRef.current) return;
+        const q = queueTracksRef.current;
+        const nxt = q[newIndex + 1];
+        if (nxt && !missingIdsRef.current.has(nxt.id)) {
+          engineRef.current?.loadStandby(nxt);
+        }
+      }
     );
     engineRef.current = engine;
     return () => engine.destroy();
@@ -561,6 +586,11 @@ function App() {
 
   const getUrl = useCallback((t) => platform.getUrl(t), []);
 
+  // Keep refs fresh for engine callbacks (onCommit auto-cue).
+  autoCueRef.current = !!settings.autoCueNext;
+  queueTracksRef.current = queueTracks;
+  missingIdsRef.current = missingIds;
+
   useEffect(() => {
     const e = engineRef.current;
     if (!e) return;
@@ -679,6 +709,36 @@ function App() {
       cancelled = true;
     };
   }, [currentTrackId, tracks]);
+
+  // ---- Waveform peaks for the standby deck ----
+  useEffect(() => {
+    let cancelled = false;
+    const t = standby.trackId ? tracks[standby.trackId] : null;
+    if (!t) {
+      setStandbyPeaks(null);
+      return;
+    }
+    if (peaksCacheRef.current[t.id]) {
+      setStandbyPeaks(peaksCacheRef.current[t.id]);
+      return;
+    }
+    setStandbyPeaks(null);
+    (async () => {
+      try {
+        const url = await platform.getUrl(t);
+        const buf = await decodeToBuffer(url);
+        const pk = computePeaks(buf, 900);
+        if (cancelled) return;
+        peaksCacheRef.current[t.id] = pk;
+        setStandbyPeaks(pk);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [standby.trackId, tracks]);
 
   // ---- Live hotkeys ----
   useEffect(() => {
@@ -1336,6 +1396,17 @@ function App() {
       a.src = "";
     });
     activeJinglesRef.current = [];
+    Object.values(rollsRef.current).forEach((r) => {
+      clearInterval(r.timer);
+      try {
+        r.audio.pause();
+        r.audio.src = "";
+      } catch {
+        /* ignore */
+      }
+    });
+    rollsRef.current = {};
+    setRollingPads([]);
     setJingleActive(false);
   };
 
@@ -1343,6 +1414,58 @@ function App() {
   const cueTrackObj = cue.trackId ? tracks[cue.trackId] : null;
   const standbyTrackObj = standby.trackId ? tracks[standby.trackId] : null;
   const onAir = playback.isPlaying;
+
+  // ---- Loop-roll pads (beat-synced stutter of the pad sample) ----
+  const stopRoll = (index) => {
+    const r = rollsRef.current[index];
+    if (!r) return;
+    clearInterval(r.timer);
+    try {
+      r.audio.pause();
+      r.audio.src = "";
+    } catch {
+      /* ignore */
+    }
+    delete rollsRef.current[index];
+    setRollingPads(Object.keys(rollsRef.current).map(Number));
+    if (Object.keys(rollsRef.current).length === 0 && activeJinglesRef.current.length === 0)
+      setJingleActive(false);
+  };
+  const toggleRoll = async (index) => {
+    if (rollsRef.current[index]) {
+      stopRoll(index);
+      return;
+    }
+    const j = jinglesRef.current[index];
+    if (!j) return;
+    const url = await platform.getUrl(j);
+    if (!url) return;
+    const bpm = (currentTrack && currentTrack.bpm) || engineRef.current?._onairBpm || 120;
+    const div = settings.rollDiv || 0.25;
+    const intervalMs = Math.max(50, (60 / bpm) * div * 1000);
+    const a = new Audio(url);
+    a.volume = typeof j.volume === "number" ? j.volume : 1;
+    const fire = () => {
+      try {
+        a.currentTime = 0;
+        a.play().catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    };
+    setJingleActive(true);
+    fire();
+    const timer = setInterval(fire, intervalMs);
+    rollsRef.current[index] = { timer, audio: a };
+    setRollingPads(Object.keys(rollsRef.current).map(Number));
+  };
+  const setRollDiv = (d) => setSettings((s) => ({ ...s, rollDiv: d }));
+  const toggleAutoCueNext = () => setSettings((s) => ({ ...s, autoCueNext: !s.autoCueNext }));
+
+  const standbyHarmonic =
+    currentTrack && standbyTrackObj
+      ? camelotCompatible(currentTrack.camelot, standbyTrackObj.camelot)
+      : null;
 
   const durationOf = useCallback(
     (pl) => pl.trackIds.reduce((sum, id) => sum + (tracks[id]?.duration || 0), 0),
@@ -1404,6 +1527,7 @@ function App() {
             currentTrackId={currentTrackId}
             cueTrackId={cue.trackId}
             standbyTrackId={standby.trackId}
+            currentCamelot={currentTrack?.camelot}
             isPlaying={playback.isPlaying}
             isElectron={platform.isElectron}
             onAddFiles={addBrowserFiles}
@@ -1456,6 +1580,16 @@ function App() {
         syncLock={!!settings.syncLock}
         onToggleSyncLock={toggleSyncLock}
         getBeat={getBeat}
+        rollDiv={settings.rollDiv ?? 0.25}
+        onSetRollDiv={setRollDiv}
+        rollingPads={rollingPads}
+        onToggleRoll={toggleRoll}
+        autoCueNext={!!settings.autoCueNext}
+        onToggleAutoCueNext={toggleAutoCueNext}
+        airPeaks={currentPeaks}
+        airProgress={playback.duration ? playback.currentTime / playback.duration : 0}
+        standbyPeaks={standbyPeaks}
+        standbyHarmonic={standbyHarmonic}
         onStop={stopJingles}
       />
 

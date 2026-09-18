@@ -193,6 +193,14 @@ body {
   pointer-events: none;
 }
 
+@keyframes hlRollPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 90, 31, 0.6); }
+  50% { box-shadow: 0 0 0 3px rgba(255, 90, 31, 0); }
+}
+.hl-roll-active {
+  animation: hlRollPulse 0.4s ease-in-out infinite;
+}
+
 
 /* Hot Live 95 branded playlist backdrop */
 .hl-playlist-bg {

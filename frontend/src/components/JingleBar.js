@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, ChevronRight, Repeat, Lock } from "lucide-react";
+import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, ChevronRight, Repeat, Lock, Rewind } from "lucide-react";
+import Waveform from "./Waveform";
 
 const PAD_COUNT = 6;
 
@@ -139,7 +140,7 @@ function BeatMeter({ getBeat, armed }) {
   );
 }
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, onStop }) {
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, rollDiv, onSetRollDiv, rollingPads, onToggleRoll, autoCueNext, onToggleAutoCueNext, airPeaks, airProgress, standbyPeaks, standbyHarmonic, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -185,6 +186,31 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
       <div className="flex items-center gap-2 shrink-0">
         <Zap size={16} className="text-[var(--hl-amber)]" />
         <span className="font-display text-xs tracking-[0.2em] text-[var(--hl-muted)]">JINGLES</span>
+        <div
+          className="hidden md:flex items-center rounded-md border border-[var(--hl-line)] overflow-hidden"
+          title="Loop-roll division (beat-synced stutter length)"
+          data-testid="roll-div-selector"
+        >
+          {[
+            { v: 1, l: "1" },
+            { v: 0.5, l: "½" },
+            { v: 0.25, l: "¼" },
+            { v: 0.125, l: "⅛" },
+          ].map((o) => (
+            <button
+              key={o.v}
+              data-testid={`roll-div-${o.l}`}
+              onClick={() => onSetRollDiv(o.v)}
+              className={`h-6 w-6 text-[11px] font-700 transition ${
+                (rollDiv ?? 0.25) === o.v
+                  ? "bg-[var(--hl-amber)] text-black"
+                  : "text-[var(--hl-muted)] hover:text-[var(--hl-amber)]"
+              }`}
+            >
+              {o.l}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-1.5 w-full md:flex md:items-center md:gap-2 md:flex-1 md:min-w-0 md:w-auto md:overflow-x-auto">
@@ -230,9 +256,24 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
                       value={typeof j.volume === "number" ? j.volume : 1}
                       onChange={(e) => onSetVolume(i, Number(e.target.value))}
                       onClick={(e) => e.stopPropagation()}
-                      className="hl-jingle-vol w-24"
+                      className="hl-jingle-vol w-20"
                       title="Pad volume — dip it under your voice"
                     />
+                    <button
+                      data-testid={`jingle-roll-${i}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleRoll(i);
+                      }}
+                      className={`h-5 w-5 grid place-items-center rounded shrink-0 transition ${
+                        rollingPads?.includes(i)
+                          ? "bg-[var(--hl-fire)] text-white hl-roll-active"
+                          : "text-[var(--hl-amber)] hover:bg-[rgba(255,171,0,0.2)]"
+                      }`}
+                      title="Beat-synced loop roll — retriggers this pad in time with the track"
+                    >
+                      <Rewind size={12} />
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -302,6 +343,16 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
                   </span>
                 )}
               </div>
+              {standbyHarmonic != null && (
+                <div
+                  className={`text-[10px] font-700 tracking-wide mt-0.5 ${
+                    standbyHarmonic ? "text-[#7CFF9B]" : "text-[var(--hl-amber)]"
+                  }`}
+                  data-testid="standby-harmonic"
+                >
+                  {standbyHarmonic ? "♪ HARMONIC ✓" : "♪ CLASH"}
+                </div>
+              )}
             </>
           ) : (
             <span className="text-[11px] text-[var(--hl-muted)] italic mt-0.5" data-testid="standby-empty">
@@ -309,6 +360,39 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
               <Radio size={10} className="inline -mt-0.5 text-[var(--hl-cue)]" />
             </span>
           )}
+        </div>
+
+        <div className="hidden lg:flex flex-col gap-0.5 w-[116px]" data-testid="deck-waveforms">
+          <div
+            className="relative h-5 rounded bg-black/40 overflow-hidden border border-[var(--hl-line)]"
+            title="On-air waveform"
+          >
+            {airPeaks ? (
+              <Waveform peaks={airPeaks} progress={airProgress || 0} height={20} interactive={false} compact />
+            ) : (
+              <span className="absolute inset-0 grid place-items-center text-[8px] text-[var(--hl-muted)] opacity-40">
+                on air
+              </span>
+            )}
+            <span className="absolute left-1 top-0 text-[8px] font-700 text-[var(--hl-fire)] pointer-events-none">
+              AIR
+            </span>
+          </div>
+          <div
+            className="relative h-5 rounded bg-black/40 overflow-hidden border border-[var(--hl-line)]"
+            title="Standby waveform — eyeball the drop before you fade"
+          >
+            {standbyPeaks ? (
+              <Waveform peaks={standbyPeaks} progress={0} height={20} interactive={false} compact />
+            ) : (
+              <span className="absolute inset-0 grid place-items-center text-[8px] text-[var(--hl-muted)] opacity-40">
+                standby
+              </span>
+            )}
+            <span className="absolute left-1 top-0 text-[8px] font-700 text-[var(--hl-cue)] pointer-events-none">
+              CUE
+            </span>
+          </div>
         </div>
 
         <Crossfader pos={faderPos || 0} armed={!!standbyTrack} onChange={onFader} />
@@ -384,6 +468,18 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
               SHARP
             </button>
           </div>
+          <button
+            data-testid="auto-cue-next-toggle"
+            onClick={onToggleAutoCueNext}
+            className={`flex items-center justify-center gap-1 h-5 rounded-md border text-[9px] font-700 tracking-wider transition ${
+              autoCueNext
+                ? "bg-[var(--hl-amber)] text-black border-[var(--hl-amber)]"
+                : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)]"
+            }`}
+            title="Auto-Cue Next — after each take, auto-arm the next playlist track to standby"
+          >
+            <Repeat size={11} /> AUTO-CUE
+          </button>
         </div>
 
         <button
