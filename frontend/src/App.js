@@ -1184,6 +1184,33 @@ function App() {
       return n;
     });
   };
+  // Load a jingle pad by dragging a playlist track onto it.
+  const assignJingleFromTrack = async (index, trackId) => {
+    const t = tracks[trackId];
+    if (!t) return;
+    let j;
+    if (t.path) {
+      j = { id: uid(), name: t.title || t.name, path: t.path };
+    } else {
+      const url = await platform.getUrl(t);
+      let blob = null;
+      try {
+        blob = url ? await (await fetch(url)).blob() : null;
+      } catch {
+        blob = null;
+      }
+      const id = uid();
+      if (blob) await putBlob(id, blob);
+      j = { id, name: t.title || t.name, type: t.type };
+    }
+    setJingles((prev) => {
+      const n = [...prev];
+      n[index] = j;
+      return n;
+    });
+    setBanner(`Loaded "${j.name}" to Pad ${index + 1}`);
+  };
+
   const clearJingle = (index) =>
     setJingles((prev) => {
       const n = [...prev];
@@ -1317,6 +1344,7 @@ function App() {
         isElectron={platform.isElectron}
         onAssignFile={assignJingleBrowser}
         onAssignDialog={assignJingleDialog}
+        onAssignTrack={assignJingleFromTrack}
         onPlay={playJingle}
         onClear={clearJingle}
         onSetVolume={setJingleVolume}
@@ -1460,6 +1488,10 @@ function App() {
       {voiceOpen && (
         <VoiceRecorder
           existingTracks={queueTracks}
+          playlists={playlists}
+          tracks={tracks}
+          jingles={jingles}
+          getUrl={getUrl}
           defaultIndex={
             currentTrackId
               ? queueTracks.findIndex((t) => t.id === currentTrackId) + 1

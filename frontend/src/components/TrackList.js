@@ -127,7 +127,15 @@ export default function TrackList({
     }
   };
 
-  const onRowDragStart = (index) => setDragIndex(index);
+  const onRowDragStart = (e, index, trackId) => {
+    setDragIndex(index);
+    try {
+      if (trackId) e.dataTransfer.setData("application/x-hl-track", trackId);
+      e.dataTransfer.effectAllowed = "copyMove";
+    } catch {
+      /* ignore */
+    }
+  };
   const onRowDragOver = (e, index) => {
     if (dragIndex === null) return; // let file-drag pass through
     e.preventDefault();
@@ -352,7 +360,7 @@ export default function TrackList({
                   ref={pos === 0 ? firstMatchRef : null}
                   data-testid={`track-row-${index}`}
                   draggable={!q}
-                  onDragStart={() => onRowDragStart(index)}
+                  onDragStart={(e) => onRowDragStart(e, index, track.id)}
                   onDragOver={(e) => onRowDragOver(e, index)}
                   onDrop={() => onRowDrop(index)}
                   onDragEnd={() => {

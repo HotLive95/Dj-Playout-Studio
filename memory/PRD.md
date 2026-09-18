@@ -425,3 +425,26 @@ Root causes (two distinct offline-path bugs):
 - Verified (browser + curl): ID3 art thumbnails on rows/player, player Title/Artist, bulk
   "set artist for all" + save, batch .zip download ('HotLive95 Playlists 2026-09-18.zip'),
   and /live now-playing card populated via the backend bridge (POST then GET confirmed).
+
+## Feature batch (2026-06) — Voice Booth overdub + Jingle drag-and-drop
+- Voice Booth (VoiceRecorder rewrite): record a mic take over an optional MUSIC BED.
+  - Bed source: a playlist (advances track→track, loops when exhausted), a jingle pad, or an
+    uploaded file. Bed volume slider.
+  - Monitoring via Web Audio graph: mic→(monitor gain)→headphones, mic→mixDest (always recorded),
+    bed→(bed gain)→headphones and →mixDest only when "mix" is on. Bed <audio> element's onended
+    advances/loops the bed.
+  - "Mix the bed into the saved file" toggle (default OFF = voice only) — chosen per take.
+  - Mic monitor toggle DEFAULT OFF + monitor volume + an amber "use headphones / feedback" warning.
+  - Live gain updates while recording. Cleanup closes ctx + revokes URLs on unmount/stop.
+  - Testids: voice-bed-type, voice-bed-playlist, voice-bed-start, voice-bed-jingle,
+    voice-bed-file-input, voice-bed-volume, voice-mix-toggle, voice-mic-monitor-toggle,
+    voice-mic-monitor-volume, voice-monitor-warning.
+  - NOTE: live mic capture/monitoring can't be exercised in the headless test env (no mic);
+    setup UI + audio-graph wiring verified; getUserMedia path runs in the real browser.
+- Jingle pads: drag a playlist track onto any pad to load it (in addition to OS-file drop and
+  click-to-browse). TrackList rows set dataTransfer 'application/x-hl-track'; JingleBar drop
+  handler + App.assignJingleFromTrack copy the track's audio (blob copy on web, path reuse on
+  desktop) into the pad. Verified via synthetic HTML5 drop.
+- Auto-play regression check: verified tracks auto-advance (tA→tB→tC) in the current build; no
+  regression from this session. Likely user-side causes: the "Auto" toggle off, or a track with
+  a red "File missing" badge (a missing file halts the chain until re-imported/re-linked).

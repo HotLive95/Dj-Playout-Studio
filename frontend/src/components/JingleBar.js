@@ -3,7 +3,7 @@ import { Zap, Plus, X, Square, Volume2 } from "lucide-react";
 
 const PAD_COUNT = 6;
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, onStop }) {
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -23,7 +23,9 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
     e.stopPropagation();
     setDragOver(null);
     const f = e.dataTransfer?.files?.[0];
+    const trackId = e.dataTransfer?.getData("application/x-hl-track");
     if (f && isAudio(f)) onAssignFile(i, f);
+    else if (trackId && onAssignTrack) onAssignTrack(i, trackId);
   };
 
   return (
@@ -58,7 +60,8 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
               className={`relative shrink-0 rounded-lg ${dragOver === i ? "ring-2 ring-[var(--hl-fire)] ring-offset-1 ring-offset-[#0e0e12]" : ""}`}
               data-testid={`jingle-pad-drop-${i}`}
               onDragOver={(e) => {
-                if (Array.from(e.dataTransfer?.types || []).includes("Files")) {
+                const types = Array.from(e.dataTransfer?.types || []);
+                if (types.includes("Files") || types.includes("application/x-hl-track")) {
                   e.preventDefault();
                   e.stopPropagation();
                   setDragOver(i);
