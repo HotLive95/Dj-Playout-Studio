@@ -48,6 +48,7 @@ const defaultSettings = {
   jingleDuckDepth: 0.4,
   jingleDuckMs: 220,
   faderCurve: "smooth",
+  syncLock: false,
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -402,6 +403,7 @@ function App() {
     e.setLoopRegion(settings.loopRegion);
     e.setCueAutoFade(settings.cueAutoFade, settings.cueFadeSeconds);
     e.setFaderCurve(settings.faderCurve || "smooth");
+    e.setSyncLock(!!settings.syncLock);
   }, [settings]);
 
   // ---- Ducking (manual Talk + mic auto-duck + jingle drops) ----
@@ -575,21 +577,56 @@ function App() {
     if (loaded) scanAvailability(queueTracks);
   }, [queueTracks, loaded, scanAvailability]);
 
-  // ---- Broadcast now-playing to the public /live page (best-effort, online only) ----
+  // ---- Broadcast now-playing (+ coming up) to the public /live page ----
   const nowTrack = currentTrackId ? tracks[currentTrackId] : null;
   useEffect(() => {
     if (!nowTrack) return;
+    const next = standby.trackId ? tracks[standby.trackId] : null;
     api
-      .setNowPlaying(nowTrack.title || nowTrack.name, nowTrack.artist || "", nowTrack.art || null)
+      .setNowPlaying(
+        nowTrack.title || nowTrack.name,
+        nowTrack.artist || "",
+        nowTrack.art || null,
+        next ? { title: next.title || next.name, artist: next.artist || "", art: next.art || null } : null
+      )
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrackId, nowTrack?.title, nowTrack?.artist, nowTrack?.art]);
+  }, [currentTrackId, nowTrack?.title, nowTrack?.artist, nowTrack?.art, standby.trackId]);
 
   // ---- Persist ----
   useEffect(() => {
     if (!loaded) return;
     platform.saveState({ tracks, playlists, currentPlaylistId, settings, jingles });
   }, [tracks, playlists, currentPlaylistId, settings, jingles, loaded]);
+
+  // ---- Background BPM detection for the current playlist (one track at a time) ----
+  const bpmBusyRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || bpmBusyRef.current) return;
+    const eng = engineRef.current;
+    if (!eng) return;
+    const target = queueTracks.find((t) => t && t.bpm == null && !missingIds.has(t.id));
+    if (!target) return;
+    bpmBusyRef.current = true;
+    let cancelled = false;
+    (async () => {
+      let bpm = null;
+      try {
+        bpm = await eng.bpmFor(target);
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled) {
+        setTracks((prev) =>
+          prev[target.id] ? { ...prev, [target.id]: { ...prev[target.id], bpm: bpm || 0 } } : prev
+        );
+      }
+      bpmBusyRef.current = false;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [queueTracks, missingIds, loaded, tracks]);
 
   // ---- Waveform peaks for the on-air track ----
   useEffect(() => {
@@ -1059,6 +1096,8 @@ function App() {
   const syncStandby = () => engineRef.current?.syncStandby();
   const nudgeStandby = (dir) => engineRef.current?.nudgeStandby(dir);
   const setFaderCurve = (c) => setSettings((s) => ({ ...s, faderCurve: c }));
+  const toggleSyncLock = () => setSettings((s) => ({ ...s, syncLock: !s.syncLock }));
+  const getBeat = useCallback(() => engineRef.current?.beatInfo(), []);
 
   const setVolume = (v) => setSettings((s) => ({ ...s, volume: v }));
   const toggleAutoplay = () => setSettings((s) => ({ ...s, autoplay: !s.autoplay }));
@@ -1392,6 +1431,9 @@ function App() {
         onairBpm={standby.onairBpm}
         standbyBpm={standby.standbyBpm}
         syncRate={standby.syncRate}
+        syncLock={!!settings.syncLock}
+        onToggleSyncLock={toggleSyncLock}
+        getBeat={getBeat}
         onStop={stopJingles}
       />
 

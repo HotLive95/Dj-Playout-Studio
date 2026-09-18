@@ -164,6 +164,19 @@ export default function ListenLivePage() {
                       {nowPlaying.artist}
                     </div>
                   )}
+                  {nowPlaying.next_title && (
+                    <div
+                      className="mt-1 flex items-center gap-1.5 text-[11px] text-[var(--hl-cue)]"
+                      data-testid="live-coming-up"
+                    >
+                      <Radio size={11} className="shrink-0" />
+                      <span className="uppercase tracking-[0.2em] text-[10px] opacity-80">Up next</span>
+                      <span className="truncate text-[var(--hl-text)]" data-testid="live-next-title">
+                        {nowPlaying.next_title}
+                        {nowPlaying.next_artist ? ` — ${nowPlaying.next_artist}` : ""}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

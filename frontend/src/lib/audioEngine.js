@@ -44,6 +44,7 @@ export default class AudioEngine {
     this._takeRaf = null;
     // Fader curve + beat sync
     this.faderCurve = "smooth"; // "smooth" (equal-power) | "sharp" (fast cut)
+    this.syncLock = false; // auto tempo-match every track the moment it's armed
     this._bpmCache = {};
     this._actx = null;
     this._syncRate = 1;
@@ -441,6 +442,7 @@ export default class AudioEngine {
     this._standbyBpm = null;
     this._emitStandby();
     this._refreshBpm();
+    if (this.syncLock) this.syncStandby();
   }
 
   clearStandby() {
@@ -574,6 +576,26 @@ export default class AudioEngine {
   // ---- Fader curve (crossfader shape) ----
   setFaderCurve(curve) {
     this.faderCurve = curve === "sharp" ? "sharp" : "smooth";
+  }
+
+  setSyncLock(on) {
+    this.syncLock = !!on;
+    if (on && this.standbyArmed) this.syncStandby();
+  }
+
+  // Live beat/phase info for the visual beat meter (0..1 phase within a beat).
+  beatInfo() {
+    const air = this.queue[this.index];
+    const sb = this.standbyArmed ? this.queue[this.standbyIndex] : null;
+    const airBpm = air ? this._bpmCache[air.id] || null : null;
+    const sbBpm = sb ? this._bpmCache[sb.id] || null : null;
+    const phase = (bpm, el) => (bpm ? ((el.currentTime * bpm) / 60) % 1 : null);
+    return {
+      airBpm,
+      sbBpm,
+      airPhase: phase(airBpm, this.active),
+      sbPhase: sbBpm ? phase(sbBpm, this.idle) : null,
+    };
   }
 
   // Returns { out, in } gains (0..1) for a linear fader position p.

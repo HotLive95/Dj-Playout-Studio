@@ -508,6 +508,18 @@ export default function TrackList({
                     )}
                   </div>
 
+                  <div
+                    className="w-12 text-right text-[11px] tabular-nums text-[var(--hl-muted)]"
+                    data-testid={`track-bpm-${index}`}
+                    title={track.bpm > 0 ? "Detected tempo (BPM)" : "Analyzing tempo…"}
+                  >
+                    {track.bpm > 0 ? (
+                      <span className="text-[var(--hl-cue)]">{Math.round(track.bpm)}</span>
+                    ) : (
+                      <span className="opacity-40">···</span>
+                    )}
+                  </div>
+
                   <div className="text-sm text-[var(--hl-muted)] tabular-nums w-14 text-right">
                     {track.duration ? formatTime(track.duration) : "--:--"}
                   </div>

@@ -615,18 +615,25 @@ class NowPlaying(BaseModel):
     title: Optional[str] = None
     artist: Optional[str] = None
     art: Optional[str] = None
+    next_title: Optional[str] = None
+    next_artist: Optional[str] = None
+    next_art: Optional[str] = None
 
 
 @api_router.get("/nowplaying")
 async def get_now_playing():
     doc = await db.nowplaying.find_one({"_id": "current"})
     if not doc:
-        return {"title": None, "artist": None, "art": None, "updated_at": None}
+        return {"title": None, "artist": None, "art": None, "updated_at": None,
+                "next_title": None, "next_artist": None, "next_art": None}
     return {
         "title": doc.get("title"),
         "artist": doc.get("artist"),
         "art": doc.get("art"),
         "updated_at": doc.get("updated_at"),
+        "next_title": doc.get("next_title"),
+        "next_artist": doc.get("next_artist"),
+        "next_art": doc.get("next_art"),
     }
 
 
@@ -636,6 +643,9 @@ async def set_now_playing(payload: NowPlaying):
         "title": payload.title,
         "artist": payload.artist,
         "art": payload.art,
+        "next_title": payload.next_title,
+        "next_artist": payload.next_artist,
+        "next_art": payload.next_art,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.nowplaying.update_one({"_id": "current"}, {"$set": doc}, upsert=True)

@@ -26,7 +26,15 @@ export const api = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
-  setNowPlaying: (title, artist, art) => post("/api/nowplaying", { title, artist, art }),
+  setNowPlaying: (title, artist, art, next) =>
+    post("/api/nowplaying", {
+      title,
+      artist,
+      art,
+      next_title: next?.title || null,
+      next_artist: next?.artist || null,
+      next_art: next?.art || null,
+    }),
 
   transcribe: async (blob, filename = "take.webm") => {
     const fd = new FormData();

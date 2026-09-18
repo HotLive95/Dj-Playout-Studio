@@ -1,5 +1,5 @@
-import React, { useRef, useState } from "react";
-import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, ChevronRight, Repeat } from "lucide-react";
+import React, { useRef, useState, useEffect } from "react";
+import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, ChevronRight, Repeat, Lock } from "lucide-react";
 
 const PAD_COUNT = 6;
 
@@ -76,7 +76,70 @@ function Crossfader({ pos, armed, onChange }) {
   );
 }
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, onStop }) {
+// Live beat/phase meter — air marker (top, fire) and standby marker (bottom, cyan)
+// sweep across each beat; when they line up vertically the tracks are on the beat.
+function BeatMeter({ getBeat, armed }) {
+  const [b, setB] = useState({});
+  useEffect(() => {
+    let run = true;
+    let raf;
+    const loop = () => {
+      if (!run) return;
+      const info = getBeat && getBeat();
+      if (info) setB(info);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      run = false;
+      cancelAnimationFrame(raf);
+    };
+  }, [getBeat]);
+  const have = armed && b.airBpm && b.sbBpm && b.airPhase != null && b.sbPhase != null;
+  let d = 1;
+  if (have) {
+    d = Math.abs(b.airPhase - b.sbPhase) % 1;
+    d = Math.min(d, 1 - d);
+  }
+  const locked = have && d < 0.05;
+  return (
+    <div className="flex flex-col items-center gap-0.5" data-testid="beat-meter">
+      <span
+        className={`text-[9px] font-700 tracking-wider ${
+          locked ? "text-[var(--hl-cue)]" : "text-[var(--hl-muted)]"
+        }`}
+        data-testid="beat-meter-state"
+      >
+        {locked ? "ON BEAT" : "BEAT"}
+      </span>
+      <div
+        className={`relative w-14 h-6 rounded bg-black/50 border overflow-hidden ${
+          locked ? "border-[var(--hl-cue)]" : "border-[var(--hl-line)]"
+        }`}
+      >
+        {have ? (
+          <>
+            <span
+              className="absolute top-0 h-1/2 w-[3px] rounded-full bg-[var(--hl-fire)]"
+              style={{ left: `${b.airPhase * 100}%`, transform: "translateX(-50%)" }}
+            />
+            <span
+              className="absolute bottom-0 h-1/2 w-[3px] rounded-full bg-[var(--hl-cue)]"
+              style={{ left: `${b.sbPhase * 100}%`, transform: "translateX(-50%)" }}
+            />
+            <span className="absolute left-1/2 top-0 h-full w-px bg-white/10" />
+          </>
+        ) : (
+          <span className="absolute inset-0 grid place-items-center text-[9px] text-[var(--hl-muted)] opacity-50">
+            – –
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -250,6 +313,8 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
 
         <Crossfader pos={faderPos || 0} armed={!!standbyTrack} onChange={onFader} />
 
+        <BeatMeter getBeat={getBeat} armed={!!standbyTrack} />
+
         {/* Sync / nudge / curve controls */}
         <div className="flex flex-col items-stretch gap-1">
           <div className="flex items-center gap-1">
@@ -279,6 +344,18 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
               title="Nudge the standby track forward (drag it onto the beat)"
             >
               <ChevronRight size={14} />
+            </button>
+            <button
+              data-testid="standby-sync-lock"
+              onClick={onToggleSyncLock}
+              className={`h-6 w-6 grid place-items-center rounded border transition ${
+                syncLock
+                  ? "bg-[var(--hl-cue)] text-black border-[var(--hl-cue)]"
+                  : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)]"
+              }`}
+              title="Sync Lock — auto tempo-match every track the moment it's armed"
+            >
+              <Lock size={12} />
             </button>
           </div>
           <div className="flex items-center rounded-md border border-[var(--hl-line)] overflow-hidden">
