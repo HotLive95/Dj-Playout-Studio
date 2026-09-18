@@ -514,3 +514,18 @@ Root causes (two distinct offline-path bugs):
   routing EVERY media-element volume write through Math.min(1,Math.max(0,v)) — fixes a volume-range crash.
 - Verified E2E (testing agent iteration_11): arm, manual drag-to-commit, TAKE, and clear all pass 100%;
   no runtime errors; jingle Duck/pads regressions clean.
+
+## Feature batch (2026-06) — Crossfader enhancements (Cue link, Beat Sync, Curve, Hotkey)
+- Cue-to-Standby link: the headphone CUE panel now has a "→ Standby" button (cue-to-standby-button)
+  that loads the pre-listened track straight onto the Standby deck.
+- Beat/Auto Sync: offline BPM estimate per track (new lib/bpm.js energy-flux autocorrelation, cached
+  in the engine). SYNC button (standby-sync) tempo-matches the standby deck to on-air via idle
+  playback-rate (folds half/double-time, clamped 0.92–1.08x). Manual Nudge ◀/▶ (standby-nudge-back/fwd)
+  gives a momentary 260ms tempo bump to shove it onto the beat. BPM readout shown in standby-bpm.
+- Fader Curve: SMOOTH (equal-power cos/sin) vs SHARP (fast dual-linear cut) toggle
+  (fader-curve-smooth / fader-curve-sharp), persisted in settings.faderCurve; applied in engine
+  _faderGains on every setFader/take.
+- Keyboard Take: Backslash "\" fires TAKE hands-free (App.js live-hotkeys), gated to when a standby
+  is armed and focus is not in an input/select/textarea.
+- Engine resets playbackRate to 1 on commit/clear so the newly on-air deck plays at natural tempo.
+- Verified E2E (testing agent iteration_12): all four pass 100%, no runtime errors, regressions clean.
