@@ -1,0 +1,31 @@
+{
+  "summary": "Retest of the TAKE fix in AudioEngine (clamp helper _setVol). PASS. Play track 0 → arm track 1 → click standby-take: transition completes in ~3s, standby-empty reappears, track-row-1 gets border-[var(--hl-fire)] current highlight. No runtime-error overlay, 0 pageerrors, 0 volume-related console errors. Regression: manual crossfader drag-to-commit still works (arm t0, drag cap fully right → commits, standby-empty reappears, track-row-0 gets fire border). Jingle-duck-depth and jingle-pad-0 present. Only pre-existing (LOW) issue is the <span>-inside-<option> hydration warning from the visual-editor wrapper in PlayerBar.js crossfade select — unrelated to this fix.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "PlayerBar crossfade seconds <select> options (pre-existing, unrelated to standby feature)",
+        "issue": "React hydration warning: '<span> cannot be a child of <option>'. A data-visual-editor wrapper renders a <span style=display:contents> inside each <option>. Pollutes the console but does not affect functionality.",
+        "selector": "[data-testid=\"crossfade-...\"] option",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional, pre-existing) Fix the <span>-inside-<option> hydration warning in PlayerBar.js crossfade-seconds select (remove the visual-editor wrapper for these options)."
+  ],
+  "critical_code_review_comments": [
+    "audioEngine.js: the _setVol(el,v) clamp helper is now consistently applied at every media-element volume write (playIndex, togglePlay, _rampTo, fadeOutStop, fadeInStart, cuePlay, loadStandby, clearStandby, setFader, takeStandby, _commitStandby, _startCrossfade, _onTime). Good defensive coverage; the TAKE volume-range regression is closed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100% for tested scope"},
+  "test_credentials": "Offline license Q61VK-G819N-40K1B-H226T (preseeded via localStorage.hotlive95_license).",
+  "seed_data_creation": "Recreated /tmp/a.wav (440Hz 6s) and /tmp/b.wav (660Hz 6s) via python wave module; uploaded via add-files-input into a fresh 'RetestTake' playlist.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The TAKE volume-out-of-range runtime error from iteration_10 is fully resolved by the _setVol clamp helper in /app/frontend/src/lib/audioEngine.js. Both TAKE and drag-to-commit standby flows are verified working. The only remaining console noise (unrelated) is a hydration warning about <span> inside <option> in PlayerBar's crossfade-seconds select.",
+  "rca of the issue": "Original: media-element volume writes in audioEngine.js occasionally computed values slightly >1.0 due to float drift (e.g. from + (target-from)*p, peak*pos when peak was already ~1), which HTMLMediaElement rejects with a range error, blowing up the app via the runtime-error overlay. Fix: added _setVol(el,v){ el.volume = Math.min(1, Math.max(0, v)); } and routed every el.volume assignment through it. Verified fix: TAKE now completes without throwing, standby commits correctly, and drag path continues to work."
+}

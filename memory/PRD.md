@@ -497,3 +497,20 @@ Root causes (two distinct offline-path bugs):
   (webm/wav, <=25MB) and returns {text}. Verified (endpoint returns text; empty for non-speech).
 - Verified E2E in preview (fake mic): bed-preview btn, mic meter live, 2 takes, transcript typed
   + saved → caption visible on the saved voice track row.
+
+## Feature batch (2026-06) — Standby Deck + DJ crossfader
+- Standby deck: each playlist row has a "→ Standby" radio-icon button (standby-track-{i}) that
+  arms that track onto the idle deck. The armed row highlights cyan (var(--hl-cue)).
+- Crossfader (standby-deck cluster in the Jingle bar, placed between the pads and the Duck level):
+  a high-end DJ-controller-style crossfader (crossfader-rail / crossfader-cap, custom pointer-drag)
+  that physically blends ON AIR ⟷ STANDBY. Dragging fully to the STANDBY side commits the transition.
+- TAKE button (standby-take): one-tap smooth timed crossfade (uses crossfadeSeconds) to the standby
+  track. standby-clear (X) removes the armed track and disables the fader.
+- On commit the idle deck becomes the on-air deck and the playlist current-track pointer JUMPS to the
+  standby track (engine index = standbyIndex) so autoplay continues from there; standby resets to empty.
+- Engine (/app/frontend/src/lib/audioEngine.js): new loadStandby/setFader/takeStandby/clearStandby/
+  _commitStandby; onStandby callback emits {trackId,faderPos}; auto-crossfade & auto-advance suppressed
+  while a standby is armed (natural track-end auto-takes the standby). Added _setVol(el,v) clamp helper
+  routing EVERY media-element volume write through Math.min(1,Math.max(0,v)) — fixes a volume-range crash.
+- Verified E2E (testing agent iteration_11): arm, manual drag-to-commit, TAKE, and clear all pass 100%;
+  no runtime errors; jingle Duck/pads regressions clean.
