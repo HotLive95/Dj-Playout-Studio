@@ -1,6 +1,7 @@
-// Dependency-free, fully-offline audio tag reader. Extracts { artist, title }
+// Dependency-free, fully-offline audio tag reader. Extracts { artist, title, art }
 // from an MP3's embedded ID3 tags (v2.2 / v2.3 / v2.4, plus v1 fallback) and
-// falls back to parsing the filename ("Artist - Title.mp3").
+// falls back to parsing the filename ("Artist - Title.mp3"). Album art (APIC/PIC)
+// is downscaled to a small thumbnail data URL.
 
 const synchsafe = (a, b, c, d) => (a << 21) | (b << 14) | (c << 7) | d;
 
@@ -16,6 +17,41 @@ function decodeText(bytes, enc) {
   return s.replace(/\0/g, "").trim();
 }
 
+// Read a null-terminated string from `bytes` starting at `start`. Returns the
+// byte-index just past the terminator. Handles single (latin1/utf8) or double
+// (utf-16) null terminators.
+function skipNullTerm(bytes, start, doubleNull) {
+  let i = start;
+  if (doubleNull) {
+    while (i + 1 < bytes.length && !(bytes[i] === 0 && bytes[i + 1] === 0)) i += 2;
+    return i + 2;
+  }
+  while (i < bytes.length && bytes[i] !== 0) i++;
+  return i + 1;
+}
+
+function parsePicture(frame, major) {
+  try {
+    const enc = frame[0];
+    let o = 1;
+    let mime = "image/jpeg";
+    if (major === 2) {
+      o += 3; // 3-char image format (e.g. "JPG")
+    } else {
+      let e = o;
+      while (e < frame.length && frame[e] !== 0) e++;
+      mime = new TextDecoder("iso-8859-1").decode(frame.slice(o, e)) || "image/jpeg";
+      o = e + 1;
+    }
+    o += 1; // picture type byte
+    o = skipNullTerm(frame, o, enc === 1 || enc === 2); // description
+    if (o >= frame.length) return null;
+    return { mime, bytes: frame.slice(o) };
+  } catch {
+    return null;
+  }
+}
+
 async function readV2(blob) {
   const head = new Uint8Array(await blob.slice(0, 10).arrayBuffer());
   if (!(head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33)) return null; // "ID3"
@@ -26,12 +62,11 @@ async function readV2(blob) {
 
   let pos = 0;
   if (flags & 0x40) {
-    // Skip the (rare) extended header.
     if (major === 4) pos += synchsafe(body[0], body[1], body[2], body[3]);
     else pos += 4 + ((body[0] << 24) | (body[1] << 16) | (body[2] << 8) | body[3]);
   }
 
-  const want = major === 2 ? { title: "TT2", artist: "TP1" } : { title: "TIT2", artist: "TPE1" };
+  const want = major === 2 ? { title: "TT2", artist: "TP1", pic: "PIC" } : { title: "TIT2", artist: "TPE1", pic: "APIC" };
   const idLen = major === 2 ? 3 : 4;
   const szLen = major === 2 ? 3 : 4;
   const flagLen = major === 2 ? 0 : 2;
@@ -48,16 +83,14 @@ async function readV2(blob) {
     else fsize = (body[pos + 4] << 24) | (body[pos + 5] << 16) | (body[pos + 6] << 8) | body[pos + 7];
     const dataStart = pos + idLen + szLen + flagLen;
     if (fsize <= 0 || dataStart + fsize > body.length) break;
-    if (id === want.title || id === want.artist) {
-      const frame = body.slice(dataStart, dataStart + fsize);
-      const text = decodeText(frame.slice(1), frame[0]);
-      if (id === want.title) res.title = text;
-      else res.artist = text;
-    }
+    const frame = body.slice(dataStart, dataStart + fsize);
+    if (id === want.title) res.title = decodeText(frame.slice(1), frame[0]);
+    else if (id === want.artist) res.artist = decodeText(frame.slice(1), frame[0]);
+    else if (id === want.pic && !res.picture) res.picture = parsePicture(frame, major);
     pos = dataStart + fsize;
-    if (res.title && res.artist) break;
+    if (res.title && res.artist && res.picture) break;
   }
-  return res.title || res.artist ? res : null;
+  return res.title || res.artist || res.picture ? res : null;
 }
 
 async function readV1(blob) {
@@ -79,7 +112,35 @@ export async function readAudioTags(blob) {
     return {
       title: (v2 && v2.title) || (v1 && v1.title) || "",
       artist: (v2 && v2.artist) || (v1 && v1.artist) || "",
+      picture: v2 && v2.picture,
     };
+  } catch {
+    return null;
+  }
+}
+
+// Downscale embedded album art to a small square-ish thumbnail data URL.
+async function makeThumb(picture, size = 96) {
+  if (!picture || !picture.bytes || !picture.bytes.length) return null;
+  if (typeof document === "undefined") return null;
+  try {
+    const blob = new Blob([picture.bytes], { type: picture.mime || "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = rej;
+      im.src = url;
+    });
+    const scale = Math.min(1, size / Math.max(img.width || size, img.height || size));
+    const w = Math.max(1, Math.round((img.width || size) * scale));
+    const h = Math.max(1, Math.round((img.height || size) * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    return canvas.toDataURL("image/jpeg", 0.8);
   } catch {
     return null;
   }
@@ -94,12 +155,20 @@ export function parseFilename(name = "") {
   return { artist: "", title: base };
 }
 
-// Best-effort names: read embedded tags first, fall back to the filename.
+// Best-effort names + art: read embedded tags first, fall back to the filename.
 export async function deriveNames(blob, filename = "") {
   const tags = blob ? await readAudioTags(blob) : null;
   const fromName = parseFilename(filename);
+  const art = tags && tags.picture ? await makeThumb(tags.picture) : null;
   return {
     title: (tags && tags.title) || fromName.title || filename || "Untitled",
     artist: (tags && tags.artist) || fromName.artist || "",
+    art: art || null,
   };
+}
+
+// Re-read only artist/title (used by "Re-read tags" bulk action).
+export async function readNamesOnly(blob, filename = "") {
+  const { title, artist } = await deriveNames(blob, filename);
+  return { title, artist };
 }

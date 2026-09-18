@@ -15,6 +15,7 @@ import {
   Mic,
   AlertTriangle,
   Tag,
+  Tags,
   Check,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
@@ -45,6 +46,7 @@ export default function TrackList({
   missingIds,
   onUpdateTrackInfo,
   onRescan,
+  onBulkEdit,
 }) {
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -282,6 +284,14 @@ export default function TrackList({
           <Plus size={18} /> Add MP3 / WAV
         </button>
         <button
+          data-testid="bulk-edit-button"
+          onClick={onBulkEdit}
+          className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-fire)]"
+          title="Bulk-edit artist & song titles for the whole playlist"
+        >
+          <Tags size={16} /> Bulk Edit
+        </button>
+        <button
           data-testid="record-voice-button"
           onClick={onRecordVoice}
           className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-fire)]"
@@ -385,6 +395,16 @@ export default function TrackList({
                   <div className="w-7 text-right text-sm text-[var(--hl-muted)] tabular-nums">
                     {index + 1}
                   </div>
+
+                  <img
+                    src={track.art || `${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
+                    alt=""
+                    className="h-10 w-10 shrink-0 rounded-md object-cover bg-black/40 border border-[var(--hl-line)]"
+                    data-testid={`track-art-${index}`}
+                    onError={(e) => {
+                      e.currentTarget.src = `${process.env.PUBLIC_URL || ""}/hl-emblem.png`;
+                    }}
+                  />
 
                   <div className="flex-1 min-w-0">
                     {editInfoIndex === index ? (

@@ -404,3 +404,24 @@ Root causes (two distinct offline-path bugs):
 - Desktop build note: `electron/main.js` + `preload.js` + `lib/platform.js` changes are
   build-ready (no new deps). Portable .exe/.dmg build runs via GitHub Actions
   (`.github/workflows/build-desktop.yml`) — trigger with "Save to GitHub".
+
+## Feature batch (2026-06) — Cover art, Now-Playing on /live, Batch-zip, Bulk tag edit
+- Cover Art: `lib/id3.js` now also extracts embedded APIC/PIC album art and downscales it to a
+  ~96px JPEG thumbnail (data URL) stored as track.art. Shown on each track row (track-art-{i}),
+  the on-air player bar (player-track-art), and the /live now-playing card. Flame emblem
+  (`/hl-emblem.png`) is the fallback when a track has no embedded art.
+- Now-Playing bridge: backend `GET/POST /api/nowplaying` (Mongo `nowplaying` single doc). The
+  studio best-effort POSTs the current track's title/artist/art whenever the on-air track
+  changes (fire-and-forget; failures ignored so offline playout never blocks). The public
+  `/live` page polls every 10s and shows a "Now Playing" card (title + artist + art), falling
+  back to generic "Live Radio" when nothing is set. Player bar also shows Title + Artist now.
+- Batch Export as .zip: `BatchExportModal` has a "Download as one .zip" toggle (default on,
+  uses JSZip) producing `HotLive95 Playlists YYYY-MM-DD.zip`; uncheck to save each playlist
+  separately (previous behaviour).
+- Bulk tag edit: `components/BulkTagModal.js` (TrackList `bulk-edit-button`) — a table of every
+  track in the current playlist with editable Title/Artist plus one-click helpers: Re-read
+  embedded tags, Parse from filenames, and Set one Artist for all. Saves all in one pass.
+- New dep: jszip. New backend collection: `nowplaying`. No new env vars.
+- Verified (browser + curl): ID3 art thumbnails on rows/player, player Title/Artist, bulk
+  "set artist for all" + save, batch .zip download ('HotLive95 Playlists 2026-09-18.zip'),
+  and /live now-playing card populated via the backend bridge (POST then GET confirmed).

@@ -578,6 +578,37 @@ async def root():
     return {"message": "Hot Live 95 licensing service"}
 
 
+class NowPlaying(BaseModel):
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    art: Optional[str] = None
+
+
+@api_router.get("/nowplaying")
+async def get_now_playing():
+    doc = await db.nowplaying.find_one({"_id": "current"})
+    if not doc:
+        return {"title": None, "artist": None, "art": None, "updated_at": None}
+    return {
+        "title": doc.get("title"),
+        "artist": doc.get("artist"),
+        "art": doc.get("art"),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
+@api_router.post("/nowplaying")
+async def set_now_playing(payload: NowPlaying):
+    doc = {
+        "title": payload.title,
+        "artist": payload.artist,
+        "art": payload.art,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.nowplaying.update_one({"_id": "current"}, {"$set": doc}, upsert=True)
+    return {"ok": True}
+
+
 @api_router.post("/admin/run-expiry-check")
 async def admin_run_expiry_check(x_admin_token: Optional[str] = Header(None)):
     check_admin(x_admin_token)

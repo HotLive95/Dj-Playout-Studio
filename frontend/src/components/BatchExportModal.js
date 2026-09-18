@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { X, DownloadCloud, Loader2, CheckSquare, Square } from "lucide-react";
+import JSZip from "jszip";
 import { exportPlaylistToBlob, downloadBlob, datedFilename } from "../lib/playlistExport";
 
 // Export several playlists to MP3/WAV in one click (great for overnight prep).
@@ -15,6 +16,7 @@ export default function BatchExportModal({
   const [selected, setSelected] = useState(() => new Set(exportable.map((p) => p.id)));
   const [format, setFormat] = useState("mp3");
   const [xfade, setXfade] = useState(!!defaultCrossfade);
+  const [asZip, setAsZip] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
@@ -36,6 +38,7 @@ export default function BatchExportModal({
     setDone(false);
     setResults([]);
     const out = [];
+    const zip = asZip ? new JSZip() : null;
     for (let i = 0; i < chosen.length; i++) {
       const pl = chosen[i];
       const items = pl.trackIds.map((id) => tracks[id]).filter(Boolean);
@@ -50,14 +53,27 @@ export default function BatchExportModal({
           crossfadeSeconds,
           onProgress: (p) => setProgress(Math.round((base + p / 100 / chosen.length) * 100)),
         });
-        downloadBlob(blob, datedFilename(pl.name, format));
+        if (zip) {
+          zip.file(datedFilename(pl.name, format), blob);
+        } else {
+          downloadBlob(blob, datedFilename(pl.name, format));
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, 400)); // let each download start
+        }
         out.push({ name: pl.name, ok: true, skipped });
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 400)); // let each download start
       } catch (e) {
         out.push({ name: pl.name, ok: false, error: e.message });
       }
       setResults([...out]);
+    }
+    if (zip && out.some((r) => r.ok)) {
+      setStatus("Zipping…");
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, "0");
+      const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+      // eslint-disable-next-line no-await-in-loop
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(zipBlob, `HotLive95 Playlists ${stamp}.zip`);
     }
     setProgress(100);
     setStatus("Done");
@@ -150,6 +166,18 @@ export default function BatchExportModal({
                   Crossfade
                 </label>
               </div>
+
+              <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  data-testid="batch-zip"
+                  checked={asZip}
+                  onChange={(e) => setAsZip(e.target.checked)}
+                  disabled={busy}
+                  className="h-4 w-4 accent-[var(--hl-fire)]"
+                />
+                Download as one .zip (uncheck to save each playlist separately)
+              </label>
 
               {(busy || progress > 0) && (
                 <div>

@@ -21,6 +21,13 @@ export const api = {
   validate: (key, deviceId) => post("/api/validate", { key, device_id: deviceId }),
   status: (key, deviceId) => post("/api/status", { key, device_id: deviceId || null }),
 
+  getNowPlaying: async () => {
+    const res = await fetch(`${BASE}/api/nowplaying`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  setNowPlaying: (title, artist, art) => post("/api/nowplaying", { title, artist, art }),
+
   adminCreate: (token, dj, maxDevices, expiresAt, email) =>
     post("/api/admin/keys", { dj, email, max_devices: maxDevices, expires_at: expiresAt }, token),
   adminRenew: (token, key, days) => post(`/api/admin/keys/${key}/renew`, { days }, token),

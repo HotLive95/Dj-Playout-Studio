@@ -9,6 +9,7 @@ import TrackEditor from "@/components/TrackEditor";
 import ScheduleModal from "@/components/ScheduleModal";
 import ExportPlaylistModal from "@/components/ExportPlaylistModal";
 import BatchExportModal from "@/components/BatchExportModal";
+import BulkTagModal from "@/components/BulkTagModal";
 import JingleBar from "@/components/JingleBar";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import LicenseGate from "@/components/LicenseGate";
@@ -249,6 +250,7 @@ function App() {
   const [licenseStatusOpen, setLicenseStatusOpen] = useState(false);
   const [customFxOpen, setCustomFxOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [missingIds, setMissingIds] = useState(() => new Set());
 
   const engineRef = useRef(null);
@@ -569,6 +571,16 @@ function App() {
     if (loaded) scanAvailability(queueTracks);
   }, [queueTracks, loaded, scanAvailability]);
 
+  // ---- Broadcast now-playing to the public /live page (best-effort, online only) ----
+  const nowTrack = currentTrackId ? tracks[currentTrackId] : null;
+  useEffect(() => {
+    if (!nowTrack) return;
+    api
+      .setNowPlaying(nowTrack.title || nowTrack.name, nowTrack.artist || "", nowTrack.art || null)
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrackId, nowTrack?.title, nowTrack?.artist, nowTrack?.art]);
+
   // ---- Persist ----
   useEffect(() => {
     if (!loaded) return;
@@ -760,8 +772,8 @@ function App() {
       const url = URL.createObjectURL(file);
       const duration = await readDuration(url);
       URL.revokeObjectURL(url);
-      const { title, artist } = await deriveNames(file, file.name);
-      newTracks[id] = { id, name: file.name, size: file.size, type: file.type, duration, title, artist };
+      const { title, artist, art } = await deriveNames(file, file.name);
+      newTracks[id] = { id, name: file.name, size: file.size, type: file.type, duration, title, artist, art };
       newIds.push(id);
     }
     if (newIds.length) appendTracksToCurrent(newTracks, newIds);
@@ -780,8 +792,8 @@ function App() {
       } catch {
         blob = null;
       }
-      const { title, artist } = await deriveNames(blob, f.name);
-      newTracks[id] = { id, name: f.name, size: f.size, path: f.path, duration, title, artist };
+      const { title, artist, art } = await deriveNames(blob, f.name);
+      newTracks[id] = { id, name: f.name, size: f.size, path: f.path, duration, title, artist, art };
       newIds.push(id);
     }
     if (newIds.length) appendTracksToCurrent(newTracks, newIds);
@@ -835,6 +847,17 @@ function App() {
     );
   };
 
+  // Bulk-apply Title/Artist edits across the current playlist in one save.
+  const bulkUpdateInfo = (updates) => {
+    setTracks((prev) => {
+      const next = { ...prev };
+      for (const [id, info] of Object.entries(updates)) {
+        if (next[id]) next[id] = { ...next[id], ...info };
+      }
+      return next;
+    });
+  };
+
   const replaceBrowserFile = async (index, file) => {
     if (!currentPlaylist) return;
     const oldId = currentPlaylist.trackIds[index];
@@ -843,8 +866,8 @@ function App() {
     const url = URL.createObjectURL(file);
     const duration = await readDuration(url);
     URL.revokeObjectURL(url);
-    const { title, artist } = await deriveNames(file, file.name);
-    const newTrack = { id, name: file.name, size: file.size, type: file.type, duration, title, artist };
+    const { title, artist, art } = await deriveNames(file, file.name);
+    const newTrack = { id, name: file.name, size: file.size, type: file.type, duration, title, artist, art };
     setTracks((prev) => ({ ...prev, [id]: newTrack }));
     const nextPlaylists = playlists.map((p) =>
       p.id === currentPlaylistId
@@ -870,8 +893,8 @@ function App() {
     } catch {
       rblob = null;
     }
-    const { title, artist } = await deriveNames(rblob, f.name);
-    const newTrack = { id, name: f.name, size: f.size, path: f.path, duration, title, artist };
+    const { title, artist, art } = await deriveNames(rblob, f.name);
+    const newTrack = { id, name: f.name, size: f.size, path: f.path, duration, title, artist, art };
     setTracks((prev) => ({ ...prev, [id]: newTrack }));
     const nextPlaylists = playlists.map((p) =>
       p.id === currentPlaylistId
@@ -930,6 +953,7 @@ function App() {
         name: t.name,
         title: t.title,
         artist: t.artist,
+        art: t.art,
         type: t.type || blob.type,
         duration: t.duration,
         leadIn: t.leadIn,
@@ -963,18 +987,20 @@ function App() {
     const ids = [];
     for (const t of data.tracks) {
       const blob = b64ToBlob(t.data, t.type || "audio/mpeg");
-      const names =
-        t.title || t.artist
-          ? { title: t.title || "", artist: t.artist || "" }
-          : await deriveNames(blob, t.name);
+      const derived = await deriveNames(blob, t.name);
+      const names = {
+        title: t.title || derived.title,
+        artist: t.artist || derived.artist,
+        art: t.art || derived.art,
+      };
       let meta;
       if (platform.isElectron) {
         const d = await platform.saveMedia(t.name, blob);
-        meta = { id: d.id, name: t.name, path: d.path, size: d.size, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist };
+        meta = { id: d.id, name: t.name, path: d.path, size: d.size, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist, art: names.art };
       } else {
         const id = uid();
         await putBlob(id, blob);
-        meta = { id, name: t.name, type: t.type, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist };
+        meta = { id, name: t.name, type: t.type, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist, art: names.art };
       }
       newTracks[meta.id] = meta;
       ids.push(meta.id);
@@ -1281,6 +1307,7 @@ function App() {
             missingIds={missingIds}
             onUpdateTrackInfo={updateTrackInfo}
             onRescan={() => scanAvailability(queueTracks)}
+            onBulkEdit={() => setBulkOpen(true)}
           />
         </main>
       </div>
@@ -1417,6 +1444,16 @@ function App() {
           defaultCrossfade={settings.crossfade}
           crossfadeSeconds={settings.crossfadeSeconds}
           onClose={() => setBatchOpen(false)}
+        />
+      )}
+
+      {bulkOpen && currentPlaylist && (
+        <BulkTagModal
+          playlist={currentPlaylist}
+          tracks={tracks}
+          getUrl={getUrl}
+          onSaveAll={bulkUpdateInfo}
+          onClose={() => setBulkOpen(false)}
         />
       )}
 

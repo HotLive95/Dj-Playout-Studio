@@ -211,16 +211,25 @@ export default function PlayerBar({
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mt-2.5 gap-3 md:gap-4">
         {/* Now playing */}
         <div className="flex items-center gap-3 min-w-0 w-full md:w-1/3">
-          <div className="h-11 w-11 shrink-0 rounded-md hl-fire-gradient grid place-items-center">
-            <Waves size={20} className="text-white" />
-          </div>
+          <img
+            src={track && track.art ? track.art : `${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
+            alt=""
+            className="h-11 w-11 shrink-0 rounded-md object-cover bg-black/40 border border-[var(--hl-line)]"
+            data-testid="player-track-art"
+            onError={(e) => {
+              e.currentTarget.src = `${process.env.PUBLIC_URL || ""}/hl-emblem.png`;
+            }}
+          />
           <div className="min-w-0">
             <div className="truncate font-600 text-sm" data-testid="player-track-name">
-              {track ? track.name : "Nothing loaded"}
+              {track ? track.title || track.name : "Nothing loaded"}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[11px] text-[var(--hl-muted)] uppercase tracking-wide">
-                {track ? "Live Playout" : "Load a track to begin"}
+              <span
+                className="truncate text-[11px] text-[var(--hl-muted)]"
+                data-testid="player-track-artist"
+              >
+                {track ? track.artist || "Live Playout" : "Load a track to begin"}
               </span>
               {(shuffle || shuffleAll) && (
                 <span

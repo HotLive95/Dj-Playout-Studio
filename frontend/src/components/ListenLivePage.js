@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Play, Pause, Volume2, VolumeX, Radio, ExternalLink, AlertCircle } from "lucide-react";
+import { api } from "../lib/api";
 
 const STREAM_URL = process.env.REACT_APP_STATION_STREAM_URL || "";
 const WEBSITE_URL = process.env.REACT_APP_STATION_WEBSITE || "";
@@ -12,6 +13,26 @@ export default function ListenLivePage() {
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.9);
   const [error, setError] = useState("");
+  const [nowPlaying, setNowPlaying] = useState(null);
+
+  // Poll the station "now playing" feed (published by the studio when it's online).
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const np = await api.getNowPlaying();
+        if (alive) setNowPlaying(np && np.title ? np : null);
+      } catch {
+        /* offline / not set — leave as generic live radio */
+      }
+    };
+    load();
+    const id = setInterval(load, 10000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
@@ -117,6 +138,35 @@ export default function ListenLivePage() {
               )}
             </button>
             <div className="text-sm text-[var(--hl-muted)]">{playing ? "Tap to pause" : "Tap to listen live"}</div>
+
+            {nowPlaying && (
+              <div
+                className="mt-3 w-full flex items-center gap-3 rounded-2xl border border-[var(--hl-line)] bg-black/40 px-3 py-2.5 text-left"
+                data-testid="live-now-playing"
+              >
+                <img
+                  src={nowPlaying.art || `${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
+                  alt=""
+                  className="h-12 w-12 shrink-0 rounded-md object-cover bg-black/40 border border-[var(--hl-line)]"
+                  onError={(e) => {
+                    e.currentTarget.src = `${process.env.PUBLIC_URL || ""}/hl-emblem.png`;
+                  }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--hl-fire)]">
+                    Now Playing
+                  </div>
+                  <div className="truncate font-600 text-sm" data-testid="live-np-title">
+                    {nowPlaying.title}
+                  </div>
+                  {nowPlaying.artist && (
+                    <div className="truncate text-xs text-[var(--hl-muted)]" data-testid="live-np-artist">
+                      {nowPlaying.artist}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Volume */}
             {STREAM_URL && (
