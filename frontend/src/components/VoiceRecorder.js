@@ -50,15 +50,21 @@ export default function VoiceRecorder({
   const [countIn, setCountIn] = useState(true);
   const [autoDuck, setAutoDuck] = useState(true);
   const [duckDepth, setDuckDepth] = useState(0.6);
+  const [loudnessMatch, setLoudnessMatch] = useState(true);
+  const [bedFades, setBedFades] = useState(true);
 
   // --- Presets ---
   const [presets, setPresets] = useState(loadPresets);
   const [presetName, setPresetName] = useState("");
 
-  // --- Trim (recorded) ---
+  // --- Trim + Punch (recorded) ---
   const [recBuffer, setRecBuffer] = useState(null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
+  const [waveMode, setWaveMode] = useState("trim"); // trim | punch
+  const [punchStart, setPunchStart] = useState(0);
+  const [punchEnd, setPunchEnd] = useState(0);
+  const [punching, setPunching] = useState(false);
   const waveRef = useRef(null);
   const dragHandleRef = useRef(null);
 
@@ -80,6 +86,13 @@ export default function VoiceRecorder({
   const bedBaseRef = useRef(bedVolume);
   const autoDuckRef = useRef(autoDuck);
   const duckDepthRef = useRef(duckDepth);
+  const recStartRef = useRef(0);
+  const fadingOutRef = useRef(false);
+  const fadeOutStartRef = useRef(0);
+  const mixBedRef = useRef(mixBed);
+  const bedFadesRef = useRef(bedFades);
+  const punchRef = useRef(false);
+  const FADE_SEC = 1.2;
 
   useEffect(() => {
     return () => teardown();
@@ -98,8 +111,14 @@ export default function VoiceRecorder({
   useEffect(() => {
     duckDepthRef.current = duckDepth;
   }, [duckDepth]);
+  useEffect(() => {
+    mixBedRef.current = mixBed;
+  }, [mixBed]);
+  useEffect(() => {
+    bedFadesRef.current = bedFades;
+  }, [bedFades]);
 
-  // Redraw the trim waveform.
+  // Redraw the trim/punch waveform.
   useEffect(() => {
     if (status !== "recorded" || !recBuffer || !waveRef.current) return;
     const c = waveRef.current;
@@ -109,20 +128,22 @@ export default function VoiceRecorder({
     ctx.clearRect(0, 0, W, H);
     const peaks = computePeaks(recBuffer, Math.floor(W / 3));
     const dur = recBuffer.duration || 1;
-    const sX = (trimStart / dur) * W;
-    const eX = (trimEnd / dur) * W;
+    const isPunch = waveMode === "punch";
+    const aS = isPunch ? punchStart : trimStart;
+    const aE = isPunch ? punchEnd : trimEnd;
+    const sX = (aS / dur) * W;
+    const eX = (aE / dur) * W;
+    const selColor = isPunch ? "#3aa0ff" : "#ff5a1f";
     for (let i = 0; i < peaks.length; i++) {
       const x = (i / peaks.length) * W;
       const h = Math.max(2, peaks[i] * H * 0.9);
-      const inSel = x >= sX && x <= eX;
-      ctx.fillStyle = inSel ? "#ff5a1f" : "#3a3a42";
+      ctx.fillStyle = x >= sX && x <= eX ? selColor : "#3a3a42";
       ctx.fillRect(x, (H - h) / 2, 2, h);
     }
-    // dim outside selection
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(0, 0, sX, H);
     ctx.fillRect(eX, 0, W - eX, H);
-  }, [status, recBuffer, trimStart, trimEnd]);
+  }, [status, recBuffer, trimStart, trimEnd, punchStart, punchEnd, waveMode]);
 
   const teardown = () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -217,13 +238,53 @@ export default function VoiceRecorder({
       const rms = Math.sqrt(sum / data.length);
       const talking = rms > 0.06;
       if (bedGainRef.current) {
-        const base = bedBaseRef.current;
+        // Bed fade in at open / out at close (only relevant when the bed is
+        // mixed into the recording).
+        let env = 1;
+        if (bedFadesRef.current && mixBedRef.current) {
+          const t = ctx.currentTime - recStartRef.current;
+          if (t < FADE_SEC) env = Math.max(0, t / FADE_SEC);
+          if (fadingOutRef.current) {
+            const ft = ctx.currentTime - fadeOutStartRef.current;
+            env = Math.min(env, Math.max(0, 1 - ft / FADE_SEC));
+          }
+        }
+        const base = bedBaseRef.current * env;
         const target = autoDuckRef.current && talking ? base * (1 - duckDepthRef.current) : base;
         bedGainRef.current.gain.setTargetAtTime(Math.max(0, target), ctx.currentTime, 0.08);
       }
       duckRafRef.current = requestAnimationFrame(loop);
     };
     duckRafRef.current = requestAnimationFrame(loop);
+  };
+
+  // RMS-based loudness normalization toward a broadcast target with a peak
+  // ceiling, applied in-place to an AudioBuffer.
+  const normalizeLoudness = (buf) => {
+    const TARGET_RMS = 0.16; // ~ -16 dBFS RMS
+    const CEILING = 0.97;
+    let sum = 0;
+    let n = 0;
+    let peak = 0;
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < d.length; i++) {
+        const a = Math.abs(d[i]);
+        sum += d[i] * d[i];
+        n++;
+        if (a > peak) peak = a;
+      }
+    }
+    if (n === 0) return;
+    const rms = Math.sqrt(sum / n);
+    if (rms < 0.0005) return; // near silence — leave alone
+    let gain = TARGET_RMS / rms;
+    if (peak * gain > CEILING) gain = CEILING / peak;
+    if (Math.abs(gain - 1) < 0.02) return;
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < d.length; i++) d[i] = Math.max(-1, Math.min(1, d[i] * gain));
+    }
   };
 
   const startRec = async () => {
@@ -282,6 +343,9 @@ export default function VoiceRecorder({
       }
 
       if (bedElRef.current) await loadBedAt(0);
+      recStartRef.current = ctx.currentTime;
+      fadingOutRef.current = false;
+      punchRef.current = false;
       startDuckLoop(ctx, analyser);
 
       const rec = new MediaRecorder(mixDest.stream);
@@ -326,13 +390,138 @@ export default function VoiceRecorder({
     trimEndRef.current = trimEnd;
   }, [trimEnd]);
 
-  const stopRec = () => {
+  const stopRec = async () => {
+    // Bed fade-out tail: dip the bed to silence before actually stopping so the
+    // recording captures a clean close (only when the bed is being mixed in).
+    if (
+      bedFadesRef.current &&
+      mixBedRef.current &&
+      bedGainRef.current &&
+      recRef.current &&
+      recRef.current.state === "recording"
+    ) {
+      fadeOutStartRef.current = ctxRef.current ? ctxRef.current.currentTime : 0;
+      fadingOutRef.current = true;
+      await wait(FADE_SEC * 1000);
+    }
     if (recRef.current && recRef.current.state !== "inactive") recRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
     if (duckRafRef.current) cancelAnimationFrame(duckRafRef.current);
     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     if (bedElRef.current) bedElRef.current.pause();
     setBedNowPlaying("");
+  };
+
+  // Push-to-record: Space toggles start/stop while the booth is open.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code !== "Space") return;
+      const tag = (e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (countdown !== null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (status === "idle") startRec();
+      else if (status === "recording") stopRec();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, countdown]);
+
+  // ---- Punch-in: re-record just the selected section over the take ----
+  const getCh = (buf, ch) => buf.getChannelData(Math.min(ch, buf.numberOfChannels - 1));
+  const startPunch = async () => {
+    if (punchEnd - punchStart < 0.05) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AC();
+      ctxRef.current = ctx;
+      if (ctx.state === "suspended") await ctx.resume();
+      const micSrc = ctx.createMediaStreamSource(stream);
+      const micMon = ctx.createGain();
+      micMon.gain.value = micMonitor ? micMonitorVol : 0;
+      micSrc.connect(micMon);
+      micMon.connect(ctx.destination);
+      micMonRef.current = micMon;
+      const mixDest = ctx.createMediaStreamDestination();
+      micSrc.connect(mixDest);
+      if (countIn) {
+        for (let c = 3; c >= 1; c--) {
+          setCountdown(c);
+          beep(ctx, c === 1 ? 1200 : 880, 0.14);
+          // eslint-disable-next-line no-await-in-loop
+          await wait(1000);
+        }
+        setCountdown(null);
+        if (!ctxRef.current) return;
+      }
+      const rec = new MediaRecorder(mixDest.stream);
+      rec.ondataavailable = (ev) => ev.data.size && chunksRef.current.push(ev.data);
+      rec.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        await splicePunch(blob);
+        setPunching(false);
+      };
+      rec.start();
+      recRef.current = rec;
+      setPunching(true);
+      setElapsed(0);
+      const t0 = Date.now();
+      timerRef.current = setInterval(() => setElapsed((Date.now() - t0) / 1000), 200);
+    } catch {
+      setPunching(false);
+      setCountdown(null);
+      teardown();
+    }
+  };
+  const stopPunch = () => {
+    if (recRef.current && recRef.current.state !== "inactive") recRef.current.stop();
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+  };
+  const splicePunch = async (blob) => {
+    try {
+      const ctx = audioCtx();
+      const nb = await ctx.decodeAudioData((await blob.arrayBuffer()).slice(0));
+      const base = recBuffer;
+      const sr = base.sampleRate;
+      const chs = base.numberOfChannels;
+      const s = Math.max(0, Math.floor(punchStart * sr));
+      const e = Math.min(base.length, Math.floor(punchEnd * sr));
+      const headLen = s;
+      const tailLen = base.length - e;
+      const total = headLen + nb.length + tailLen;
+      const out = ctx.createBuffer(chs, total, sr);
+      for (let ch = 0; ch < chs; ch++) {
+        const o = out.getChannelData(ch);
+        o.set(getCh(base, ch).subarray(0, headLen), 0);
+        o.set(getCh(nb, ch).subarray(0, nb.length), headLen);
+        o.set(getCh(base, ch).subarray(e), headLen + nb.length);
+      }
+      const wav = bufferToWav(out);
+      blobRef.current = wav;
+      if (previewRef.current) previewRef.current.pause();
+      const url = URL.createObjectURL(wav);
+      previewRef.current = new Audio(url);
+      previewRef.current.ontimeupdate = () => {
+        if (previewRef.current && previewRef.current.currentTime >= trimEndRef.current) {
+          previewRef.current.pause();
+          setPlaying(false);
+        }
+      };
+      previewRef.current.onended = () => setPlaying(false);
+      setRecBuffer(out);
+      setTrimStart(0);
+      setTrimEnd(out.duration);
+      trimEndRef.current = out.duration;
+      setWaveMode("trim");
+    } catch {
+      /* ignore */
+    }
   };
 
   const togglePreview = () => {
@@ -363,7 +552,9 @@ export default function VoiceRecorder({
         out.getChannelData(ch).set(buf.getChannelData(ch).subarray(s, e));
       }
       const wav = bufferToWav(out);
-      await onSave(wav, `${name}.wav`, insertIndex, len / sr);
+      if (loudnessMatch) normalizeLoudness(out);
+      const finalWav = bufferToWav(out);
+      await onSave(finalWav, `${name}.wav`, insertIndex, len / sr);
       onClose();
     } catch {
       setBusy(false);
@@ -415,22 +606,27 @@ export default function VoiceRecorder({
     localStorage.setItem(PRESET_KEY, JSON.stringify(next));
   };
 
-  // Waveform trim drag.
+  // Waveform trim/punch drag (edits whichever region is active).
+  const activeRegion = () =>
+    waveMode === "punch"
+      ? { s: punchStart, e: punchEnd, setS: setPunchStart, setE: setPunchEnd }
+      : { s: trimStart, e: trimEnd, setS: setTrimStart, setE: setTrimEnd };
   const onWavePointer = (e) => {
     if (!recBuffer || !waveRef.current) return;
     const rect = waveRef.current.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const t = ratio * recBuffer.duration;
-    if (dragHandleRef.current === "start") setTrimStart(Math.min(t, trimEnd - 0.05));
-    else if (dragHandleRef.current === "end") setTrimEnd(Math.max(t, trimStart + 0.05));
+    const r = activeRegion();
+    if (dragHandleRef.current === "start") r.setS(Math.min(t, r.e - 0.05));
+    else if (dragHandleRef.current === "end") r.setE(Math.max(t, r.s + 0.05));
   };
   const onWaveDown = (e) => {
     if (!recBuffer) return;
     const rect = waveRef.current.getBoundingClientRect();
     const ratio = (e.clientX - rect.left) / rect.width;
     const t = ratio * recBuffer.duration;
-    dragHandleRef.current =
-      Math.abs(t - trimStart) <= Math.abs(t - trimEnd) ? "start" : "end";
+    const r = activeRegion();
+    dragHandleRef.current = Math.abs(t - r.s) <= Math.abs(t - r.e) ? "start" : "end";
     onWavePointer(e);
     window.addEventListener("pointermove", onWavePointer);
     window.addEventListener(
@@ -515,20 +711,62 @@ export default function VoiceRecorder({
 
           {/* Waveform + trim (after a take) */}
           {status === "recorded" && recBuffer && (
-            <div data-testid="voice-trim">
-              <div className="flex items-center justify-between text-[11px] text-[var(--hl-muted)] mb-1">
-                <span className="flex items-center gap-1">
-                  <Waves size={12} /> Drag the edges to trim
+            <div data-testid="voice-trim" className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="inline-flex rounded-lg border border-[var(--hl-line)] overflow-hidden text-xs">
+                  <button
+                    data-testid="wave-mode-trim"
+                    onClick={() => setWaveMode("trim")}
+                    className={`px-3 py-1.5 ${waveMode === "trim" ? "bg-[var(--hl-fire)] text-white" : "text-[var(--hl-muted)]"}`}
+                  >
+                    Trim
+                  </button>
+                  <button
+                    data-testid="wave-mode-punch"
+                    onClick={() => {
+                      if (punchEnd - punchStart < 0.05) {
+                        setPunchStart(trimStart);
+                        setPunchEnd(trimEnd);
+                      }
+                      setWaveMode("punch");
+                    }}
+                    className={`px-3 py-1.5 ${waveMode === "punch" ? "bg-[#3aa0ff] text-white" : "text-[var(--hl-muted)]"}`}
+                  >
+                    Punch
+                  </button>
+                </div>
+                <span className="tabular-nums text-[11px] text-[var(--hl-muted)]" data-testid="voice-trim-readout">
+                  {waveMode === "punch"
+                    ? `${formatTime(punchStart)} – ${formatTime(punchEnd)}`
+                    : `${formatTime(trimStart)} – ${formatTime(trimEnd)} (${formatTime(trimEnd - trimStart)})`}
                 </span>
-                <span className="tabular-nums" data-testid="voice-trim-readout">
-                  {formatTime(trimStart)} – {formatTime(trimEnd)} ({formatTime(trimEnd - trimStart)})
-                </span>
+              </div>
+              <div className="text-[11px] text-[var(--hl-muted)] flex items-center gap-1">
+                <Waves size={12} />
+                {waveMode === "punch"
+                  ? "Drag the blue edges to pick the flubbed section, then re-record it"
+                  : "Drag the edges to trim the top & tail"}
               </div>
               <canvas
                 ref={waveRef}
                 onPointerDown={onWaveDown}
                 className="w-full h-24 rounded-lg bg-black/40 border border-[var(--hl-line)] cursor-ew-resize touch-none"
               />
+              {waveMode === "punch" && (
+                <button
+                  data-testid="voice-punch-record"
+                  onClick={punching ? stopPunch : startPunch}
+                  disabled={countdown !== null}
+                  className={`w-full h-10 rounded-lg font-600 flex items-center justify-center gap-2 disabled:opacity-60 ${
+                    punching
+                      ? "bg-[rgba(255,23,68,0.15)] border border-[var(--hl-onair)] text-[var(--hl-onair)]"
+                      : "bg-[#3aa0ff] text-white"
+                  }`}
+                >
+                  {punching ? <Square size={16} /> : <Circle size={14} fill="currentColor" />}
+                  {punching ? `Recording punch… ${formatTime(elapsed)} — tap to drop in` : "Re-record this section"}
+                </button>
+              )}
             </div>
           )}
 
@@ -692,6 +930,19 @@ export default function VoiceRecorder({
                       />
                       Mix the bed into the saved file (off = record my voice only)
                     </label>
+                    {mixBed && (
+                      <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          data-testid="voice-bedfades-toggle"
+                          checked={bedFades}
+                          onChange={(e) => setBedFades(e.target.checked)}
+                          disabled={status === "recording"}
+                          className="h-4 w-4 accent-[var(--hl-fire)]"
+                        />
+                        Fade the bed in at the open & out at the close
+                      </label>
+                    )}
                   </>
                 )}
               </div>
@@ -735,9 +986,22 @@ export default function VoiceRecorder({
                     <span className="text-xs tabular-nums w-9 text-right">{Math.round(micMonitorVol * 100)}%</span>
                   </div>
                 )}
+                <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="voice-loudness-toggle"
+                    checked={loudnessMatch}
+                    onChange={(e) => setLoudnessMatch(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--hl-fire)]"
+                  />
+                  Match broadcast loudness on save
+                </label>
                 <div className="flex items-start gap-2 text-[11px] text-[var(--hl-amber)]" data-testid="voice-monitor-warning">
                   <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                   Use headphones. On laptop speakers this causes echo/feedback.
+                </div>
+                <div className="text-[11px] text-[var(--hl-muted)]">
+                  Tip: press <span className="text-[var(--hl-amber)]">Space</span> to start / stop recording.
                 </div>
               </div>
 

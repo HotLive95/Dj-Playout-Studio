@@ -466,3 +466,18 @@ Root causes (two distinct offline-path bugs):
   restores bed type + volume. NOTE: live mic capture, the countdown overlay, and waveform
   trimming can't be exercised in the headless env (no microphone); wiring verified by build +
   setup UI; getUserMedia path runs in the real browser.
+
+## Feature batch (2026-06) — Voice Booth: punch, loudness, hotkey, bed fades
+- Punch recording: recorded state has Trim/Punch mode toggle (wave-mode-trim/punch). In Punch
+  mode the blue handles select the flubbed section; "Re-record this section" (voice-punch-record)
+  records a new take and splices it in (head + new + tail), rebuilding the buffer/preview. Verified
+  E2E (splice changed duration, returned to trim mode).
+- Loudness match (voice-loudness-toggle, default ON): RMS normalization toward ~-16 dBFS with a
+  ~-0.3 dB peak ceiling, applied to the final (trimmed/spliced) buffer on save.
+- Push-to-record hotkey: Space starts/stops a take while the booth is open (ignores text inputs;
+  capture-phase listener so it doesn't hit global hotkeys). Verified (Space triggered count-in).
+- Bed fade tails (voice-bedfades-toggle, default ON, shown only when "mix bed" is on): the bed
+  fades in at the open and out at the close (envelope folded into the duck loop; stop performs a
+  ~1.2s bed fade-out before ending the recorder).
+- Verified E2E in preview (headless env exposes a fake mic): record → trim readout → punch splice
+  → save added the voice track to the playlist. All toggles/defaults confirmed.
