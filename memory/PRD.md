@@ -529,3 +529,16 @@ Root causes (two distinct offline-path bugs):
   is armed and focus is not in an input/select/textarea.
 - Engine resets playbackRate to 1 on commit/clear so the newly on-air deck plays at natural tempo.
 - Verified E2E (testing agent iteration_12): all four pass 100%, no runtime errors, regressions clean.
+
+## Feature batch (2026-06) — BPM column, Sync Lock, Beat Meter, Live Next-Up
+- BPM Column: each playlist row shows auto-detected tempo (track-bpm-{i}). App runs a background,
+  one-track-at-a-time BPM pass; AudioEngine.bpmFor resumes a suspended AudioContext before decode
+  and pushes results back via a new onBpm(trackId,bpm) callback (also fills column when a track is
+  armed/synced). Retries up to 8× (never writes a bogus 0). track.bpm persisted in state.
+- Sync Lock (standby-sync-lock): when on, every track auto tempo-matches the moment it's armed to
+  standby (engine.setSyncLock → syncStandby on arm). Persisted in settings.syncLock.
+- Beat Grid Meter (beat-meter): rAF meter beside the crossfader; air marker (top/fire) + standby
+  marker (bottom/cyan) sweep each beat via engine.beatInfo() phases; shows "ON BEAT" when aligned.
+- Live Next-Up Tease: studio broadcasts the armed standby track as "next" (/api/nowplaying now stores
+  next_title/next_artist/next_art); public /live page shows "Up next" (live-coming-up / live-next-title).
+- Verified E2E (testing agent iterations 13–14): all four pass 100%; BPM-column pre-gesture bug fixed.
