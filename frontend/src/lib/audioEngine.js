@@ -1,10 +1,11 @@
 // Dual-element audio engine with crossfade / gapless auto-play for live playout,
 // plus an independent CUE (headphone pre-listen) channel and audio-output routing.
 export default class AudioEngine {
-  constructor(onUpdate, onCue, onStandby) {
+  constructor(onUpdate, onCue, onStandby, onBpm) {
     this.onUpdate = onUpdate;
     this.onCue = onCue;
     this.onStandby = onStandby;
+    this.onBpm = onBpm;
     this.a = new Audio();
     this.b = new Audio();
     this.cue = new Audio();
@@ -623,6 +624,13 @@ export default class AudioEngine {
     const ctx = this._ctx();
     if (!ctx) return null;
     try {
+      if (ctx.state === "suspended") {
+        try {
+          await ctx.resume();
+        } catch {
+          /* ignore */
+        }
+      }
       const url = await this.getUrl(track);
       if (!url) return null;
       const res = await fetch(url);
@@ -630,7 +638,10 @@ export default class AudioEngine {
       const buf = await ctx.decodeAudioData(arr.slice(0));
       const { estimateBpm } = await import("./bpm");
       const bpm = estimateBpm(buf);
-      if (bpm) this._bpmCache[track.id] = bpm;
+      if (bpm) {
+        this._bpmCache[track.id] = bpm;
+        if (this.onBpm) this.onBpm(track.id, bpm);
+      }
       return bpm;
     } catch {
       return null;

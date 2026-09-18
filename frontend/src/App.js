@@ -383,7 +383,11 @@ function App() {
         setCurrentTrackId(t ? t.id : null);
       },
       (c) => setCue(c),
-      (sb) => setStandby(sb)
+      (sb) => setStandby(sb),
+      (id, bpm) =>
+        setTracks((prev) =>
+          prev[id] && !(prev[id].bpm > 0) ? { ...prev, [id]: { ...prev[id], bpm } } : prev
+        )
     );
     engineRef.current = engine;
     return () => engine.destroy();
@@ -601,12 +605,22 @@ function App() {
 
   // ---- Background BPM detection for the current playlist (one track at a time) ----
   const bpmBusyRef = useRef(false);
+  const bpmAttemptsRef = useRef({});
+  const [bpmTick, setBpmTick] = useState(0);
   useEffect(() => {
     if (!loaded || bpmBusyRef.current) return;
     const eng = engineRef.current;
     if (!eng) return;
-    const target = queueTracks.find((t) => t && t.bpm == null && !missingIds.has(t.id));
-    if (!target) return;
+    const elig = queueTracks.filter(
+      (t) =>
+        t &&
+        !(t.bpm > 0) &&
+        !missingIds.has(t.id) &&
+        (bpmAttemptsRef.current[t.id] || 0) < 8
+    );
+    if (!elig.length) return;
+    elig.sort((a, b) => (bpmAttemptsRef.current[a.id] || 0) - (bpmAttemptsRef.current[b.id] || 0));
+    const target = elig[0];
     bpmBusyRef.current = true;
     let cancelled = false;
     (async () => {
@@ -617,16 +631,24 @@ function App() {
         /* ignore */
       }
       if (!cancelled) {
-        setTracks((prev) =>
-          prev[target.id] ? { ...prev, [target.id]: { ...prev[target.id], bpm: bpm || 0 } } : prev
-        );
+        if (bpm) {
+          setTracks((prev) =>
+            prev[target.id] ? { ...prev, [target.id]: { ...prev[target.id], bpm } } : prev
+          );
+        } else {
+          // AudioContext may still be suspended pre-gesture — retry a few times.
+          bpmAttemptsRef.current[target.id] = (bpmAttemptsRef.current[target.id] || 0) + 1;
+          setTimeout(() => {
+            if (!cancelled) setBpmTick((x) => x + 1);
+          }, 1500);
+        }
       }
       bpmBusyRef.current = false;
     })();
     return () => {
       cancelled = true;
     };
-  }, [queueTracks, missingIds, loaded, tracks]);
+  }, [queueTracks, missingIds, loaded, tracks, bpmTick]);
 
   // ---- Waveform peaks for the on-air track ----
   useEffect(() => {

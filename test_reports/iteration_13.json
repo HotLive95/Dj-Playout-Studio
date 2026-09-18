@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend verification of four Standby/Crossfader enhancements. 4/5 PASS, 1 FAIL. (1) BPM Column FAIL — track-bpm-0 / track-bpm-1 remain '···' indefinitely (>28s wait) even though the engine's internal BPM cache is populated (screenshot shows STANDBY panel '120 → 140 BPM ×0.92'). Root cause: engine.bpmFor() runs before any user gesture; the AudioContext is suspended so decodeAudioData throws, bpmFor returns null; App.js background effect then writes tracks[id].bpm = (bpm || 0) → 0. The effect gate `t.bpm == null` is now false, so it NEVER retries. Later on user gesture (arm standby) syncStandby calls bpmFor again — that call succeeds and fills _bpmCache with 120/140, but tracks state still has bpm=0 → TrackList keeps showing '···'. (2) Sync Lock PASS — toggling standby-sync-lock adds/removes bg-[var(--hl-cue)] correctly; arming with lock ON auto-tempo-matches (syncRate 0.92 visible) without crash. (3) Beat Meter PASS — beat-meter visible, beat-meter-state shows 'BEAT', keeps animating (no exceptions). (4) Live Next-Up PASS — after play-track-0 + standby-track-1, GET /api/nowplaying returns title='a' + next_title='b'; /live page renders live-next-title='b' within 1.5s. (5) Regression PASS — standby-sync, standby-nudge-back/fwd, fader-curve-sharp/smooth, standby-take (Backslash), standby-clear all functional. No runtime-error overlay at any point. No pageerror events.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "TrackList BPM Column", "issue": "track-bpm-{index} stuck on '···' forever. The App.js background BPM effect fires before any user gesture, AudioContext is suspended, engine.bpmFor() catch-returns null, App.js writes bpm:(bpm||0)=0, which permanently disqualifies the track from being re-analyzed (effect gate is t.bpm == null). Later syncStandby succeeds and _bpmCache has real values (120/140), but tracks state is never updated so the column never renders a numeric BPM.", "selector": "[data-testid^=\"track-bpm-\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix BPM column initial-load bug in /app/frontend/src/App.js background BPM effect: EITHER (a) do not overwrite bpm to 0 when detection returns null — leave it null so a later re-run can retry (but add a per-track attempt counter or trigger a re-run on first user gesture / on eng.bpmFor cache hit), OR (b) in AudioEngine.bpmFor, await this._ctx().resume() before decodeAudioData and fall back to a Promise that resolves on the next user gesture; OR (c) simplest — subscribe to the standby callback / track a Set of tracks whose bpm was found on the engine's _bpmCache and set tracks[id].bpm from it whenever it appears (e.g., inside onStandby / _emitStandby)."
+  ],
+  "critical_code_review_comments": [
+    "AudioEngine.bpmFor swallows all decode errors (catch → null). Combined with App.js writing bpm:0 on null, this silently disables BPM detection until a page reload. Consider logging the failure or making the null result idempotent.",
+    "BeatMeter uses requestAnimationFrame in a useEffect that has getBeat as dep — since getBeat is a fresh closure every render, the rAF loop is torn down and rebuilt on every parent re-render. Not a bug (still animates), but wasteful.",
+    "The nowplaying next_title is properly propagated via POST + ListenLivePage 10s poll; verified end-to-end.",
+    "Sync Lock toggle correctly runs syncStandby on the currently-armed track when the lock is turned on (audioEngine.setSyncLock)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped as requested)", "frontend": "80% (4/5 scenarios: Sync Lock, Beat Meter, Live Next-Up, Regression PASS; BPM Column FAIL)"},
+  "test_credentials": "Offline license Q61VK-G819N-40K1B-H226T seeded via localStorage.hotlive95_license.",
+  "seed_data_creation": "Generated /tmp/a.wav (120 BPM, 60s, 22050Hz mono click-track) and /tmp/b.wav (140 BPM, 60s) via python wave. Longer duration ensures the on-air track keeps playing while the /live page polls (10s interval) so next_title is still populated when /live loads.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Only the TrackList BPM column bug remains. RCA is fully in the report. To reproduce: fresh page load, create playlist, upload two WAVs, wait 30s — track-bpm cells stay '···'. But arming standby causes the STANDBY BPM readout to show real values, proving detection itself works after user gesture. When main agent applies a fix, re-run just the BPM column check (upload, wait ~10s, verify [data-testid=\"track-bpm-0\"] eventually contains digits, e.g. 120 or 140 when using the click-track WAVs at /tmp/a.wav /tmp/b.wav).",
+  "rca of the issue": "engine.bpmFor() → AudioContext suspended pre-gesture → decodeAudioData rejects → catch returns null. App.js effect: setTracks({...t, bpm: bpm || 0}) writes 0. Effect guard `queueTracks.find(t => t.bpm == null)` never matches this track again. Meanwhile after arm, syncStandby → bpmFor succeeds (ctx now resumed by user gesture) and _bpmCache is filled — but nothing writes those values back into tracks state, so the UI column stays '···' forever until page reload."
+}
