@@ -1,12 +1,21 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Mic, Square, Play, Pause, Save, X, Circle, Music2, Headphones, AlertTriangle } from "lucide-react";
+import { Mic, Square, Play, Pause, Save, X, Circle, Music2, Headphones, AlertTriangle, Timer, Waves, Star, Trash2 } from "lucide-react";
 import { formatTime } from "../lib/format";
-import { audioCtx, bufferToWav } from "../lib/audioProcessing";
+import { audioCtx, bufferToWav, computePeaks } from "../lib/audioProcessing";
 
-// Voice-over booth: record a mic take while an optional music BED plays in your
-// headphones. Route the mic to headphones too so you hear yourself + the bed as
-// you record. Optionally mix the bed into the saved file. The bed advances to
-// the next track (looping the source) if your take runs longer than the track.
+const PRESET_KEY = "hotlive95_bed_presets";
+const loadPresets = () => {
+  try {
+    return JSON.parse(localStorage.getItem(PRESET_KEY) || "[]");
+  } catch {
+    return [];
+  }
+};
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Voice-over booth: record a mic take over an optional music BED with headphone
+// monitoring, a 3-2-1 count-in, live auto-ducking of the bed under your voice,
+// a waveform trim before saving, and saveable bed presets.
 export default function VoiceRecorder({
   existingTracks,
   defaultIndex,
@@ -25,20 +34,33 @@ export default function VoiceRecorder({
   const [insertIndex, setInsertIndex] = useState(defaultIndex ?? existingTracks.length);
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [countdown, setCountdown] = useState(null);
 
   // --- Music bed + monitoring settings ---
-  const [bedType, setBedType] = useState("none"); // none | playlist | jingle | upload
+  const [bedType, setBedType] = useState("none");
   const [bedPlaylistId, setBedPlaylistId] = useState(playlists[0]?.id || "");
   const [bedStartIndex, setBedStartIndex] = useState(0);
-  const [bedJingleIndex, setBedJingleIndex] = useState(
-    jingles.findIndex((j) => !!j) >= 0 ? jingles.findIndex((j) => !!j) : 0
-  );
+  const [bedJingleIndex, setBedJingleIndex] = useState(Math.max(0, jingles.findIndex((j) => !!j)));
   const [bedFile, setBedFile] = useState(null);
   const [bedVolume, setBedVolume] = useState(0.5);
   const [micMonitor, setMicMonitor] = useState(false);
   const [micMonitorVol, setMicMonitorVol] = useState(0.8);
   const [mixBed, setMixBed] = useState(false);
   const [bedNowPlaying, setBedNowPlaying] = useState("");
+  const [countIn, setCountIn] = useState(true);
+  const [autoDuck, setAutoDuck] = useState(true);
+  const [duckDepth, setDuckDepth] = useState(0.6);
+
+  // --- Presets ---
+  const [presets, setPresets] = useState(loadPresets);
+  const [presetName, setPresetName] = useState("");
+
+  // --- Trim (recorded) ---
+  const [recBuffer, setRecBuffer] = useState(null);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const waveRef = useRef(null);
+  const dragHandleRef = useRef(null);
 
   const recRef = useRef(null);
   const chunksRef = useRef([]);
@@ -46,33 +68,65 @@ export default function VoiceRecorder({
   const blobRef = useRef(null);
   const previewRef = useRef(null);
   const timerRef = useRef(null);
-
   const ctxRef = useRef(null);
-  const micSrcRef = useRef(null);
   const micMonRef = useRef(null);
   const mixDestRef = useRef(null);
   const bedElRef = useRef(null);
-  const bedSrcRef = useRef(null);
   const bedGainRef = useRef(null);
   const bedItemsRef = useRef([]);
   const bedPosRef = useRef(0);
   const bedFileUrlRef = useRef(null);
+  const duckRafRef = useRef(null);
+  const bedBaseRef = useRef(bedVolume);
+  const autoDuckRef = useRef(autoDuck);
+  const duckDepthRef = useRef(duckDepth);
 
   useEffect(() => {
     return () => teardown();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Live-update monitor / bed gains while recording.
   useEffect(() => {
     if (micMonRef.current) micMonRef.current.gain.value = micMonitor ? micMonitorVol : 0;
   }, [micMonitor, micMonitorVol]);
   useEffect(() => {
-    if (bedGainRef.current) bedGainRef.current.gain.value = bedVolume;
+    bedBaseRef.current = bedVolume;
   }, [bedVolume]);
+  useEffect(() => {
+    autoDuckRef.current = autoDuck;
+  }, [autoDuck]);
+  useEffect(() => {
+    duckDepthRef.current = duckDepth;
+  }, [duckDepth]);
+
+  // Redraw the trim waveform.
+  useEffect(() => {
+    if (status !== "recorded" || !recBuffer || !waveRef.current) return;
+    const c = waveRef.current;
+    const ctx = c.getContext("2d");
+    const W = (c.width = c.clientWidth * 2);
+    const H = (c.height = c.clientHeight * 2);
+    ctx.clearRect(0, 0, W, H);
+    const peaks = computePeaks(recBuffer, Math.floor(W / 3));
+    const dur = recBuffer.duration || 1;
+    const sX = (trimStart / dur) * W;
+    const eX = (trimEnd / dur) * W;
+    for (let i = 0; i < peaks.length; i++) {
+      const x = (i / peaks.length) * W;
+      const h = Math.max(2, peaks[i] * H * 0.9);
+      const inSel = x >= sX && x <= eX;
+      ctx.fillStyle = inSel ? "#ff5a1f" : "#3a3a42";
+      ctx.fillRect(x, (H - h) / 2, 2, h);
+    }
+    // dim outside selection
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, sX, H);
+    ctx.fillRect(eX, 0, W - eX, H);
+  }, [status, recBuffer, trimStart, trimEnd]);
 
   const teardown = () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    if (duckRafRef.current) cancelAnimationFrame(duckRafRef.current);
     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     if (previewRef.current) previewRef.current.pause();
     if (bedElRef.current) {
@@ -105,9 +159,7 @@ export default function VoiceRecorder({
       const j = jingles[bedJingleIndex];
       return j ? [{ kind: "track", item: j, label: j.name }] : [];
     }
-    if (bedType === "upload" && bedFile) {
-      return [{ kind: "file", item: bedFile, label: bedFile.name }];
-    }
+    if (bedType === "upload" && bedFile) return [{ kind: "file", item: bedFile, label: bedFile.name }];
     return [];
   };
 
@@ -138,33 +190,67 @@ export default function VoiceRecorder({
     }
   };
 
+  const beep = (ctx, freq = 880, dur = 0.12) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = freq;
+    o.type = "sine";
+    o.connect(g);
+    g.connect(ctx.destination);
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.4, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  };
+
+  const startDuckLoop = (ctx, analyser) => {
+    const data = new Uint8Array(analyser.fftSize);
+    const loop = () => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const talking = rms > 0.06;
+      if (bedGainRef.current) {
+        const base = bedBaseRef.current;
+        const target = autoDuckRef.current && talking ? base * (1 - duckDepthRef.current) : base;
+        bedGainRef.current.gain.setTargetAtTime(Math.max(0, target), ctx.currentTime, 0.08);
+      }
+      duckRafRef.current = requestAnimationFrame(loop);
+    };
+    duckRafRef.current = requestAnimationFrame(loop);
+  };
+
   const startRec = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
-
       const AC = window.AudioContext || window.webkitAudioContext;
       const ctx = new AC();
       ctxRef.current = ctx;
       if (ctx.state === "suspended") await ctx.resume();
 
       const micSrc = ctx.createMediaStreamSource(stream);
-      micSrcRef.current = micSrc;
-
-      // Mic monitor to headphones (default silent until enabled).
       const micMon = ctx.createGain();
       micMon.gain.value = micMonitor ? micMonitorVol : 0;
       micSrc.connect(micMon);
       micMon.connect(ctx.destination);
       micMonRef.current = micMon;
 
-      // Recording bus: mic always recorded; bed added only in "mix" mode.
       const mixDest = ctx.createMediaStreamDestination();
       micSrc.connect(mixDest);
       mixDestRef.current = mixDest;
 
-      // Music bed.
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      micSrc.connect(analyser);
+
       const items = buildBedItems();
       bedItemsRef.current = items;
       bedPosRef.current = 0;
@@ -174,24 +260,52 @@ export default function VoiceRecorder({
         el.preload = "auto";
         bedElRef.current = el;
         const bedSrc = ctx.createMediaElementSource(el);
-        bedSrcRef.current = bedSrc;
         const bedGain = ctx.createGain();
         bedGain.gain.value = bedVolume;
         bedGainRef.current = bedGain;
         bedSrc.connect(bedGain);
-        bedGain.connect(ctx.destination); // headphones monitor
-        if (mixBed) bedGain.connect(mixDest); // also record it
-        el.onended = () => loadBedAt(bedPosRef.current + 1); // advance / loop
-        await loadBedAt(0);
+        bedGain.connect(ctx.destination);
+        if (mixBed) bedGain.connect(mixDest);
+        el.onended = () => loadBedAt(bedPosRef.current + 1);
       }
+
+      // 3-2-1 count-in (beeps in headphones, not recorded).
+      if (countIn) {
+        for (let c = 3; c >= 1; c--) {
+          setCountdown(c);
+          beep(ctx, c === 1 ? 1200 : 880, 0.14);
+          // eslint-disable-next-line no-await-in-loop
+          await wait(1000);
+        }
+        setCountdown(null);
+        if (!ctxRef.current) return; // closed while counting
+      }
+
+      if (bedElRef.current) await loadBedAt(0);
+      startDuckLoop(ctx, analyser);
 
       const rec = new MediaRecorder(mixDest.stream);
       rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
-      rec.onstop = () => {
+      rec.onstop = async () => {
         blobRef.current = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
         const url = URL.createObjectURL(blobRef.current);
         previewRef.current = new Audio(url);
+        previewRef.current.ontimeupdate = () => {
+          if (previewRef.current && previewRef.current.currentTime >= trimEndRef.current) {
+            previewRef.current.pause();
+            setPlaying(false);
+          }
+        };
         previewRef.current.onended = () => setPlaying(false);
+        try {
+          const buf = await audioCtx().decodeAudioData((await blobRef.current.arrayBuffer()).slice(0));
+          setRecBuffer(buf);
+          setTrimStart(0);
+          setTrimEnd(buf.duration);
+          trimEndRef.current = buf.duration;
+        } catch {
+          /* preview only */
+        }
         setStatus("recorded");
       };
       rec.start();
@@ -202,13 +316,20 @@ export default function VoiceRecorder({
       timerRef.current = setInterval(() => setElapsed((Date.now() - t0) / 1000), 200);
     } catch {
       setStatus("error");
+      setCountdown(null);
       teardown();
     }
   };
 
+  const trimEndRef = useRef(0);
+  useEffect(() => {
+    trimEndRef.current = trimEnd;
+  }, [trimEnd]);
+
   const stopRec = () => {
     if (recRef.current && recRef.current.state !== "inactive") recRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
+    if (duckRafRef.current) cancelAnimationFrame(duckRafRef.current);
     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     if (bedElRef.current) bedElRef.current.pause();
     setBedNowPlaying("");
@@ -218,6 +339,7 @@ export default function VoiceRecorder({
     const a = previewRef.current;
     if (!a) return;
     if (a.paused) {
+      a.currentTime = trimStart;
       a.play();
       setPlaying(true);
     } else {
@@ -230,10 +352,18 @@ export default function VoiceRecorder({
     if (!blobRef.current) return;
     setBusy(true);
     try {
-      const arr = await blobRef.current.arrayBuffer();
-      const buf = await audioCtx().decodeAudioData(arr.slice(0));
-      const wav = bufferToWav(buf);
-      await onSave(wav, `${name}.wav`, insertIndex, buf.duration);
+      const ctx = audioCtx();
+      const buf = recBuffer || (await ctx.decodeAudioData((await blobRef.current.arrayBuffer()).slice(0)));
+      const sr = buf.sampleRate;
+      const s = Math.max(0, Math.floor(trimStart * sr));
+      const e = Math.min(buf.length, Math.floor((trimEnd || buf.duration) * sr));
+      const len = Math.max(1, e - s);
+      const out = ctx.createBuffer(buf.numberOfChannels, len, sr);
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        out.getChannelData(ch).set(buf.getChannelData(ch).subarray(s, e));
+      }
+      const wav = bufferToWav(out);
+      await onSave(wav, `${name}.wav`, insertIndex, len / sr);
       onClose();
     } catch {
       setBusy(false);
@@ -241,9 +371,79 @@ export default function VoiceRecorder({
     }
   };
 
-  const assignedJingles = jingles
-    .map((j, i) => ({ j, i }))
-    .filter((x) => x.j);
+  // Presets (bed + volumes + toggles; uploaded-file beds aren't persisted).
+  const savePreset = () => {
+    const nm = presetName.trim();
+    if (!nm) return;
+    const p = {
+      name: nm,
+      bedType: bedType === "upload" ? "none" : bedType,
+      bedPlaylistId,
+      bedStartIndex,
+      bedJingleIndex,
+      bedVolume,
+      mixBed,
+      autoDuck,
+      duckDepth,
+      micMonitor,
+      micMonitorVol,
+      countIn,
+    };
+    const next = [...presets.filter((x) => x.name !== nm), p];
+    setPresets(next);
+    localStorage.setItem(PRESET_KEY, JSON.stringify(next));
+    setPresetName("");
+  };
+  const applyPreset = (nm) => {
+    const p = presets.find((x) => x.name === nm);
+    if (!p) return;
+    setBedType(p.bedType);
+    if (p.bedPlaylistId) setBedPlaylistId(p.bedPlaylistId);
+    setBedStartIndex(p.bedStartIndex || 0);
+    setBedJingleIndex(p.bedJingleIndex || 0);
+    setBedVolume(p.bedVolume ?? 0.5);
+    setMixBed(!!p.mixBed);
+    setAutoDuck(!!p.autoDuck);
+    setDuckDepth(p.duckDepth ?? 0.6);
+    setMicMonitor(!!p.micMonitor);
+    setMicMonitorVol(p.micMonitorVol ?? 0.8);
+    setCountIn(p.countIn !== false);
+  };
+  const deletePreset = (nm) => {
+    const next = presets.filter((x) => x.name !== nm);
+    setPresets(next);
+    localStorage.setItem(PRESET_KEY, JSON.stringify(next));
+  };
+
+  // Waveform trim drag.
+  const onWavePointer = (e) => {
+    if (!recBuffer || !waveRef.current) return;
+    const rect = waveRef.current.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const t = ratio * recBuffer.duration;
+    if (dragHandleRef.current === "start") setTrimStart(Math.min(t, trimEnd - 0.05));
+    else if (dragHandleRef.current === "end") setTrimEnd(Math.max(t, trimStart + 0.05));
+  };
+  const onWaveDown = (e) => {
+    if (!recBuffer) return;
+    const rect = waveRef.current.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const t = ratio * recBuffer.duration;
+    dragHandleRef.current =
+      Math.abs(t - trimStart) <= Math.abs(t - trimEnd) ? "start" : "end";
+    onWavePointer(e);
+    window.addEventListener("pointermove", onWavePointer);
+    window.addEventListener(
+      "pointerup",
+      () => {
+        dragHandleRef.current = null;
+        window.removeEventListener("pointermove", onWavePointer);
+      },
+      { once: true }
+    );
+  };
+
+  const assignedJingles = jingles.map((j, i) => ({ j, i })).filter((x) => x.j);
   const bedPlaylist = playlists.find((p) => p.id === bedPlaylistId);
 
   return (
@@ -252,7 +452,7 @@ export default function VoiceRecorder({
       data-testid="voice-recorder-modal"
       onMouseDown={(e) => e.target === e.currentTarget && status !== "recording" && onClose()}
     >
-      <div className="w-full max-w-md hl-panel rounded-2xl overflow-hidden max-h-[92vh] flex flex-col">
+      <div className="w-full max-w-md hl-panel rounded-2xl overflow-hidden max-h-[92vh] flex flex-col relative">
         <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--hl-line)]">
           <div className="flex items-center gap-2">
             <Mic size={18} className="text-[var(--hl-fire)]" />
@@ -262,6 +462,17 @@ export default function VoiceRecorder({
             <X size={18} />
           </button>
         </div>
+
+        {countdown !== null && (
+          <div
+            className="absolute inset-0 z-10 grid place-items-center bg-black/80 backdrop-blur-sm"
+            data-testid="voice-countdown"
+          >
+            <div className="text-[7rem] font-display font-700 text-[var(--hl-fire)] animate-pulse">
+              {countdown}
+            </div>
+          </div>
+        )}
 
         <div className="p-5 space-y-4 overflow-y-auto">
           {status === "error" && (
@@ -275,12 +486,12 @@ export default function VoiceRecorder({
               <button
                 data-testid="voice-record-toggle"
                 onClick={status === "recording" ? stopRec : startRec}
-                className={`h-20 w-20 grid place-items-center rounded-full border-2 transition ${
+                disabled={countdown !== null}
+                className={`h-20 w-20 grid place-items-center rounded-full border-2 transition disabled:opacity-60 ${
                   status === "recording"
                     ? "border-[var(--hl-onair)] bg-[rgba(255,23,68,0.15)] text-[var(--hl-onair)] hl-onair-dot"
                     : "border-[var(--hl-fire)] text-[var(--hl-fire)] hover:bg-[rgba(255,90,31,0.1)]"
                 }`}
-                title={status === "recording" ? "Stop" : "Record"}
               >
                 {status === "recording" ? <Square size={28} /> : <Circle size={28} fill="currentColor" />}
               </button>
@@ -297,171 +508,276 @@ export default function VoiceRecorder({
               {status === "recording"
                 ? `● ${formatTime(elapsed)}${bedNowPlaying ? ` · bed: ${bedNowPlaying}` : ""}`
                 : status === "recorded"
-                ? "Recorded — preview & save"
+                ? "Trim, preview & save"
                 : "Tap to record"}
             </div>
           </div>
 
-          {/* Music bed + monitoring setup (hidden once a take exists) */}
-          {status !== "recorded" && (
-            <div className="space-y-3 rounded-xl border border-[var(--hl-line)] p-3.5">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
-                <Music2 size={14} className="text-[var(--hl-amber)]" /> Music bed (underlayment)
+          {/* Waveform + trim (after a take) */}
+          {status === "recorded" && recBuffer && (
+            <div data-testid="voice-trim">
+              <div className="flex items-center justify-between text-[11px] text-[var(--hl-muted)] mb-1">
+                <span className="flex items-center gap-1">
+                  <Waves size={12} /> Drag the edges to trim
+                </span>
+                <span className="tabular-nums" data-testid="voice-trim-readout">
+                  {formatTime(trimStart)} – {formatTime(trimEnd)} ({formatTime(trimEnd - trimStart)})
+                </span>
               </div>
-              <select
-                data-testid="voice-bed-type"
-                value={bedType}
-                onChange={(e) => setBedType(e.target.value)}
-                disabled={status === "recording"}
-                className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
-              >
-                <option value="none">No bed — voice only</option>
-                <option value="playlist">From a playlist (advances track to track)</option>
-                <option value="jingle">From a jingle pad</option>
-                <option value="upload">Upload / choose a file</option>
-              </select>
+              <canvas
+                ref={waveRef}
+                onPointerDown={onWaveDown}
+                className="w-full h-24 rounded-lg bg-black/40 border border-[var(--hl-line)] cursor-ew-resize touch-none"
+              />
+            </div>
+          )}
 
-              {bedType === "playlist" && (
-                <div className="grid grid-cols-2 gap-2">
+          {/* Bed + monitoring setup */}
+          {status !== "recorded" && (
+            <>
+              {presets.length > 0 && (
+                <div className="flex items-center gap-2" data-testid="voice-presets">
+                  <Star size={14} className="text-[var(--hl-amber)] shrink-0" />
                   <select
-                    data-testid="voice-bed-playlist"
-                    value={bedPlaylistId}
+                    data-testid="voice-preset-select"
+                    defaultValue=""
                     onChange={(e) => {
-                      setBedPlaylistId(e.target.value);
-                      setBedStartIndex(0);
+                      if (e.target.value) applyPreset(e.target.value);
                     }}
-                    disabled={status === "recording"}
-                    className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
+                    className="flex-1 bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--hl-fire)]"
                   >
-                    {playlists.map((p) => (
-                      <option key={p.id} value={p.id}>
+                    <option value="">Load a bed preset…</option>
+                    {presets.map((p) => (
+                      <option key={p.name} value={p.name}>
                         {p.name}
                       </option>
                     ))}
                   </select>
-                  <select
-                    data-testid="voice-bed-start"
-                    value={bedStartIndex}
-                    onChange={(e) => setBedStartIndex(Number(e.target.value))}
-                    disabled={status === "recording"}
-                    className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
-                  >
-                    {(bedPlaylist?.trackIds || []).map((id, i) => {
-                      const t = tracks[id];
-                      if (!t) return null;
-                      return (
-                        <option key={id} value={i}>
-                          Start: {t.title || t.name}
-                        </option>
-                      );
-                    })}
-                  </select>
                 </div>
               )}
 
-              {bedType === "jingle" && (
+              <div className="space-y-3 rounded-xl border border-[var(--hl-line)] p-3.5">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                  <Music2 size={14} className="text-[var(--hl-amber)]" /> Music bed (underlayment)
+                </div>
                 <select
-                  data-testid="voice-bed-jingle"
-                  value={bedJingleIndex}
-                  onChange={(e) => setBedJingleIndex(Number(e.target.value))}
+                  data-testid="voice-bed-type"
+                  value={bedType}
+                  onChange={(e) => setBedType(e.target.value)}
                   disabled={status === "recording"}
                   className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
                 >
-                  {assignedJingles.length === 0 && <option value={0}>No jingle pads assigned</option>}
-                  {assignedJingles.map(({ j, i }) => (
-                    <option key={i} value={i}>
-                      Pad {i + 1}: {j.name}
-                    </option>
-                  ))}
+                  <option value="none">No bed — voice only</option>
+                  <option value="playlist">From a playlist (advances track to track)</option>
+                  <option value="jingle">From a jingle pad</option>
+                  <option value="upload">Upload / choose a file</option>
                 </select>
-              )}
 
-              {bedType === "upload" && (
-                <input
-                  data-testid="voice-bed-file-input"
-                  type="file"
-                  accept=".mp3,.wav,.m4a,audio/*"
-                  disabled={status === "recording"}
-                  onChange={(e) => setBedFile(e.target.files?.[0] || null)}
-                  className="w-full text-xs text-[var(--hl-muted)] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[var(--hl-fire)] file:text-white"
-                />
-              )}
+                {bedType === "playlist" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      data-testid="voice-bed-playlist"
+                      value={bedPlaylistId}
+                      onChange={(e) => {
+                        setBedPlaylistId(e.target.value);
+                        setBedStartIndex(0);
+                      }}
+                      disabled={status === "recording"}
+                      className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
+                    >
+                      {playlists.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      data-testid="voice-bed-start"
+                      value={bedStartIndex}
+                      onChange={(e) => setBedStartIndex(Number(e.target.value))}
+                      disabled={status === "recording"}
+                      className="bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
+                    >
+                      {(bedPlaylist?.trackIds || []).map((id, i) => {
+                        const t = tracks[id];
+                        if (!t) return null;
+                        return (
+                          <option key={id} value={i}>
+                            Start: {t.title || t.name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
 
-              {bedType !== "none" && (
-                <>
+                {bedType === "jingle" && (
+                  <select
+                    data-testid="voice-bed-jingle"
+                    value={bedJingleIndex}
+                    onChange={(e) => setBedJingleIndex(Number(e.target.value))}
+                    disabled={status === "recording"}
+                    className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
+                  >
+                    {assignedJingles.length === 0 && <option value={0}>No jingle pads assigned</option>}
+                    {assignedJingles.map(({ j, i }) => (
+                      <option key={i} value={i}>
+                        Pad {i + 1}: {j.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {bedType === "upload" && (
+                  <input
+                    data-testid="voice-bed-file-input"
+                    type="file"
+                    accept=".mp3,.wav,.m4a,audio/*"
+                    disabled={status === "recording"}
+                    onChange={(e) => setBedFile(e.target.files?.[0] || null)}
+                    className="w-full text-xs text-[var(--hl-muted)] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[var(--hl-fire)] file:text-white"
+                  />
+                )}
+
+                {bedType !== "none" && (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-[var(--hl-muted)] w-24 shrink-0">Bed volume</span>
+                      <input
+                        data-testid="voice-bed-volume"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={bedVolume}
+                        onChange={(e) => setBedVolume(Number(e.target.value))}
+                        className="hl-range flex-1"
+                      />
+                      <span className="text-xs tabular-nums w-9 text-right">{Math.round(bedVolume * 100)}%</span>
+                    </div>
+                    <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        data-testid="voice-autoduck-toggle"
+                        checked={autoDuck}
+                        onChange={(e) => setAutoDuck(e.target.checked)}
+                        className="h-4 w-4 accent-[var(--hl-fire)]"
+                      />
+                      Auto-duck the bed under my voice
+                    </label>
+                    {autoDuck && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-[var(--hl-muted)] w-24 shrink-0">Duck amount</span>
+                        <input
+                          data-testid="voice-duck-depth"
+                          type="range"
+                          min="0.2"
+                          max="0.9"
+                          step="0.05"
+                          value={duckDepth}
+                          onChange={(e) => setDuckDepth(Number(e.target.value))}
+                          className="hl-range flex-1"
+                        />
+                        <span className="text-xs tabular-nums w-9 text-right">{Math.round(duckDepth * 100)}%</span>
+                      </div>
+                    )}
+                    <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        data-testid="voice-mix-toggle"
+                        checked={mixBed}
+                        onChange={(e) => setMixBed(e.target.checked)}
+                        disabled={status === "recording"}
+                        className="h-4 w-4 accent-[var(--hl-fire)]"
+                      />
+                      Mix the bed into the saved file (off = record my voice only)
+                    </label>
+                  </>
+                )}
+              </div>
+
+              <div className="space-y-2.5 rounded-xl border border-[var(--hl-line)] p-3.5">
+                <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="voice-countin-toggle"
+                    checked={countIn}
+                    onChange={(e) => setCountIn(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--hl-fire)]"
+                  />
+                  <Timer size={15} className="text-[var(--hl-amber)]" />
+                  3-2-1 count-in before recording
+                </label>
+                <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="voice-mic-monitor-toggle"
+                    checked={micMonitor}
+                    onChange={(e) => setMicMonitor(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--hl-fire)]"
+                  />
+                  <Headphones size={15} className="text-[var(--hl-amber)]" />
+                  Hear my mic in my headphones (monitor)
+                </label>
+                {micMonitor && (
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-[var(--hl-muted)] w-24 shrink-0">Bed volume</span>
+                    <span className="text-xs text-[var(--hl-muted)] w-24 shrink-0">Monitor vol</span>
                     <input
-                      data-testid="voice-bed-volume"
+                      data-testid="voice-mic-monitor-volume"
                       type="range"
                       min="0"
                       max="1"
                       step="0.01"
-                      value={bedVolume}
-                      onChange={(e) => setBedVolume(Number(e.target.value))}
+                      value={micMonitorVol}
+                      onChange={(e) => setMicMonitorVol(Number(e.target.value))}
                       className="hl-range flex-1"
                     />
-                    <span className="text-xs tabular-nums w-9 text-right">{Math.round(bedVolume * 100)}%</span>
+                    <span className="text-xs tabular-nums w-9 text-right">{Math.round(micMonitorVol * 100)}%</span>
                   </div>
-                  <label
-                    className="flex items-center gap-2.5 text-sm cursor-pointer select-none"
-                    data-testid="voice-mix-label"
-                  >
-                    <input
-                      type="checkbox"
-                      data-testid="voice-mix-toggle"
-                      checked={mixBed}
-                      onChange={(e) => setMixBed(e.target.checked)}
-                      disabled={status === "recording"}
-                      className="h-4 w-4 accent-[var(--hl-fire)]"
-                    />
-                    Mix the bed into the saved file (off = record my voice only)
-                  </label>
-                </>
-              )}
-            </div>
-          )}
+                )}
+                <div className="flex items-start gap-2 text-[11px] text-[var(--hl-amber)]" data-testid="voice-monitor-warning">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  Use headphones. On laptop speakers this causes echo/feedback.
+                </div>
+              </div>
 
-          {/* Mic monitor to headphones */}
-          {status !== "recorded" && (
-            <div className="space-y-2.5 rounded-xl border border-[var(--hl-line)] p-3.5">
-              <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+              {/* Save current settings as a preset */}
+              <div className="flex items-center gap-2">
                 <input
-                  type="checkbox"
-                  data-testid="voice-mic-monitor-toggle"
-                  checked={micMonitor}
-                  onChange={(e) => setMicMonitor(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--hl-fire)]"
+                  data-testid="voice-preset-name"
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  placeholder="Save these bed settings as…"
+                  className="flex-1 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
                 />
-                <Headphones size={15} className="text-[var(--hl-amber)]" />
-                Hear my mic in my headphones (monitor)
-              </label>
-              {micMonitor && (
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-[var(--hl-muted)] w-24 shrink-0">Monitor vol</span>
-                  <input
-                    data-testid="voice-mic-monitor-volume"
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={micMonitorVol}
-                    onChange={(e) => setMicMonitorVol(Number(e.target.value))}
-                    className="hl-range flex-1"
-                  />
-                  <span className="text-xs tabular-nums w-9 text-right">
-                    {Math.round(micMonitorVol * 100)}%
-                  </span>
+                <button
+                  data-testid="voice-preset-save"
+                  onClick={savePreset}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-fire)]"
+                >
+                  <Star size={14} /> Save
+                </button>
+              </div>
+              {presets.length > 0 && (
+                <div className="flex flex-wrap gap-1.5" data-testid="voice-preset-chips">
+                  {presets.map((p) => (
+                    <span
+                      key={p.name}
+                      className="inline-flex items-center gap-1 text-[11px] bg-white/5 border border-[var(--hl-line)] rounded-full pl-2 pr-1 py-0.5"
+                    >
+                      {p.name}
+                      <button
+                        onClick={() => deletePreset(p.name)}
+                        className="h-4 w-4 grid place-items-center rounded-full hover:text-[var(--hl-onair)]"
+                        title="Delete preset"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </span>
+                  ))}
                 </div>
               )}
-              <div
-                className="flex items-start gap-2 text-[11px] text-[var(--hl-amber)]"
-                data-testid="voice-monitor-warning"
-              >
-                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                Use headphones. On laptop speakers this causes echo/feedback.
-              </div>
-            </div>
+            </>
           )}
 
           <div>
@@ -481,9 +797,7 @@ export default function VoiceRecorder({
           {status === "recorded" && (
             <>
               <div>
-                <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
-                  Insert position
-                </label>
+                <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">Insert position</label>
                 <select
                   data-testid="voice-insert-position"
                   value={insertIndex}
@@ -500,7 +814,10 @@ export default function VoiceRecorder({
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
-                  onClick={() => setStatus("idle")}
+                  onClick={() => {
+                    setStatus("idle");
+                    setRecBuffer(null);
+                  }}
                   className="px-4 py-2 rounded-lg border border-[var(--hl-line)] text-sm hover:border-white"
                 >
                   Re-record

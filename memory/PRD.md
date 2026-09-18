@@ -448,3 +448,21 @@ Root causes (two distinct offline-path bugs):
 - Auto-play regression check: verified tracks auto-advance (tA→tB→tC) in the current build; no
   regression from this session. Likely user-side causes: the "Auto" toggle off, or a track with
   a red "File missing" badge (a missing file halts the chain until re-imported/re-linked).
+
+## Feature batch (2026-06) — Voice Booth: count-in, auto-duck, waveform trim, presets
+- 3-2-1 Count-in (voice-countin-toggle, default ON): beeps via a Web Audio oscillator through
+  headphones (not recorded) with a big on-screen countdown overlay (voice-countdown) before
+  MediaRecorder starts.
+- Auto-duck bed (voice-autoduck-toggle, default ON; voice-duck-depth): an AnalyserNode on the
+  mic computes RMS in a rAF loop and dips bedGain (setTargetAtTime) while you talk, restoring it
+  when quiet. Duck amount adjustable.
+- Waveform trim (voice-trim / voice-trim-readout): after a take the recording is decoded and its
+  waveform drawn on a canvas with draggable start/end handles; Save slices the AudioBuffer to the
+  selected region before encoding WAV.
+- Bed presets (voice-preset-name/save/select/chips): remembers bed source + volume + duck +
+  monitor + count-in in localStorage ("hotlive95_bed_presets"); apply from a dropdown in one
+  click. Uploaded-file beds aren't persisted (stored as "none").
+- Verified: count-in default on, auto-duck default on + depth slider, preset save→chip→apply
+  restores bed type + volume. NOTE: live mic capture, the countdown overlay, and waveform
+  trimming can't be exercised in the headless env (no microphone); wiring verified by build +
+  setup UI; getUserMedia path runs in the real browser.
