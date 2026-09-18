@@ -1,9 +1,10 @@
 // Dual-element audio engine with crossfade / gapless auto-play for live playout,
 // plus an independent CUE (headphone pre-listen) channel and audio-output routing.
 export default class AudioEngine {
-  constructor(onUpdate, onCue) {
+  constructor(onUpdate, onCue, onStandby) {
     this.onUpdate = onUpdate;
     this.onCue = onCue;
+    this.onStandby = onStandby;
     this.a = new Audio();
     this.b = new Audio();
     this.cue = new Audio();
@@ -34,6 +35,13 @@ export default class AudioEngine {
     this._fadeRaf = null;
     this._stopping = false;
     this._sleepRaf = null;
+    // ---- Standby deck (manual crossfader to the "in cue" track) ----
+    this.standbyArmed = false;
+    this.standbyTrackId = null;
+    this.standbyIndex = -1;
+    this._faderPos = 0; // 0 = fully ON AIR, 1 = fully STANDBY
+    this._manualFading = false;
+    this._takeRaf = null;
     this._bind();
   }
 
@@ -73,7 +81,7 @@ export default class AudioEngine {
 
   setVolume(v) {
     this.volume = v;
-    if (!this._fading) this.active.volume = this._effVol();
+    if (!this._fading && !this._manualFading) this.active.volume = this._effVol();
     this._emit();
   }
 
@@ -98,7 +106,7 @@ export default class AudioEngine {
     if (typeof level === "number") this.duckLevel = level;
     else if (active) this.duckLevel = 0.28;
     const dur = typeof ms === "number" ? ms : 220;
-    if (!this._fading) this._rampTo(this.active, this._effVol(), dur);
+    if (!this._fading && !this._manualFading) this._rampTo(this.active, this._effVol(), dur);
   }
 
   setTrimSilence(on) {
@@ -384,6 +392,156 @@ export default class AudioEngine {
     this._emitCue();
   }
 
+  // ---------- STANDBY DECK (manual crossfader to the "in cue" track) ----------
+  // Loads a track onto the idle deck, ready to blend in with setFader / takeStandby.
+  async loadStandby(track) {
+    if (!track) return;
+    const url = await this.getUrl(track);
+    if (!url) return;
+    const i = this.queue.findIndex((t) => t.id === track.id);
+    this._cancelTake();
+    this.idle.pause();
+    this.idle.src = url;
+    this.idle.volume = 0;
+    const startAt =
+      track.cueIn != null
+        ? track.cueIn
+        : this.trimSilence && track.leadIn
+        ? track.leadIn
+        : 0;
+    const onMeta = () => {
+      try {
+        this.idle.currentTime = startAt;
+      } catch {
+        /* ignore */
+      }
+      this.idle.removeEventListener("loadedmetadata", onMeta);
+    };
+    this.idle.addEventListener("loadedmetadata", onMeta);
+    this.standbyArmed = true;
+    this.standbyTrackId = track.id;
+    this.standbyIndex = i;
+    this._faderPos = 0;
+    this._emitStandby();
+  }
+
+  clearStandby() {
+    this._cancelTake();
+    this.idle.pause();
+    try {
+      this.idle.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    this.idle.src = "";
+    this.standbyArmed = false;
+    this.standbyTrackId = null;
+    this.standbyIndex = -1;
+    this._faderPos = 0;
+    this._manualFading = false;
+    // Restore full air level on the on-air deck.
+    if (!this._fading) this.active.volume = this._effVol();
+    this._emitStandby();
+  }
+
+  // Physically blend between ON AIR (pos 0) and STANDBY (pos 1).
+  setFader(pos) {
+    if (!this.standbyArmed) return;
+    const p = Math.max(0, Math.min(1, pos));
+    this._faderPos = p;
+    if (p >= 0.999) {
+      this._commitStandby();
+      return;
+    }
+    this._manualFading = p > 0;
+    const peak = this._effVol();
+    if (p > 0 && this.idle.paused) {
+      this.idle.play().catch(() => {});
+    }
+    this.active.volume = Math.max(0, peak * (1 - p));
+    this.idle.volume = Math.min(peak, peak * p);
+    if (p === 0) {
+      // Snapped back to air — pause the standby deck but keep it armed.
+      this.idle.pause();
+      try {
+        const t = this.queue[this.standbyIndex];
+        this.idle.currentTime =
+          t && t.cueIn != null ? t.cueIn : this.trimSilence && t && t.leadIn ? t.leadIn : 0;
+      } catch {
+        /* ignore */
+      }
+      this._manualFading = false;
+      this.active.volume = peak;
+    }
+    this._emitStandby();
+  }
+
+  // One-tap seamless transition: animate the fader all the way over, then commit.
+  takeStandby(seconds) {
+    if (!this.standbyArmed) return;
+    this._cancelTake();
+    this._manualFading = true;
+    if (this.idle.paused) this.idle.play().catch(() => {});
+    const durMs = Math.max(0.1, typeof seconds === "number" ? seconds : this.crossfadeSeconds) * 1000;
+    const from = this._faderPos;
+    const start = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / durMs);
+      const pos = from + (1 - from) * p;
+      const peak = this._effVol();
+      this._faderPos = pos;
+      this.active.volume = Math.max(0, peak * (1 - pos));
+      this.idle.volume = Math.min(peak, peak * pos);
+      this._emitStandby();
+      if (p < 1) {
+        this._takeRaf = requestAnimationFrame(step);
+      } else {
+        this._takeRaf = null;
+        this._commitStandby();
+      }
+    };
+    this._takeRaf = requestAnimationFrame(step);
+  }
+
+  _commitStandby() {
+    this._cancelTake();
+    const newIndex = this.standbyIndex;
+    // The standby deck (idle) becomes the on-air deck.
+    const old = this.active;
+    old.pause();
+    try {
+      old.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    old.src = "";
+    this.active = this.idle;
+    this.idle = old;
+    if (newIndex >= 0) this.index = newIndex;
+    this._manualFading = false;
+    this.standbyArmed = false;
+    this.standbyTrackId = null;
+    this.standbyIndex = -1;
+    this._faderPos = 0;
+    this.active.volume = this._effVol();
+    if (this.active.paused) this.active.play().catch(() => {});
+    this._emitStandby();
+    this._emit();
+  }
+
+  _cancelTake() {
+    if (this._takeRaf) cancelAnimationFrame(this._takeRaf);
+    this._takeRaf = null;
+  }
+
+  _emitStandby() {
+    if (!this.onStandby) return;
+    this.onStandby({
+      trackId: this.standbyArmed ? this.standbyTrackId : null,
+      faderPos: this._faderPos,
+    });
+  }
+
   _onTime(el) {
     if (el !== this.active) return;
     const dur = el.duration;
@@ -417,13 +575,19 @@ export default class AudioEngine {
         this.crossfade &&
         this.autoplay &&
         !this._fading &&
+        !this._manualFading &&
+        !this.standbyArmed &&
         !this._stopping &&
         hasNext &&
         remaining <= this.crossfadeSeconds &&
         remaining > 0.05
       ) {
         this._startCrossfade();
-      } else if (!this._fading && !this._stopping && hasEarlyEnd && el.currentTime >= effEnd) {
+      } else if (!this._fading && !this._manualFading && !this._stopping && hasEarlyEnd && el.currentTime >= effEnd) {
+        if (this.standbyArmed) {
+          this.takeStandby();
+          return;
+        }
         const n = this._nextIndex();
         if (this.autoplay && n >= 0) {
           this.playIndex(n);
@@ -504,8 +668,12 @@ export default class AudioEngine {
 
   _onEnded(el) {
     if (el !== this.active) return;
-    if (this._fading) return;
+    if (this._fading || this._manualFading) return;
     const track = this.queue[this.index];
+    if (this.standbyArmed) {
+      this.takeStandby();
+      return;
+    }
     if (this.loopRegion) {
       el.currentTime = track && track.cueIn != null ? track.cueIn : 0;
       el.play().catch(() => {});
@@ -543,6 +711,7 @@ export default class AudioEngine {
 
   destroy() {
     this._cancelFade();
+    this._cancelTake();
     [this.a, this.b, this.cue].forEach((el) => {
       el.pause();
       el.src = "";

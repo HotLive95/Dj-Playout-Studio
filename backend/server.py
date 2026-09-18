@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Header, HTTPException
+from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -571,6 +571,39 @@ async def admin_delete_key(key: str, x_admin_token: Optional[str] = Header(None)
     check_admin(x_admin_token)
     await db.licenses.delete_one({"key_norm": normalize_key(key)})
     return {"status": "ok"}
+
+
+@api_router.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    """Transcribe a recorded voice take to text (OpenAI whisper-1 via Emergent key)."""
+    import tempfile
+    from emergentintegrations.llm.openai import OpenAISpeechToText
+
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=503, detail="Transcription not configured")
+    data = await file.read()
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio too large (max 25MB)")
+    suffix = os.path.splitext(file.filename or "")[1] or ".webm"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        stt = OpenAISpeechToText(api_key=key)
+        with open(tmp_path, "rb") as f:
+            resp = await stt.transcribe(file=f, model="whisper-1", response_format="text")
+        text = resp if isinstance(resp, str) else getattr(resp, "text", str(resp))
+        return {"text": (text or "").strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 @api_router.get("/")

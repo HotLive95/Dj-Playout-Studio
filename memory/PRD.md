@@ -481,3 +481,19 @@ Root causes (two distinct offline-path bugs):
   ~1.2s bed fade-out before ending the recorder).
 - Verified E2E in preview (headless env exposes a fake mic): record → trim readout → punch splice
   → save added the voice track to the playlist. All toggles/defaults confirmed.
+
+## Feature batch (2026-06) — Voice Booth: bed preview, mic meter, multi-take, auto-transcribe
+- Bed preview (voice-bed-preview): audition the chosen bed and set its level before recording;
+  respects bed-volume live; auto-stops when recording starts.
+- Mic level meter (voice-mic-meter): live input meter during recording (green→amber→orange) with
+  a red CLIP indicator (voice-mic-clip) when peak > ~0.98. Driven by the analyser RMS/peak loop.
+- Multi-take (voice-takes): each recording is kept as a Take; "Record another take" adds more,
+  chips select/delete takes, trim/punch/save operate on the selected take.
+- Auto-transcribe (voice-autotranscribe-toggle, default ON): NEW backend POST /api/transcribe
+  uses emergentintegrations OpenAISpeechToText (whisper-1) with EMERGENT_LLM_KEY. Transcript is
+  editable (voice-transcript), saved on the voice track (track.transcript) and shown as a caption
+  on the track row (track-transcript-{i}) for show logs/captions.
+- Backend: added EMERGENT_LLM_KEY to /app/backend/.env; /api/transcribe accepts multipart audio
+  (webm/wav, <=25MB) and returns {text}. Verified (endpoint returns text; empty for non-speech).
+- Verified E2E in preview (fake mic): bed-preview btn, mic meter live, 2 takes, transcript typed
+  + saved → caption visible on the saved voice track row.

@@ -28,6 +28,14 @@ export const api = {
   },
   setNowPlaying: (title, artist, art) => post("/api/nowplaying", { title, artist, art }),
 
+  transcribe: async (blob, filename = "take.webm") => {
+    const fd = new FormData();
+    fd.append("file", blob, filename);
+    const res = await fetch(`${BASE}/api/transcribe`, { method: "POST", body: fd });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+
   adminCreate: (token, dj, maxDevices, expiresAt, email) =>
     post("/api/admin/keys", { dj, email, max_devices: maxDevices, expires_at: expiresAt }, token),
   adminRenew: (token, key, days) => post(`/api/admin/keys/${key}/renew`, { days }, token),

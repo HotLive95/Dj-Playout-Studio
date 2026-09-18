@@ -17,6 +17,7 @@ import {
   Tag,
   Tags,
   Check,
+  Radio,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
 
@@ -28,6 +29,7 @@ export default function TrackList({
   onSelectPlaylist,
   currentTrackId,
   cueTrackId,
+  standbyTrackId,
   isPlaying,
   onAddFiles,
   onImportDialog,
@@ -40,6 +42,7 @@ export default function TrackList({
   onPlayTrack,
   onTogglePlay,
   onCueTrack,
+  onArmStandby,
   onEditTrack,
   onExportPlaylist,
   onRecordVoice,
@@ -353,6 +356,7 @@ export default function TrackList({
               const active = track.id === currentTrackId;
               const rowPlaying = active && isPlaying;
               const cued = track.id === cueTrackId;
+              const standby = track.id === standbyTrackId;
               const missing = !!(missingIds && missingIds.has(track.id));
               return (
                 <div
@@ -372,6 +376,8 @@ export default function TrackList({
                       ? "bg-[rgba(255,90,31,0.1)] border-[var(--hl-fire)]"
                       : cued
                       ? "bg-[rgba(255,171,0,0.08)] border-[var(--hl-amber)]"
+                      : standby
+                      ? "bg-[rgba(46,229,196,0.07)] border-[var(--hl-cue)]"
                       : "bg-[var(--hl-panel-2)] border-[var(--hl-line)] hover:border-[#3a3a44]"
                   } ${dragIndex === index ? "hl-dragging" : ""} ${
                     overIndex === index && dragIndex !== null && dragIndex !== index
@@ -489,6 +495,15 @@ export default function TrackList({
                           {track.type?.includes("wav") || /\.wav$/i.test(track.name) ? "WAV" : "MP3"} ·{" "}
                           {track.name}
                         </div>
+                        {track.transcript && (
+                          <div
+                            className="truncate text-[11px] italic text-[var(--hl-muted)]"
+                            data-testid={`track-transcript-${index}`}
+                            title={track.transcript}
+                          >
+                            “{track.transcript}”
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -497,7 +512,7 @@ export default function TrackList({
                     {track.duration ? formatTime(track.duration) : "--:--"}
                   </div>
 
-                  <div className="flex items-center gap-1 w-[176px] justify-end">
+                  <div className="flex items-center gap-1 w-[208px] justify-end">
                     <button
                       data-testid={`edit-info-${index}`}
                       onClick={() => startEditInfo(index, track)}
@@ -517,6 +532,18 @@ export default function TrackList({
                       title="Cue / pre-listen on headphones"
                     >
                       <Headphones size={16} />
+                    </button>
+                    <button
+                      data-testid={`standby-track-${index}`}
+                      onClick={() => onArmStandby(index)}
+                      className={`h-8 w-8 grid place-items-center rounded transition ${
+                        standby
+                          ? "text-[var(--hl-cue)] bg-[rgba(46,229,196,0.15)]"
+                          : "text-[var(--hl-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hl-cue)] hover:bg-white/10"
+                      }`}
+                      title="Load into the Standby deck — blend it on air with the crossfader"
+                    >
+                      <Radio size={16} />
                     </button>
                     <button
                       data-testid={`edit-track-${index}`}

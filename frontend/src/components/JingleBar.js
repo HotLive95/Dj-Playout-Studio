@@ -1,9 +1,82 @@
 import React, { useRef, useState } from "react";
-import { Zap, Plus, X, Square, Volume2 } from "lucide-react";
+import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight } from "lucide-react";
 
 const PAD_COUNT = 6;
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, onStop }) {
+// High-end DJ-style crossfader: drag the cap from ON AIR (left) to STANDBY (right).
+function Crossfader({ pos, armed, onChange }) {
+  const railRef = useRef(null);
+  const dragRef = useRef(false);
+  const PAD = 13;
+  const update = (clientX) => {
+    const el = railRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const usable = Math.max(1, r.width - PAD * 2);
+    let p = (clientX - r.left - PAD) / usable;
+    p = Math.max(0, Math.min(1, p));
+    onChange(p);
+  };
+  const onDown = (e) => {
+    if (!armed) return;
+    dragRef.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    update(e.clientX);
+  };
+  const onMove = (e) => {
+    if (dragRef.current) update(e.clientX);
+  };
+  const onUp = (e) => {
+    dragRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+  const ledColor = pos < 0.5 ? "var(--hl-fire)" : "var(--hl-cue)";
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="flex items-center justify-between w-[150px] px-0.5">
+        <span className="text-[9px] font-700 tracking-wider text-[var(--hl-fire)]">AIR</span>
+        <span className="text-[9px] font-700 tracking-wider text-[var(--hl-cue)]">CUE</span>
+      </div>
+      <div
+        ref={railRef}
+        data-testid="crossfader-rail"
+        className={`hl-xfader-rail w-[150px] ${armed ? "" : "hl-xfader-disabled"}`}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        role="slider"
+        aria-label="Standby crossfader"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(pos * 100)}
+      >
+        <div className="hl-xfader-slot" />
+        <div className="hl-xfader-tick" />
+        <div
+          className="hl-xfader-cap"
+          data-testid="crossfader-cap"
+          style={{ left: `calc(${PAD}px + ${pos} * (100% - ${PAD * 2}px))` }}
+        >
+          <span
+            className="hl-xfader-led"
+            style={{ background: ledColor, boxShadow: `0 0 6px ${ledColor}` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -122,6 +195,58 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
             </div>
           );
         })}
+      </div>
+
+      {/* ---- Standby deck + crossfader (blend the "in cue" track on air) ---- */}
+      <div
+        className="shrink-0 flex items-center gap-2.5 pl-1 pr-3 border-l border-r border-[var(--hl-line)]"
+        data-testid="standby-deck"
+      >
+        <div className="flex flex-col justify-center w-[132px] min-w-[132px]">
+          <div className="flex items-center gap-1.5">
+            <Radio size={13} className={standbyTrack ? "text-[var(--hl-cue)]" : "text-[var(--hl-muted)]"} />
+            <span className="font-display text-[10px] tracking-[0.2em] text-[var(--hl-muted)]">
+              STANDBY
+            </span>
+          </div>
+          {standbyTrack ? (
+            <div className="flex items-center gap-1 mt-0.5">
+              <span
+                className="text-xs truncate text-[var(--hl-cue)] max-w-[110px]"
+                data-testid="standby-track-name"
+                title={standbyTrack.name}
+              >
+                {standbyTrack.title || standbyTrack.name}
+              </span>
+              <button
+                data-testid="standby-clear"
+                onClick={onClearStandby}
+                className="h-4 w-4 shrink-0 grid place-items-center rounded-full text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
+                title="Clear the standby deck"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ) : (
+            <span className="text-[11px] text-[var(--hl-muted)] italic mt-0.5" data-testid="standby-empty">
+              Arm a track with{" "}
+              <Radio size={10} className="inline -mt-0.5 text-[var(--hl-cue)]" />
+            </span>
+          )}
+        </div>
+
+        <Crossfader pos={faderPos || 0} armed={!!standbyTrack} onChange={onFader} />
+
+        <button
+          data-testid="standby-take"
+          onClick={onTake}
+          disabled={!standbyTrack}
+          className="shrink-0 flex flex-col items-center justify-center gap-0.5 h-11 px-3 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] hover:bg-[rgba(46,229,196,0.12)] disabled:opacity-30 disabled:border-[var(--hl-line)] disabled:text-[var(--hl-muted)] transition"
+          title="TAKE — smoothly crossfade the standby track on air"
+        >
+          <ArrowLeftRight size={15} />
+          <span className="text-[9px] font-700 tracking-widest">TAKE</span>
+        </button>
       </div>
 
       <div className="shrink-0 flex items-center gap-1.5 pr-2 border-r border-[var(--hl-line)]" title="How far the music dips while a jingle plays">

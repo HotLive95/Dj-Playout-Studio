@@ -13,6 +13,7 @@
   --hl-onair: #ff1744;
   --hl-text: #f4f4f6;
   --hl-muted: #8b8b95;
+  --hl-cue: #2ee5c4;
 }
 
 * {
@@ -107,6 +108,89 @@ body {
   border: none;
   border-radius: 50%;
   background: var(--hl-amber);
+}
+
+/* ---- High-end DJ crossfader (Standby deck) ---- */
+.hl-xfader-rail {
+  position: relative;
+  height: 26px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #050506 0%, #17171c 48%, #0c0c10 100%);
+  border: 1px solid #000;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 0 rgba(255, 255, 255, 0.04);
+  cursor: ew-resize;
+  touch-action: none;
+  overflow: visible;
+}
+/* the slot the cap rides in */
+.hl-xfader-slot {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 50%;
+  height: 5px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(255, 90, 31, 0.55) 0%, #05050699 50%, rgba(46, 229, 196, 0.55) 100%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+/* centre detent tick */
+.hl-xfader-tick {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 1px;
+  height: 32px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.18);
+}
+/* the fader cap / knob */
+.hl-xfader-cap {
+  position: absolute;
+  top: 50%;
+  width: 26px;
+  height: 38px;
+  transform: translate(-50%, -50%);
+  border-radius: 5px;
+  background: linear-gradient(180deg, #4a4a52 0%, #2a2a30 12%, #1a1a1e 50%, #34343c 88%, #0e0e12 100%);
+  border: 1px solid #000;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+  cursor: grab;
+  transition: box-shadow 0.15s ease;
+}
+.hl-xfader-cap:active {
+  cursor: grabbing;
+}
+/* grip groove down the middle of the cap */
+.hl-xfader-cap::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  width: 3px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #000, #222);
+  box-shadow: inset 0 0 1px rgba(255, 255, 255, 0.2), 1px 0 0 rgba(255, 255, 255, 0.06),
+    -1px 0 0 rgba(0, 0, 0, 0.8);
+}
+/* LED under the cap that colours toward the side it is nearest */
+.hl-xfader-led {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 14px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+}
+.hl-xfader-disabled {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+  pointer-events: none;
 }
 
 

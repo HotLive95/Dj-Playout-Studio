@@ -252,6 +252,7 @@ function App() {
   const [batchOpen, setBatchOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [missingIds, setMissingIds] = useState(() => new Set());
+  const [standby, setStandby] = useState({ trackId: null, faderPos: 0 });
 
   const engineRef = useRef(null);
   const micRef = useRef({ active: false });
@@ -379,7 +380,8 @@ function App() {
         const t = engine.queue[s.index];
         setCurrentTrackId(t ? t.id : null);
       },
-      (c) => setCue(c)
+      (c) => setCue(c),
+      (sb) => setStandby(sb)
     );
     engineRef.current = engine;
     return () => engine.destroy();
@@ -1035,6 +1037,15 @@ function App() {
   const cueStop = () => engineRef.current?.cueStop();
   const cueSeek = (t) => engineRef.current?.cueSeek(t);
 
+  // ---- Standby deck + manual crossfader ----
+  const armStandby = (index) => {
+    const t = queueTracks[index];
+    if (t) engineRef.current?.loadStandby(t);
+  };
+  const setFader = (pos) => engineRef.current?.setFader(pos);
+  const takeStandby = () => engineRef.current?.takeStandby();
+  const clearStandby = () => engineRef.current?.clearStandby();
+
   const setVolume = (v) => setSettings((s) => ({ ...s, volume: v }));
   const toggleAutoplay = () => setSettings((s) => ({ ...s, autoplay: !s.autoplay }));
   const toggleShuffle = () => setSettings((s) => ({ ...s, shuffle: !s.shuffle }));
@@ -1139,16 +1150,16 @@ function App() {
     });
 
   // ---------------- Voice track insert ----------------
-  const saveVoiceTrack = async (blob, name, index, duration) => {
+  const saveVoiceTrack = async (blob, name, index, duration, transcript) => {
     const title = name.replace(/\.[^.]+$/, "");
     let meta;
     if (platform.isElectron) {
       const d = await platform.saveMedia(name, blob);
-      meta = { id: d.id, name, path: d.path, size: d.size, duration, title, artist: "Voice" };
+      meta = { id: d.id, name, path: d.path, size: d.size, duration, title, artist: "Voice", transcript: transcript || "" };
     } else {
       const id = uid();
       await putBlob(id, blob);
-      meta = { id, name, type: "audio/wav", duration, title, artist: "Voice" };
+      meta = { id, name, type: "audio/wav", duration, title, artist: "Voice", transcript: transcript || "" };
     }
     setTracks((prev) => ({ ...prev, [meta.id]: meta }));
     setPlaylists((prev) =>
@@ -1255,6 +1266,7 @@ function App() {
 
   const currentTrack = currentTrackId ? tracks[currentTrackId] : null;
   const cueTrackObj = cue.trackId ? tracks[cue.trackId] : null;
+  const standbyTrackObj = standby.trackId ? tracks[standby.trackId] : null;
   const onAir = playback.isPlaying;
 
   const durationOf = useCallback(
@@ -1316,6 +1328,7 @@ function App() {
             onSelectPlaylist={setCurrentPlaylistId}
             currentTrackId={currentTrackId}
             cueTrackId={cue.trackId}
+            standbyTrackId={standby.trackId}
             isPlaying={playback.isPlaying}
             isElectron={platform.isElectron}
             onAddFiles={addBrowserFiles}
@@ -1328,6 +1341,7 @@ function App() {
             onPlayTrack={playTrack}
             onTogglePlay={togglePlay}
             onCueTrack={cueTrack}
+            onArmStandby={armStandby}
             onEditTrack={(i) => setEditorTrack(queueTracks[i])}
             onExportPlaylist={exportPlaylist}
             onRecordVoice={() => setVoiceOpen(true)}
@@ -1352,6 +1366,11 @@ function App() {
         onSetDuckDepth={(d) => setSettings((s) => ({ ...s, jingleDuckDepth: d }))}
         duckMs={settings.jingleDuckMs ?? 220}
         onSetDuckMs={(ms) => setSettings((s) => ({ ...s, jingleDuckMs: ms }))}
+        standbyTrack={standbyTrackObj}
+        faderPos={standby.faderPos}
+        onFader={setFader}
+        onTake={takeStandby}
+        onClearStandby={clearStandby}
         onStop={stopJingles}
       />
 

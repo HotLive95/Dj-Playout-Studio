@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { Mic, Square, Play, Pause, Save, X, Circle, Music2, Headphones, AlertTriangle, Timer, Waves, Star, Trash2 } from "lucide-react";
 import { formatTime } from "../lib/format";
 import { audioCtx, bufferToWav, computePeaks } from "../lib/audioProcessing";
+import { api } from "../lib/api";
 
 const PRESET_KEY = "hotlive95_bed_presets";
 const loadPresets = () => {
@@ -52,6 +53,17 @@ export default function VoiceRecorder({
   const [duckDepth, setDuckDepth] = useState(0.6);
   const [loudnessMatch, setLoudnessMatch] = useState(true);
   const [bedFades, setBedFades] = useState(true);
+  const [micLevel, setMicLevel] = useState(0);
+  const [micClip, setMicClip] = useState(false);
+  const [bedPreviewing, setBedPreviewing] = useState(false);
+  const [takes, setTakes] = useState([]);
+  const [currentTakeId, setCurrentTakeId] = useState(null);
+  const [autoTranscribe, setAutoTranscribe] = useState(true);
+  const [transcript, setTranscript] = useState("");
+  const [transcribing, setTranscribing] = useState(false);
+  const bedPreviewRef = useRef(null);
+  const meterFrameRef = useRef(0);
+  const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   // --- Presets ---
   const [presets, setPresets] = useState(loadPresets);
@@ -154,6 +166,7 @@ export default function VoiceRecorder({
       bedElRef.current.pause();
       bedElRef.current.onended = null;
     }
+    if (bedPreviewRef.current) bedPreviewRef.current.pause();
     if (bedFileUrlRef.current) {
       URL.revokeObjectURL(bedFileUrlRef.current);
       bedFileUrlRef.current = null;
@@ -211,6 +224,90 @@ export default function VoiceRecorder({
     }
   };
 
+  useEffect(() => {
+    if (bedPreviewRef.current) bedPreviewRef.current.volume = bedVolume;
+  }, [bedVolume]);
+
+  // Audition the bed + set its level before recording.
+  const previewBed = async () => {
+    const items = buildBedItems();
+    if (!items.length) return;
+    const it = items[0];
+    const url = it.kind === "file" ? URL.createObjectURL(it.item) : await getUrl(it.item);
+    if (!url) return;
+    if (!bedPreviewRef.current) bedPreviewRef.current = new Audio();
+    const el = bedPreviewRef.current;
+    el.src = url;
+    el.volume = bedVolume;
+    el.onended = () => setBedPreviewing(false);
+    try {
+      await el.play();
+      setBedPreviewing(true);
+    } catch {
+      /* ignore */
+    }
+  };
+  const stopBedPreview = () => {
+    if (bedPreviewRef.current) bedPreviewRef.current.pause();
+    setBedPreviewing(false);
+  };
+
+  const buildPreview = (blob) => {
+    if (previewRef.current) previewRef.current.pause();
+    const a = new Audio(URL.createObjectURL(blob));
+    a.ontimeupdate = () => {
+      if (a.currentTime >= trimEndRef.current) {
+        a.pause();
+        setPlaying(false);
+      }
+    };
+    a.onended = () => setPlaying(false);
+    previewRef.current = a;
+  };
+  const selectTake = (take) => {
+    blobRef.current = take.blob;
+    setRecBuffer(take.buffer);
+    setTrimStart(0);
+    setTrimEnd(take.buffer.duration);
+    trimEndRef.current = take.buffer.duration;
+    setWaveMode("trim");
+    setPlaying(false);
+    setTranscript(take.transcript || "");
+    setCurrentTakeId(take.id);
+    buildPreview(take.blob);
+  };
+  const addTake = (blob, buffer) => {
+    const id = uid();
+    setTakes((prev) => [...prev, { id, blob, buffer, transcript: "", name: `Take ${prev.length + 1}` }]);
+    selectTake({ id, blob, buffer, transcript: "" });
+    setStatus("recorded");
+    if (autoTranscribe) runTranscribe(blob, id);
+  };
+  const deleteTake = (id) => {
+    setTakes((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      if (id === currentTakeId) {
+        if (next.length) selectTake(next[next.length - 1]);
+        else {
+          setStatus("idle");
+          setRecBuffer(null);
+        }
+      }
+      return next;
+    });
+  };
+  const runTranscribe = async (blob, takeId) => {
+    setTranscribing(true);
+    try {
+      const { text } = await api.transcribe(blob, "take.webm");
+      setTranscript(text || "");
+      setTakes((prev) => prev.map((t) => (t.id === takeId ? { ...t, transcript: text || "" } : t)));
+    } catch {
+      /* offline / failed */
+    }
+    setTranscribing(false);
+  };
+
   const beep = (ctx, freq = 880, dur = 0.12) => {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -237,6 +334,16 @@ export default function VoiceRecorder({
       }
       const rms = Math.sqrt(sum / data.length);
       const talking = rms > 0.06;
+      let peak = 0;
+      for (let i = 0; i < data.length; i++) {
+        const a = Math.abs((data[i] - 128) / 128);
+        if (a > peak) peak = a;
+      }
+      meterFrameRef.current = (meterFrameRef.current + 1) % 3;
+      if (meterFrameRef.current === 0) {
+        setMicLevel(rms);
+        setMicClip(peak > 0.98);
+      }
       if (bedGainRef.current) {
         // Bed fade in at open / out at close (only relevant when the bed is
         // mixed into the recording).
@@ -288,6 +395,7 @@ export default function VoiceRecorder({
   };
 
   const startRec = async () => {
+    stopBedPreview();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -351,26 +459,15 @@ export default function VoiceRecorder({
       const rec = new MediaRecorder(mixDest.stream);
       rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
       rec.onstop = async () => {
-        blobRef.current = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-        const url = URL.createObjectURL(blobRef.current);
-        previewRef.current = new Audio(url);
-        previewRef.current.ontimeupdate = () => {
-          if (previewRef.current && previewRef.current.currentTime >= trimEndRef.current) {
-            previewRef.current.pause();
-            setPlaying(false);
-          }
-        };
-        previewRef.current.onended = () => setPlaying(false);
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
         try {
-          const buf = await audioCtx().decodeAudioData((await blobRef.current.arrayBuffer()).slice(0));
-          setRecBuffer(buf);
-          setTrimStart(0);
-          setTrimEnd(buf.duration);
-          trimEndRef.current = buf.duration;
+          const buf = await audioCtx().decodeAudioData((await blob.arrayBuffer()).slice(0));
+          addTake(blob, buf);
         } catch {
-          /* preview only */
+          blobRef.current = blob;
+          buildPreview(blob);
+          setStatus("recorded");
         }
-        setStatus("recorded");
       };
       rec.start();
       recRef.current = rec;
@@ -551,10 +648,9 @@ export default function VoiceRecorder({
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
         out.getChannelData(ch).set(buf.getChannelData(ch).subarray(s, e));
       }
-      const wav = bufferToWav(out);
       if (loudnessMatch) normalizeLoudness(out);
       const finalWav = bufferToWav(out);
-      await onSave(finalWav, `${name}.wav`, insertIndex, len / sr);
+      await onSave(finalWav, `${name}.wav`, insertIndex, len / sr, transcript);
       onClose();
     } catch {
       setBusy(false);
@@ -707,6 +803,27 @@ export default function VoiceRecorder({
                 ? "Trim, preview & save"
                 : "Tap to record"}
             </div>
+            {status === "recording" && (
+              <div className="w-full mt-2" data-testid="voice-mic-meter">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] w-9 shrink-0">Mic</span>
+                  <div className="relative flex-1 h-2.5 rounded-full bg-[#2a2a31] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-75"
+                      style={{
+                        width: `${Math.min(100, Math.round(micLevel * 320))}%`,
+                        background: micClip ? "var(--hl-onair)" : "linear-gradient(90deg,#22c55e,#eab308,#f97316)",
+                      }}
+                    />
+                  </div>
+                  {micClip && (
+                    <span className="text-[10px] font-700 text-[var(--hl-onair)]" data-testid="voice-mic-clip">
+                      CLIP
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Waveform + trim (after a take) */}
@@ -893,6 +1010,15 @@ export default function VoiceRecorder({
                       />
                       <span className="text-xs tabular-nums w-9 text-right">{Math.round(bedVolume * 100)}%</span>
                     </div>
+                    <button
+                      data-testid="voice-bed-preview"
+                      onClick={bedPreviewing ? stopBedPreview : previewBed}
+                      disabled={status === "recording"}
+                      className="w-full h-9 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-sm flex items-center justify-center gap-2 hover:bg-[rgba(255,171,0,0.1)] disabled:opacity-50"
+                    >
+                      {bedPreviewing ? <Pause size={15} /> : <Play size={15} />}
+                      {bedPreviewing ? "Stop bed preview" : "Preview the bed & set level"}
+                    </button>
                     <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -996,6 +1122,16 @@ export default function VoiceRecorder({
                   />
                   Match broadcast loudness on save
                 </label>
+                <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="voice-autotranscribe-toggle"
+                    checked={autoTranscribe}
+                    onChange={(e) => setAutoTranscribe(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--hl-fire)]"
+                  />
+                  Auto-transcribe takes for show logs
+                </label>
                 <div className="flex items-start gap-2 text-[11px] text-[var(--hl-amber)]" data-testid="voice-monitor-warning">
                   <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                   Use headphones. On laptop speakers this causes echo/feedback.
@@ -1060,6 +1196,56 @@ export default function VoiceRecorder({
 
           {status === "recorded" && (
             <>
+              {takes.length > 1 && (
+                <div className="flex flex-wrap gap-1.5" data-testid="voice-takes">
+                  {takes.map((t) => (
+                    <span
+                      key={t.id}
+                      className={`inline-flex items-center gap-1 text-xs rounded-full border pl-2 pr-1 py-0.5 ${
+                        t.id === currentTakeId
+                          ? "border-[var(--hl-fire)] text-[var(--hl-fire)]"
+                          : "border-[var(--hl-line)] text-[var(--hl-muted)]"
+                      }`}
+                    >
+                      <button data-testid={`voice-take-${t.name.replace(/\s/g, "-")}`} onClick={() => selectTake(t)}>
+                        {t.name}
+                      </button>
+                      <button
+                        onClick={() => deleteTake(t.id)}
+                        className="h-4 w-4 grid place-items-center rounded-full hover:text-[var(--hl-onair)]"
+                        title="Delete take"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div data-testid="voice-transcript-panel">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                    Transcript (show log)
+                  </label>
+                  <button
+                    data-testid="voice-transcribe"
+                    onClick={() => blobRef.current && runTranscribe(blobRef.current, currentTakeId)}
+                    disabled={transcribing}
+                    className="text-[11px] text-[var(--hl-amber)] disabled:opacity-50"
+                  >
+                    {transcribing ? "Transcribing…" : "Re-transcribe"}
+                  </button>
+                </div>
+                <textarea
+                  data-testid="voice-transcript"
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  rows={2}
+                  placeholder={transcribing ? "Transcribing…" : "Auto-transcribes on record — edit if needed"}
+                  className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)] resize-none"
+                />
+              </div>
+
               <div>
                 <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">Insert position</label>
                 <select
@@ -1078,13 +1264,10 @@ export default function VoiceRecorder({
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
-                  onClick={() => {
-                    setStatus("idle");
-                    setRecBuffer(null);
-                  }}
+                  onClick={() => setStatus("idle")}
                   className="px-4 py-2 rounded-lg border border-[var(--hl-line)] text-sm hover:border-white"
                 >
-                  Re-record
+                  Record another take
                 </button>
                 <button
                   data-testid="voice-save"
