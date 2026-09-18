@@ -81,12 +81,18 @@ export default class AudioEngine {
 
   setVolume(v) {
     this.volume = v;
-    if (!this._fading && !this._manualFading) this.active.volume = this._effVol();
+    if (!this._fading && !this._manualFading) this._setVol(this.active, this._effVol());
     this._emit();
   }
 
   _effVol() {
     return this.duckActive ? this.volume * this.duckLevel : this.volume;
+  }
+
+  // Media-element volume must stay within [0,1]; float drift / duck math can
+  // overshoot and throw, so clamp every write in one place.
+  _setVol(el, v) {
+    el.volume = Math.min(1, Math.max(0, v));
   }
 
   _rampTo(el, target, ms) {
@@ -95,7 +101,7 @@ export default class AudioEngine {
     const from = el.volume;
     const step = (now) => {
       const p = Math.min(1, (now - start) / ms);
-      el.volume = from + (target - from) * p;
+      this._setVol(el, from + (target - from) * p);
       if (p < 1) this._volRaf = requestAnimationFrame(step);
     };
     this._volRaf = requestAnimationFrame(step);
@@ -194,7 +200,7 @@ export default class AudioEngine {
     if (!url) return;
     this.index = i;
     this.active.src = url;
-    this.active.volume = this._effVol();
+    this._setVol(this.active, this._effVol());
     const track = this.queue[i];
     const startAt =
       track && track.cueIn != null
@@ -234,7 +240,7 @@ export default class AudioEngine {
     }
     if (this.active.paused) {
       this._cancelSleepFade();
-      if (this.active.volume === 0) this.active.volume = this._effVol();
+      if (this.active.volume === 0) this._setVol(this.active, this._effVol());
       try {
         await this.active.play();
       } catch {
@@ -276,14 +282,14 @@ export default class AudioEngine {
     const start = performance.now();
     const step = (now) => {
       const p = Math.min(1, (now - start) / durMs);
-      el.volume = Math.max(0, startVol * (1 - p));
+      this._setVol(el, Math.max(0, startVol * (1 - p)));
       if (p < 1) {
         this._sleepRaf = requestAnimationFrame(step);
       } else {
         el.pause();
         this._sleepRaf = null;
         this._stopping = false;
-        el.volume = this._effVol();
+        this._setVol(el, this._effVol());
         this._emit();
       }
     };
@@ -313,16 +319,16 @@ export default class AudioEngine {
     this._cancelFade();
     const el = this.active;
     const target = this._effVol();
-    el.volume = 0;
+    this._setVol(el, 0);
     const durMs = Math.max(0.3, seconds) * 1000;
     const start = performance.now();
     const step = (now) => {
       const p = Math.min(1, (now - start) / durMs);
-      el.volume = Math.min(target, target * p);
+      this._setVol(el, Math.min(target, target * p));
       if (p < 1) {
         this._sleepRaf = requestAnimationFrame(step);
       } else {
-        el.volume = this._effVol();
+        this._setVol(el, this._effVol());
         this._sleepRaf = null;
         this._emit();
       }
@@ -347,7 +353,7 @@ export default class AudioEngine {
     if (!url) return;
     this.cueTrackId = track.id;
     this.cue.src = url;
-    this.cue.volume = 1;
+    this._setVol(this.cue, 1);
     try {
       this.cue.currentTime = 0;
       await this.cue.play();
@@ -402,7 +408,7 @@ export default class AudioEngine {
     this._cancelTake();
     this.idle.pause();
     this.idle.src = url;
-    this.idle.volume = 0;
+    this._setVol(this.idle, 0);
     const startAt =
       track.cueIn != null
         ? track.cueIn
@@ -440,7 +446,7 @@ export default class AudioEngine {
     this._faderPos = 0;
     this._manualFading = false;
     // Restore full air level on the on-air deck.
-    if (!this._fading) this.active.volume = this._effVol();
+    if (!this._fading) this._setVol(this.active, this._effVol());
     this._emitStandby();
   }
 
@@ -458,8 +464,8 @@ export default class AudioEngine {
     if (p > 0 && this.idle.paused) {
       this.idle.play().catch(() => {});
     }
-    this.active.volume = Math.max(0, peak * (1 - p));
-    this.idle.volume = Math.min(peak, peak * p);
+    this._setVol(this.active, Math.max(0, peak * (1 - p)));
+    this._setVol(this.idle, Math.min(peak, peak * p));
     if (p === 0) {
       // Snapped back to air — pause the standby deck but keep it armed.
       this.idle.pause();
@@ -471,7 +477,7 @@ export default class AudioEngine {
         /* ignore */
       }
       this._manualFading = false;
-      this.active.volume = peak;
+      this._setVol(this.active, peak);
     }
     this._emitStandby();
   }
@@ -490,8 +496,8 @@ export default class AudioEngine {
       const pos = from + (1 - from) * p;
       const peak = this._effVol();
       this._faderPos = pos;
-      this.active.volume = Math.max(0, peak * (1 - pos));
-      this.idle.volume = Math.min(peak, peak * pos);
+      this._setVol(this.active, Math.max(0, peak * (1 - pos)));
+      this._setVol(this.idle, Math.min(peak, peak * pos));
       this._emitStandby();
       if (p < 1) {
         this._takeRaf = requestAnimationFrame(step);
@@ -523,7 +529,7 @@ export default class AudioEngine {
     this.standbyTrackId = null;
     this.standbyIndex = -1;
     this._faderPos = 0;
-    this.active.volume = this._effVol();
+    this._setVol(this.active, this._effVol());
     if (this.active.paused) this.active.play().catch(() => {});
     this._emitStandby();
     this._emit();
@@ -558,9 +564,9 @@ export default class AudioEngine {
       const hasEarlyEnd = effEnd < dur - 0.05;
       if (this.cueAutoFade && !this._fading) {
         if (remaining > 0 && remaining <= this.cueFadeSeconds) {
-          this.active.volume = Math.max(0, this._effVol() * (remaining / this.cueFadeSeconds));
+          this._setVol(this.active, Math.max(0, this._effVol() * (remaining / this.cueFadeSeconds)));
         } else if (!this.duckActive) {
-          this.active.volume = this._effVol();
+          this._setVol(this.active, this._effVol());
         }
       }
       if (
@@ -622,7 +628,7 @@ export default class AudioEngine {
       return;
     }
     to.src = url;
-    to.volume = 0;
+    this._setVol(to, 0);
     try {
       to.currentTime = 0;
       await to.play();
@@ -636,8 +642,8 @@ export default class AudioEngine {
       // Fade toward the CURRENT effective volume so an active duck (mic/talk/
       // jingle) is preserved across the track change instead of jumping to full.
       const peak = this._effVol();
-      from.volume = Math.max(0, peak * (1 - p));
-      to.volume = Math.min(peak, peak * p);
+      this._setVol(from, Math.max(0, peak * (1 - p)));
+      this._setVol(to, Math.min(peak, peak * p));
       if (p < 1) {
         this._fadeRaf = requestAnimationFrame(step);
       } else {
@@ -653,7 +659,7 @@ export default class AudioEngine {
         this._fading = false;
         // Re-assert the effective (possibly ducked) volume on the new active
         // element in case the duck state changed during the fade.
-        this.active.volume = this._effVol();
+        this._setVol(this.active, this._effVol());
         this._emit();
       }
     };

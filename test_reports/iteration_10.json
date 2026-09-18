@@ -1,0 +1,47 @@
+{
+  "summary": "Frontend-only test of the new Standby Deck + crossfader feature in the Jingle bar. Arming, manual crossfader drag-to-commit, clear-standby, and regression checks (jingle pads, duck depth/speed, cue, play) all work. However the TAKE button consistently triggers a runtime error 'Failed to set the volume property on HTMLMediaElement: The volume provided (1.00055) is outside the range [0, 1]' which crashes the app (Emergent runtime-error dialog appears) and prevents the take/commit from completing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AudioEngine.takeStandby / _rampTo / setFader (/app/frontend/src/lib/audioEngine.js)",
+        "issue": "TAKE flow throws runtime error: 'Failed to set the volume property on HTMLMediaElement: The volume provided (1.00055) is outside the range [0, 1].' Reproduced by: play track 0, arm track 1 via standby-track-1, drag crossfader fully right (commits OK), then arm track 0 via standby-track-0 and click standby-take. Emergent runtime-error overlay appears; standby-empty does not re-appear, and the current-track pointer never jumps to track 0. The bug is a missing clamp on media-element volume writes. Several .volume = <expr> assignments compute values that can microscopically exceed 1.0 (e.g. peak * pos when peak ~ 1 and pos ~ 1) or that scale by a duck level that could exceed 1. Wrap ALL '.volume =' assignments in Math.min(1, Math.max(0, x)) (lines ~98, 279, 286, 316, 321, 325, 350, 443, 461-462, 474, 493-494, 526, 561, 563, 639-640, 656 in audioEngine.js) — or add a helper `_setVol(el, v){ el.volume = Math.min(1, Math.max(0, v)); }` and use it everywhere.",
+        "selector": "[data-testid=\"standby-take\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "PlayerBar option (pre-existing, not part of standby feature)",
+        "issue": "React hydration warning: '<span> cannot be a child of <option>' — a data-visual-editor wrapper puts a <span style=display:contents> inside <option>. Not blocking but pollutes the console. Remove the ve wrapper from crossfade select options or render options as plain string children.",
+        "selector": "[data-testid=\"crossfade-...\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Standby TAKE → commit to on-air",
+        "issue": "Because of the volume-out-of-range throw, _commitStandby is never reached after the TAKE animation, so the playlist current-track pointer does not jump to the standby track and standby-empty is not restored. The manual crossfader drag path DOES reach _commitStandby correctly (because setFader short-circuits at p>=0.999 before the ramp reads peak*pos with float drift), which is why the drag-to-commit case passed.",
+        "affected_selectors": ["[data-testid=\"standby-take\"]", "[data-testid=\"track-row-0\"]", "[data-testid=\"standby-empty\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Clamp every HTMLMediaElement.volume write in /app/frontend/src/lib/audioEngine.js with Math.min(1, Math.max(0, x)). Priority: takeStandby step (lines 493-494), setFader (461-462), _startCrossfade step (639-640), _rampTo step (98). Simplest fix: add helper `_setVol(el, v){ el.volume = Math.min(1, Math.max(0, v)); }` and replace all direct writes.",
+    "After fix, re-verify: play track 0 → arm track 1 → click standby-take → after ~3s standby-empty visible AND track-row-1 shows the fire-border 'current' highlight.",
+    "(Optional / pre-existing) Fix the <span> inside <option> hydration warning coming from the visual-editor wrapper in PlayerBar.js crossfade-seconds select."
+  ],
+  "critical_code_review_comments": [
+    "audioEngine.js: media-element volume writes are not defensively clamped; any float drift or duck*volume math above 1 will throw and blow up the entire app (a runtime error overlay). Always clamp before assigning to el.volume.",
+    "audioEngine.js takeStandby(): if _faderPos is already ~1 when TAKE is pressed (user dragged near the end then hit TAKE), from + (1-from)*p can float-drift above 1.0 in the first frames. Clamp pos to [0,1] before use.",
+    "JingleBar.js Crossfader: onPointerDown early-returns silently when !armed but still sets pointer capture attempt — fine, minor. Consider also giving the cap a keyboard focus/aria value changes for accessibility (role=slider is on the rail but arrow-keys don't move it)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "80%"},
+  "test_credentials": "Offline license key Q61VK-G819N-40K1B-H226T (pre-seeded via localStorage worked)",
+  "seed_data_creation": "Created two 6s mono WAV tones at /tmp/a.wav (440Hz) and /tmp/b.wav (660Hz) with python wave module (ffmpeg not available in this env), uploaded via add-files-input into a fresh 'StandbyTest' playlist.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reproduction: preseed localStorage.hotlive95_license with {activated:true,legalAccepted:true,online:false,key:'Q61VK-G819N-40K1B-H226T'}, create playlist via new-playlist-button, upload 2 WAVs to add-files-input, click play-track-0, click standby-track-1 (arms — standby-empty hides, standby-track-name='b', crossfader rail loses hl-xfader-disabled). Verified: manual pointer-drag on crossfader-rail from left to past-right commits: standby-empty re-appears and track-row-1 gets border-[var(--hl-fire)]. Verified: standby-clear removes standby and re-disables the rail. FAILED: standby-take throws HTMLMediaElement volume out-of-range (1.00055). Regression checks pass: jingle-duck-depth, jingle-duck-speed, jingle-pad-0..5, cue-track-0, play-track-0 all present and clickable, layout unbroken at 1920x1000.",
+  "rca of the issue": "AudioEngine.takeStandby()'s animation frame writes `this.active.volume = Math.max(0, peak * (1 - pos))` and `this.idle.volume = Math.min(peak, peak * pos)`. peak comes from _effVol() = this.volume (=1 by default) or this.volume*this.duckLevel. In the failing run the value 1.00055 was written — most likely from _rampTo's step `el.volume = from + (target - from) * p` racing/finishing during the take (setDuck / setVolume paths write via _rampTo without a final Math.min(1,...) guard) OR from `Math.min(peak, peak * pos)` when peak itself was already slightly >1 due to an earlier unguarded write. Either way the root cause is that the engine trusts arithmetic to stay within [0,1] instead of clamping right before every el.volume=... assignment. Mitigation: introduce a single _setVol(el,v) helper that clamps, and use it everywhere (listed lines above)."
+}
