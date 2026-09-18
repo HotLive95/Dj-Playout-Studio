@@ -542,3 +542,16 @@ Root causes (two distinct offline-path bugs):
 - Live Next-Up Tease: studio broadcasts the armed standby track as "next" (/api/nowplaying now stores
   next_title/next_artist/next_art); public /live page shows "Up next" (live-coming-up / live-next-title).
 - Verified E2E (testing agent iterations 13–14): all four pass 100%; BPM-column pre-gesture bug fixed.
+
+## Feature batch (2026-06) — Key/Harmonic Match, Loop Roll Pads, Waveform Overview, Auto-Cue Next
+- Key/Harmonic Match: lib/key.js estimates musical key (FFT chromagram + Krumhansl) → Camelot code,
+  computed in the SAME decode as BPM (audioEngine.bpmFor → onBpm(id,bpm,key)). Playlist shows key
+  per row (track-key-{i}); rows harmonically compatible with the on-air track get a green dot
+  (track-harmonic-{i}); the standby deck shows HARMONIC ✓ / CLASH (standby-harmonic). camelotCompatible().
+- Loop Roll Pads: jingle pads can beat-synced stutter/roll the pad sample (jingle-roll-{i}); global
+  division selector 1/½/¼/⅛ (roll-div-selector). App toggleRoll uses setInterval at (60/bpm)*rollDiv.
+- Waveform Overview: mini on-air + standby deck waveforms beside the crossfader (deck-waveforms,
+  reuses Waveform); standbyPeaks computed on arm.
+- Auto-Cue Next: toggle (auto-cue-next-toggle); engine fires onCommit(newIndex) after each take and
+  App auto-arms the next playlist track to standby (guarded by refs). settings.autoCueNext.
+- Verified E2E (testing agent iteration_15): all four pass 100%, no runtime errors, regressions clean.
