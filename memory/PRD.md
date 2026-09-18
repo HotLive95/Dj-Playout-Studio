@@ -555,3 +555,17 @@ Root causes (two distinct offline-path bugs):
 - Auto-Cue Next: toggle (auto-cue-next-toggle); engine fires onCommit(newIndex) after each take and
   App auto-arms the next playlist track to standby (guarded by refs). settings.autoCueNext.
 - Verified E2E (testing agent iteration_15): all four pass 100%, no runtime errors, regressions clean.
+
+## Feature batch (2026-06) — Recorder, Cue Points, Energy Sort, One-Tap Mix
+- Recorder: full session capture (music + jingles + mic) to a single WebM/Opus download. Engine builds
+  a program-bus AudioContext (createMediaElementSource decks → master → destination; ctx.setSinkId for
+  program device), mic via getUserMedia into a MediaStreamDestination (recorder-only, no feedback);
+  graceful music-only fallback if mic denied. Header REC button + live timer.
+- Cue Points: hot-cue markers set while pre-listening in the CUE panel (cue-set-point / cue-point-{i} /
+  cue-points-clear), stored on track.cuePoints[]. engine._startAt() uses cuePoints[0] as the arm/take
+  start (also playIndex).
+- Energy Sort: 'Smart Sort' button reorders the current playlist greedily by tempo + Camelot harmony.
+- One-Tap Mix: hotkey M (and 1-TAP button) arms the next track, auto-SYNCs, and TAKES on the next beat
+  (engine.oneTapMix). captureElement routes jingles/rolls into the record bus.
+- Verified E2E (testing agent iteration_16, 100% after fix): testing agent fixed a missing
+  `import { formatTime }` in App.js. All four features work with zero runtime errors; regressions clean.
