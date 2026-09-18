@@ -138,26 +138,27 @@ export default function VoiceRecorder({ existingTracks, defaultIndex, onClose, o
             </div>
           </div>
 
+          <div>
+            <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+              File name
+            </label>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                data-testid="voice-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name this recording"
+                className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 outline-none focus:border-[var(--hl-fire)]"
+              />
+              <span className="text-sm text-[var(--hl-muted)] tabular-nums shrink-0">.wav</span>
+            </div>
+            <p className="mt-1 text-[11px] text-[var(--hl-muted)]">
+              Personalize the saved file name — e.g. "Morning Show Intro".
+            </p>
+          </div>
+
           {status === "recorded" && (
             <>
-              <div>
-                <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
-                  File name
-                </label>
-                <div className="mt-1 flex items-center gap-2">
-                  <input
-                    data-testid="voice-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Name this recording"
-                    className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 outline-none focus:border-[var(--hl-fire)]"
-                  />
-                  <span className="text-sm text-[var(--hl-muted)] tabular-nums shrink-0">.wav</span>
-                </div>
-                <p className="mt-1 text-[11px] text-[var(--hl-muted)]">
-                  Personalize the saved file name — e.g. "Morning Show Intro".
-                </p>
-              </div>
               <div>
                 <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
                   Insert position

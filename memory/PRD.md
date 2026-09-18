@@ -379,3 +379,28 @@ Root causes (two distinct offline-path bugs):
 - Verified in-browser: real WAV upload → MP3 export with crossfade downloaded a valid 37KB file,
   status "Saved!" 100%, no decode error. Raw fetch→decodeAudioData→OfflineAudioContext primitives
   all pass. Desktop fix validated against WHATWG URL parsing (drive-letter mangling reproduced).
+
+## Feature batch (2026-06) — Track metadata + Batch export + Auto re-link + Voice rename
+- Artist + Song Title per track: `lib/id3.js` reads embedded ID3 tags (v2.2/2.3/2.4 + v1)
+  on import, falls back to filename pattern "Artist - Title.mp3", then bare filename with
+  "Unknown artist". DJ-editable inline (Tag button → title/artist inputs). Shown as Title
+  (main) + Artist (subtitle) + greyed "WAV/MP3 · filename". Search matches title/artist/filename.
+  Names populated in all import paths (browser add, Electron dialog/drag, replace, edited-save,
+  voice, shared-playlist import/export). File: `TrackList.js`, `App.js`, `id3.js`.
+- Missing-file badge: `platform.exists()` (+ Electron `file-exists` IPC) drives `missingIds`;
+  each affected row shows a red "File missing" badge and a header "Re-link (N)" rescan button.
+- Batch Export: `components/BatchExportModal.js` (sidebar `batch-export-button`) renders several
+  playlists to MP3/WAV in one click. Shared renderer extracted to `lib/playlistExport.js`
+  (`exportPlaylistToBlob` + `downloadBlob` + `datedFilename`), now used by both export modals.
+- Auto re-link (offline/flash-drive): Electron `hlmedia` protocol handler and `file-exists`
+  now fall back to the same filename in the CURRENT data folder if the stored absolute path
+  no longer resolves (drive letter changed) — shows never break when the stick moves.
+- Voice recorder: "File name" rename field (with .wav) now visible from the moment the modal
+  opens so DJs can pre-name a take. File: `VoiceRecorder.js`.
+- Verified (browser): ID3 read ("One More Time"/"Daft Punk"), filename parse ("Rick Astley"),
+  fallback ("Unknown artist"), inline edit + persistence across reload, artist search filter,
+  single + batch MP3 export downloads (bad track skipped gracefully), core playout regression.
+  Testing agent iteration_9.json: ~95% (only flagged voice-name visibility, now fixed).
+- Desktop build note: `electron/main.js` + `preload.js` + `lib/platform.js` changes are
+  build-ready (no new deps). Portable .exe/.dmg build runs via GitHub Actions
+  (`.github/workflows/build-desktop.yml`) — trigger with "Save to GitHub".
