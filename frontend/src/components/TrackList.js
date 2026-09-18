@@ -18,6 +18,7 @@ import {
   Tags,
   Check,
   Radio,
+  Sparkles,
 } from "lucide-react";
 import { formatTime, formatTotal } from "../lib/format";
 import { camelotCompatible } from "../lib/key";
@@ -52,6 +53,7 @@ export default function TrackList({
   onUpdateTrackInfo,
   onRescan,
   onBulkEdit,
+  onEnergySort,
 }) {
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -303,6 +305,14 @@ export default function TrackList({
           title="Bulk-edit artist & song titles for the whole playlist"
         >
           <Tags size={16} /> Bulk Edit
+        </button>
+        <button
+          data-testid="energy-sort-button"
+          onClick={onEnergySort}
+          className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[var(--hl-cue)] text-sm text-[var(--hl-cue)] hover:bg-[rgba(46,229,196,0.12)]"
+          title="Smart Sort — reorder this playlist to flow by tempo & musical key"
+        >
+          <Sparkles size={16} /> Smart Sort
         </button>
         <button
           data-testid="record-voice-button"

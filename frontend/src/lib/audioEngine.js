@@ -55,6 +55,17 @@ export default class AudioEngine {
     this._nudgeTimer = null;
     this._onairBpm = null;
     this._standbyBpm = null;
+    // Recorder / program bus
+    this._programSink = "";
+    this._recCtx = null;
+    this._recMaster = null;
+    this._recDest = null;
+    this._recorder = null;
+    this._recChunks = [];
+    this._micStream = null;
+    this._micSrc = null;
+    this._recStartTs = 0;
+    this._recSourced = null;
     this._bind();
   }
 
@@ -183,6 +194,11 @@ export default class AudioEngine {
   }
 
   async setMainSink(deviceId) {
+    this._programSink = deviceId || "";
+    if (this._recCtx) {
+      await this._applyCtxSink(this._programSink);
+      return;
+    }
     for (const el of [this.a, this.b]) {
       if (typeof el.setSinkId === "function") {
         try {
@@ -215,12 +231,7 @@ export default class AudioEngine {
     this.active.src = url;
     this._setVol(this.active, this._effVol());
     const track = this.queue[i];
-    const startAt =
-      track && track.cueIn != null
-        ? track.cueIn
-        : this.trimSilence && track && track.leadIn
-        ? track.leadIn
-        : 0;
+    const startAt = this._startAt(track);
     if (startAt > 0) {
       const onMeta = () => {
         try {
@@ -244,6 +255,15 @@ export default class AudioEngine {
       /* ignore */
     }
     this._emit();
+  }
+
+  // Where a track should start from: first hot-cue → trim In → detected lead-in → 0.
+  _startAt(track) {
+    if (!track) return 0;
+    if (Array.isArray(track.cuePoints) && track.cuePoints.length) return track.cuePoints[0];
+    if (track.cueIn != null) return track.cueIn;
+    if (this.trimSilence && track.leadIn) return track.leadIn;
+    return 0;
   }
 
   async togglePlay() {
@@ -422,12 +442,7 @@ export default class AudioEngine {
     this.idle.pause();
     this.idle.src = url;
     this._setVol(this.idle, 0);
-    const startAt =
-      track.cueIn != null
-        ? track.cueIn
-        : this.trimSilence && track.leadIn
-        ? track.leadIn
-        : 0;
+    const startAt = this._startAt(track);
     const onMeta = () => {
       try {
         this.idle.currentTime = startAt;
@@ -704,6 +719,157 @@ export default class AudioEngine {
       this.idle.playbackRate = base;
       this._nudgeTimer = null;
     }, 260);
+  }
+
+  // ---- One-Tap Mix: arm next, auto-sync, and take on the next downbeat ----
+  async oneTapMix() {
+    if (!this.standbyArmed) {
+      const i = this.index + 1;
+      if (i < 0 || i >= this.queue.length) return;
+      await this.loadStandby(this.queue[i]);
+    }
+    await this.syncStandby();
+    const air = this.queue[this.index];
+    const bpm = this._onairBpm || (air && this._bpmCache[air.id]) || 120;
+    const beat = 60 / bpm;
+    const now = this.active.currentTime || 0;
+    let delay = beat - (now % beat);
+    if (delay < 0.05) delay += beat;
+    setTimeout(() => {
+      if (this.standbyArmed) this.takeStandby(this.crossfadeSeconds);
+    }, delay * 1000);
+  }
+
+  // ---- Session recorder (program bus + mic → single file) ----
+  _ensureProgramGraph() {
+    if (this._recCtx) return this._recCtx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    const ctx = new AC();
+    const master = ctx.createGain();
+    master.gain.value = 1;
+    master.connect(ctx.destination);
+    this._recCtx = ctx;
+    this._recMaster = master;
+    this._recSourced = new WeakSet();
+    this._routeElement(this.a);
+    this._routeElement(this.b);
+    if (this._programSink) this._applyCtxSink(this._programSink);
+    return ctx;
+  }
+
+  _routeElement(el) {
+    if (!this._recCtx || !el || this._recSourced.has(el)) return;
+    try {
+      const src = this._recCtx.createMediaElementSource(el);
+      src.connect(this._recMaster);
+      this._recSourced.add(el);
+    } catch {
+      /* already sourced / tainted */
+    }
+  }
+
+  // Route ad-hoc elements (jingles, rolls) into the program bus so they're
+  // heard AND captured while a recording graph exists.
+  captureElement(el) {
+    if (this._recCtx) this._routeElement(el);
+  }
+
+  async _applyCtxSink(deviceId) {
+    if (this._recCtx && typeof this._recCtx.setSinkId === "function") {
+      try {
+        await this._recCtx.setSinkId(deviceId || "");
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  async startRecording({ mic = true } = {}) {
+    const ctx = this._ensureProgramGraph();
+    if (!ctx) throw new Error("Audio recording is not supported here.");
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* ignore */
+      }
+    }
+    this._recDest = ctx.createMediaStreamDestination();
+    this._recMaster.connect(this._recDest);
+    this._micStream = null;
+    this._micSrc = null;
+    if (mic) {
+      try {
+        this._micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        });
+        this._micSrc = ctx.createMediaStreamSource(this._micStream);
+        this._micSrc.connect(this._recDest); // recorder only — never to speakers
+      } catch {
+        this._micStream = null; // graceful: music-only
+      }
+    }
+    const mime = window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    this._recChunks = [];
+    this._recorder = new MediaRecorder(this._recDest.stream, { mimeType: mime });
+    this._recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size) this._recChunks.push(e.data);
+    };
+    this._recorder.start(1000);
+    this._recStartTs = Date.now();
+    return { mic: !!this._micStream };
+  }
+
+  isRecording() {
+    return !!(this._recorder && this._recorder.state === "recording");
+  }
+
+  recordingElapsed() {
+    return this.isRecording() ? (Date.now() - this._recStartTs) / 1000 : 0;
+  }
+
+  stopRecording() {
+    return new Promise((resolve) => {
+      const rec = this._recorder;
+      if (!rec) {
+        resolve(null);
+        return;
+      }
+      rec.onstop = () => {
+        const blob = new Blob(this._recChunks, {
+          type: (this._recChunks[0] && this._recChunks[0].type) || "audio/webm",
+        });
+        try {
+          this._recMaster.disconnect(this._recDest);
+        } catch {
+          /* ignore */
+        }
+        try {
+          if (this._micSrc) this._micSrc.disconnect();
+        } catch {
+          /* ignore */
+        }
+        try {
+          if (this._micStream) this._micStream.getTracks().forEach((t) => t.stop());
+        } catch {
+          /* ignore */
+        }
+        this._recorder = null;
+        this._recDest = null;
+        this._micSrc = null;
+        this._micStream = null;
+        this._recChunks = [];
+        resolve(blob);
+      };
+      try {
+        rec.stop();
+      } catch {
+        resolve(null);
+      }
+    });
   }
 
   _emitStandby() {

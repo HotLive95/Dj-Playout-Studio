@@ -251,6 +251,8 @@ function App() {
   const [currentPeaks, setCurrentPeaks] = useState(null);
   const [standbyPeaks, setStandbyPeaks] = useState(null);
   const [rollingPads, setRollingPads] = useState([]);
+  const [recording, setRecording] = useState(false);
+  const [recSec, setRecSec] = useState(0);
   const [micLive, setMicLive] = useState(false);
   const [license, setLicenseState] = useState(undefined);
   const [keyManagerOpen, setKeyManagerOpen] = useState(false);
@@ -788,6 +790,10 @@ function App() {
         case "Backslash":
           e.preventDefault();
           if (eng.standbyArmed) eng.takeStandby();
+          break;
+        case "KeyM":
+          e.preventDefault();
+          eng.oneTapMix();
           break;
         default:
           if (/^Digit[1-6]$/.test(e.code)) {
@@ -1370,6 +1376,7 @@ function App() {
     if (!url) return;
     const a = new Audio(url);
     a.volume = typeof j.volume === "number" ? j.volume : 1;
+    engineRef.current?.captureElement(a);
     activeJinglesRef.current.push(a);
     setJingleActive(true);
     a.onended = () => {
@@ -1445,6 +1452,7 @@ function App() {
     const intervalMs = Math.max(50, (60 / bpm) * div * 1000);
     const a = new Audio(url);
     a.volume = typeof j.volume === "number" ? j.volume : 1;
+    engineRef.current?.captureElement(a);
     const fire = () => {
       try {
         a.currentTime = 0;
@@ -1466,6 +1474,100 @@ function App() {
     currentTrack && standbyTrackObj
       ? camelotCompatible(currentTrack.camelot, standbyTrackObj.camelot)
       : null;
+
+  // ---- Hot-cue points (set while pre-listening; used as the arm/take start) ----
+  const setCuePoint = () => {
+    const id = cue.trackId;
+    if (!id) return;
+    const t = Math.round((cue.currentTime || 0) * 100) / 100;
+    setTracks((prev) => {
+      const tr = prev[id];
+      if (!tr) return prev;
+      const pts = [...(tr.cuePoints || []), t]
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .sort((x, y) => x - y)
+        .slice(0, 4);
+      return { ...prev, [id]: { ...tr, cuePoints: pts } };
+    });
+    setBanner(`Hot cue set at ${formatTime(t)}`);
+  };
+  const clearCuePoints = () => {
+    const id = cue.trackId;
+    if (!id) return;
+    setTracks((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], cuePoints: [] } } : prev));
+  };
+  const jumpCue = (t) => cueSeek(t);
+
+  // ---- One-Tap Mix ----
+  const oneTapMix = () => engineRef.current?.oneTapMix();
+
+  // ---- Energy Sort: reorder the current playlist to flow by tempo + key ----
+  const energySort = () => {
+    if (!currentPlaylist) return;
+    const items = currentPlaylist.trackIds.map((id) => tracks[id]).filter(Boolean);
+    const withData = items.filter((t) => t.bpm > 0);
+    const noData = items.filter((t) => !(t.bpm > 0));
+    if (withData.length < 3) {
+      setBanner("Still analyzing tempo/key — try again in a moment.");
+      return;
+    }
+    withData.sort((a, b) => a.bpm - b.bpm);
+    const ordered = [withData.shift()];
+    while (withData.length) {
+      const last = ordered[ordered.length - 1];
+      let bi = 0;
+      let bc = Infinity;
+      withData.forEach((t, i) => {
+        const bpmCost = Math.abs((t.bpm || last.bpm) - last.bpm);
+        const harm = camelotCompatible(last.camelot, t.camelot) ? 0 : 8;
+        const c = bpmCost + harm;
+        if (c < bc) {
+          bc = c;
+          bi = i;
+        }
+      });
+      ordered.push(withData.splice(bi, 1)[0]);
+    }
+    const newIds = [...ordered.map((t) => t.id), ...noData.map((t) => t.id)];
+    setPlaylists((prev) =>
+      prev.map((p) => (p.id === currentPlaylist.id ? { ...p, trackIds: newIds } : p))
+    );
+    setBanner("✨ Playlist re-sorted for smooth tempo & harmonic flow");
+  };
+
+  // ---- Session recorder ----
+  const toggleRecord = async () => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    if (eng.isRecording()) {
+      const blob = await eng.stopRecording();
+      setRecording(false);
+      setRecSec(0);
+      if (blob && blob.size) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const stamp = new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", "");
+        a.href = url;
+        a.download = `Hot Live 95 Session ${stamp}.webm`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 6000);
+        setBanner("🎙 Session saved — downloading your show archive");
+      }
+    } else {
+      try {
+        const { mic } = await eng.startRecording({ mic: true });
+        setRecording(true);
+        setBanner(mic ? "● Recording session (music + mic)" : "● Recording session (music only — mic unavailable)");
+      } catch {
+        setBanner("Recording isn't supported in this browser.");
+      }
+    }
+  };
+  useEffect(() => {
+    if (!recording) return;
+    const id = setInterval(() => setRecSec(engineRef.current?.recordingElapsed() || 0), 500);
+    return () => clearInterval(id);
+  }, [recording]);
 
   const durationOf = useCallback(
     (pl) => pl.trackIds.reduce((sum, id) => sum + (tracks[id]?.duration || 0), 0),
@@ -1490,7 +1592,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} />
 
       {banner && (
         <div
@@ -1548,6 +1650,7 @@ function App() {
             onUpdateTrackInfo={updateTrackInfo}
             onRescan={() => scanAvailability(queueTracks)}
             onBulkEdit={() => setBulkOpen(true)}
+            onEnergySort={energySort}
           />
         </main>
       </div>
@@ -1586,6 +1689,7 @@ function App() {
         onToggleRoll={toggleRoll}
         autoCueNext={!!settings.autoCueNext}
         onToggleAutoCueNext={toggleAutoCueNext}
+        onOneTapMix={oneTapMix}
         airPeaks={currentPeaks}
         airProgress={playback.duration ? playback.currentTime / playback.duration : 0}
         standbyPeaks={standbyPeaks}
@@ -1605,6 +1709,10 @@ function App() {
         onProgramSink={setProgramSink}
         onCueSink={setCueSink}
         onArmStandby={armStandbyFromCue}
+        cuePoints={cueTrackObj?.cuePoints || []}
+        onSetCuePoint={setCuePoint}
+        onClearCuePoints={clearCuePoints}
+        onJumpCue={jumpCue}
       />
 
       <PlayerBar

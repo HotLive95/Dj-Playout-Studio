@@ -140,7 +140,7 @@ function BeatMeter({ getBeat, armed }) {
   );
 }
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, rollDiv, onSetRollDiv, rollingPads, onToggleRoll, autoCueNext, onToggleAutoCueNext, airPeaks, airProgress, standbyPeaks, standbyHarmonic, onStop }) {
+export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, rollDiv, onSetRollDiv, rollingPads, onToggleRoll, autoCueNext, onToggleAutoCueNext, onOneTapMix, airPeaks, airProgress, standbyPeaks, standbyHarmonic, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -491,6 +491,15 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
         >
           <ArrowLeftRight size={15} />
           <span className="text-[9px] font-700 tracking-widest">TAKE</span>
+        </button>
+        <button
+          data-testid="one-tap-mix"
+          onClick={onOneTapMix}
+          className="shrink-0 flex flex-col items-center justify-center gap-0.5 h-11 px-2.5 rounded-lg border border-[var(--hl-fire)] text-[var(--hl-fire)] hover:bg-[rgba(255,90,31,0.14)] transition"
+          title="One-Tap Mix (M) — arm the next track, auto-sync, and take on the next beat"
+        >
+          <Zap size={15} />
+          <span className="text-[9px] font-700 tracking-widest">1-TAP</span>
         </button>
       </div>
 

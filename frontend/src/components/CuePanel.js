@@ -1,5 +1,5 @@
 import React from "react";
-import { Headphones, Play, Pause, Square, Radio } from "lucide-react";
+import { Headphones, Play, Pause, Square, Radio, Flag, X } from "lucide-react";
 import { formatTime } from "../lib/format";
 
 export default function CuePanel({
@@ -14,6 +14,10 @@ export default function CuePanel({
   onProgramSink,
   onCueSink,
   onArmStandby,
+  cuePoints,
+  onSetCuePoint,
+  onClearCuePoints,
+  onJumpCue,
 }) {
   const pct = cue.duration ? (cue.currentTime / cue.duration) * 100 : 0;
   const hasDevices = devices && devices.length > 0;
@@ -71,6 +75,37 @@ export default function CuePanel({
           <span className="text-xs text-[var(--hl-muted)] tabular-nums">
             {formatTime(cue.duration)}
           </span>
+          <div className="flex items-center gap-1 shrink-0" data-testid="cue-points">
+            <button
+              data-testid="cue-set-point"
+              onClick={onSetCuePoint}
+              className="h-8 px-2.5 flex items-center gap-1.5 rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] text-xs hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)]"
+              title="Set a hot-cue marker here — the track will arm & take from this spot"
+            >
+              <Flag size={13} /> Cue
+            </button>
+            {(cuePoints || []).map((t, i) => (
+              <button
+                key={i}
+                data-testid={`cue-point-${i}`}
+                onClick={() => onJumpCue(t)}
+                className="h-8 px-2 rounded-md bg-[rgba(255,90,31,0.14)] border border-[var(--hl-fire)] text-[var(--hl-fire)] text-[11px] tabular-nums hover:brightness-125"
+                title={`Jump to hot cue ${i + 1} (${formatTime(t)})${i === 0 ? " — start point" : ""}`}
+              >
+                {i + 1}·{formatTime(t)}
+              </button>
+            ))}
+            {cuePoints && cuePoints.length > 0 && (
+              <button
+                data-testid="cue-points-clear"
+                onClick={onClearCuePoints}
+                className="h-8 w-8 grid place-items-center rounded-md text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
+                title="Clear hot cues"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
           <button
             data-testid="cue-to-standby-button"
             onClick={onArmStandby}

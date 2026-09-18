@@ -1,7 +1,11 @@
 import React from "react";
-import { KeyRound, IdCard, Search, X } from "lucide-react";
+import { KeyRound, IdCard, Search, X, Circle, Square } from "lucide-react";
 
-export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus }) {
+export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord }) {
+  const fmtRec = (s) => {
+    const t = Math.floor(s || 0);
+    return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+  };
   return (
     <header
       data-testid="app-header"
@@ -52,6 +56,30 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
+        <button
+          data-testid="record-session-button"
+          onClick={onToggleRecord}
+          className={`h-9 px-3 flex items-center gap-1.5 rounded-md border text-xs font-600 transition ${
+            recording
+              ? "border-[var(--hl-onair)] bg-[rgba(255,23,68,0.15)] text-[var(--hl-onair)]"
+              : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:border-[var(--hl-onair)]"
+          }`}
+          title={recording ? "Stop & download the session recording" : "Record the whole session (music + mic) to a file"}
+        >
+          {recording ? (
+            <>
+              <Square size={13} className="fill-current" />
+              <span className="tabular-nums" data-testid="record-timer">
+                {fmtRec(recSec)}
+              </span>
+            </>
+          ) : (
+            <>
+              <Circle size={13} className="fill-[var(--hl-onair)] text-[var(--hl-onair)]" />
+              REC
+            </>
+          )}
+        </button>
         <button
           data-testid="open-license-status"
           onClick={onOpenLicenseStatus}
