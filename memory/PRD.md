@@ -586,3 +586,8 @@ Root causes (two distinct offline-path bugs):
   corners) for Mac(.icns)/Linux + the Electron BrowserWindow icon. Paths already wired in electron/package.json + main.js.
 - Refreshed frontend/public icons to match: icon-192.png, icon-512.png, icon-maskable-512.png (dark full-bleed),
   icon.jpg favicon. manifest filenames unchanged.
+
+## App icon replaced with user-provided art (2026-06)
+- Replaced the icon set with the user's supplied fire + play + equalizer emblem (dark rounded tile).
+- Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
+  then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
