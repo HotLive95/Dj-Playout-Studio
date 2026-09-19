@@ -49,9 +49,23 @@ export async function exportPlaylistToBlob({
       skipped.push(items[i].name);
       continue;
     }
-    const inP = items[i].cueIn != null ? Math.max(0, items[i].cueIn) : 0;
-    const outP = items[i].cueOut != null ? items[i].cueOut : buf.duration;
-    decoded.push({ buf, offset: inP, dur: Math.max(0.05, outP - inP) });
+    const dur0 = Number.isFinite(buf.duration) ? buf.duration : 0;
+    if (dur0 <= 0) {
+      skipped.push(items[i].name);
+      continue;
+    }
+    // Clamp In/Out to the REAL decoded length — a stored cueOut/duration can be
+    // corrupt (e.g. wrong units), which otherwise blows up the render length.
+    let inP = items[i].cueIn != null ? Math.max(0, items[i].cueIn) : 0;
+    let outP = items[i].cueOut != null ? items[i].cueOut : dur0;
+    inP = Math.min(inP, Math.max(0, dur0 - 0.05));
+    outP = Math.min(Math.max(inP + 0.05, outP), dur0);
+    const dur = outP - inP;
+    if (!Number.isFinite(dur) || dur <= 0) {
+      skipped.push(items[i].name);
+      continue;
+    }
+    decoded.push({ buf, offset: inP, dur });
   }
 
   if (decoded.length === 0) {
@@ -71,11 +85,31 @@ export async function exportPlaylistToBlob({
     starts[i] = starts[i - 1] + durs[i - 1] - gap;
   }
   const totalSec = starts[n - 1] + durs[n - 1];
+
+  // Guard against an impossible render length (corrupt data or too-long export).
+  const MAX_SEC = 6 * 3600; // 6 hours
+  if (!Number.isFinite(totalSec) || totalSec <= 0) {
+    throw new Error("Couldn't work out the length of this mix — one or more tracks reported an invalid duration. Re-import the affected files and try again.");
+  }
+  if (totalSec > MAX_SEC) {
+    throw new Error(
+      `This export is too long to render in one file (${Math.round(totalSec / 60)} min). Split the playlist into smaller parts and export again.`
+    );
+  }
+
   onStatus(`Rendering ${Math.round(totalSec)}s of audio…`);
   onProgress(60);
 
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const oac = new OAC(2, Math.max(1, Math.ceil(totalSec * targetSR)), targetSR);
+  const frames = Math.max(1, Math.ceil(totalSec * targetSR));
+  let oac;
+  try {
+    oac = new OAC(2, frames, targetSR);
+  } catch (e) {
+    throw new Error(
+      "This mix is too large to render in the browser. Try exporting fewer tracks at a time."
+    );
+  }
   for (let i = 0; i < n; i++) {
     const d = decoded[i];
     const startAt = starts[i];
