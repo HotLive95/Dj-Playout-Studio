@@ -325,11 +325,10 @@ export default function TrackList({
         <button
           data-testid="export-playlist-button"
           onClick={onExportPlaylist}
-          disabled={items.length === 0}
-          className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-amber)] disabled:opacity-40"
-          title="Export this playlist to a shareable file"
+          className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[var(--hl-line)] text-sm hover:border-[var(--hl-amber)]"
+          title="Share your whole show (all playlists + jingles) as a .hl95playout file to send to other DJs"
         >
-          <Share2 size={16} /> Share
+          <Share2 size={16} /> Share Show
         </button>
         </div>
       </div>

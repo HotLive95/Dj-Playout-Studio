@@ -1073,69 +1073,185 @@ function App() {
     setBanner("");
   };
 
-  // ---------------- Share ----------------
-  const exportPlaylist = async () => {
-    if (!currentPlaylist || !currentPlaylist.trackIds.length) return;
-    setBanner("Packaging playlist for sharing…");
-    const out = { app: "hotlive95", version: 1, name: currentPlaylist.name, schedule: currentPlaylist.schedule, tracks: [] };
-    for (const id of currentPlaylist.trackIds) {
+  // ---------------- Share (whole studio → .hl95playout) ----------------
+  const shareStudio = async () => {
+    if (!playlists.length) {
+      setBanner("Add a playlist first, then share your show.");
+      return;
+    }
+    setBanner("Packaging your whole show…");
+    const usedIds = new Set();
+    playlists.forEach((p) => (p.trackIds || []).forEach((id) => usedIds.add(id)));
+    const out = {
+      app: "hotlive95",
+      kind: "studio",
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      playlists: playlists.map((p) => ({
+        name: p.name,
+        schedule: p.schedule || null,
+        trackRefs: [...(p.trackIds || [])],
+      })),
+      tracks: [],
+      jingles: [],
+    };
+    for (const id of usedIds) {
       const t = tracks[id];
       if (!t) continue;
-      const url = await platform.getUrl(t);
-      const blob = await (await fetch(url)).blob();
-      out.tracks.push({
-        name: t.name,
-        title: t.title,
-        artist: t.artist,
-        art: t.art,
-        type: t.type || blob.type,
-        duration: t.duration,
-        leadIn: t.leadIn,
-        tailStart: t.tailStart,
-        data: await blobToB64(blob),
-      });
+      try {
+        const url = await platform.getUrl(t);
+        const blob = await (await fetch(url)).blob();
+        out.tracks.push({
+          refId: id,
+          name: t.name,
+          title: t.title,
+          artist: t.artist,
+          art: t.art,
+          type: t.type || blob.type,
+          duration: t.duration,
+          leadIn: t.leadIn,
+          tailStart: t.tailStart,
+          cueIn: t.cueIn,
+          cueOut: t.cueOut,
+          cuePoints: t.cuePoints || [],
+          bpm: t.bpm,
+          camelot: t.camelot,
+          keyName: t.keyName,
+          volume: t.volume,
+          data: await blobToB64(blob),
+        });
+      } catch {
+        /* skip a track whose file is missing */
+      }
+    }
+    for (let i = 0; i < jingles.length; i++) {
+      const j = jingles[i];
+      if (!j) continue;
+      try {
+        const url = await platform.getUrl(j);
+        const blob = await (await fetch(url)).blob();
+        out.jingles.push({
+          index: i,
+          name: j.name,
+          type: j.type || blob.type,
+          volume: typeof j.volume === "number" ? j.volume : 1,
+          data: await blobToB64(blob),
+        });
+      } catch {
+        /* skip a jingle whose file is missing */
+      }
     }
     const jsonBlob = new Blob([JSON.stringify(out)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(jsonBlob);
-    a.download = `${currentPlaylist.name}.hlp.json`;
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.download = `Hot Live 95 Show ${stamp}.hl95playout`;
     a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    setBanner("");
+    setTimeout(() => URL.revokeObjectURL(a.href), 6000);
+    setBanner(
+      `Show packaged — ${out.playlists.length} playlist(s), ${out.tracks.length} tracks, ${out.jingles.length} jingles. Send the .hl95playout file to any DJ.`
+    );
+  };
+
+  // Rebuild a shared track (with all its settings) into local storage.
+  const materializeTrack = async (t) => {
+    const blob = b64ToBlob(t.data, t.type || "audio/mpeg");
+    const derived = await deriveNames(blob, t.name);
+    const common = {
+      name: t.name,
+      title: t.title || derived.title,
+      artist: t.artist || derived.artist,
+      art: t.art || derived.art,
+      duration: t.duration,
+      leadIn: t.leadIn,
+      tailStart: t.tailStart,
+      cueIn: t.cueIn,
+      cueOut: t.cueOut,
+      cuePoints: t.cuePoints || [],
+      bpm: t.bpm,
+      camelot: t.camelot,
+      keyName: t.keyName,
+      volume: t.volume,
+    };
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(t.name, blob);
+      return { id: d.id, path: d.path, size: d.size, type: t.type, ...common };
+    }
+    const id = uid();
+    await putBlob(id, blob);
+    return { id, type: t.type, ...common };
+  };
+
+  const materializeJingle = async (jd) => {
+    const blob = b64ToBlob(jd.data, jd.type || "audio/mpeg");
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(jd.name, blob);
+      return { id: d.id, name: jd.name, path: d.path, volume: jd.volume ?? 1 };
+    }
+    const id = uid();
+    await putBlob(id, blob);
+    return { id, name: jd.name, type: jd.type, volume: jd.volume ?? 1 };
   };
 
   const importPlaylist = async (file) => {
-    setBanner("Importing shared playlist…");
+    setBanner("Importing shared show…");
     let data;
     try {
       data = JSON.parse(await file.text());
     } catch {
-      setBanner("That file is not a valid Hot Live 95 playlist.");
+      setBanner("That file isn't a valid Hot Live 95 show.");
       return;
     }
-    if (!data?.tracks) {
-      setBanner("That file is not a valid Hot Live 95 playlist.");
+    if (!data || data.app !== "hotlive95" || (!data.tracks && !data.playlists)) {
+      setBanner("That file isn't a valid Hot Live 95 show.");
       return;
     }
+
+    // Full-studio format (v2): all playlists + jingles, with complete track settings.
+    if (data.kind === "studio" || Array.isArray(data.playlists)) {
+      const refMap = {};
+      const newTracks = {};
+      for (const t of data.tracks || []) {
+        const meta = await materializeTrack(t);
+        newTracks[meta.id] = meta;
+        if (t.refId != null) refMap[t.refId] = meta.id;
+      }
+      const newPlaylists = (data.playlists || []).map((p) => ({
+        id: uid(),
+        name: p.name || "Imported Playlist",
+        schedule: p.schedule || undefined,
+        trackIds: (p.trackRefs || p.trackIds || []).map((r) => refMap[r]).filter(Boolean),
+      }));
+      const importedJingles = [];
+      for (const jd of data.jingles || []) {
+        importedJingles.push({ index: jd.index, j: await materializeJingle(jd) });
+      }
+      setTracks((prev) => ({ ...prev, ...newTracks }));
+      setPlaylists((prev) => [...prev, ...newPlaylists]);
+      if (importedJingles.length) {
+        setJingles((prev) => {
+          const n = [...prev];
+          while (n.length < 6) n.push(undefined);
+          importedJingles.forEach(({ index, j }) => {
+            let slot =
+              index >= 0 && index < 6 && !n[index] ? index : n.findIndex((x, i) => i < 6 && !x);
+            if (slot >= 0 && slot < 6) n[slot] = j;
+          });
+          return n;
+        });
+      }
+      if (newPlaylists[0]) setCurrentPlaylistId(newPlaylists[0].id);
+      setBanner(
+        `Imported show — ${newPlaylists.length} playlist(s), ${Object.keys(newTracks).length} tracks, ${importedJingles.length} jingles`
+      );
+      return;
+    }
+
+    // Legacy single-playlist format (v1).
     const newTracks = {};
     const ids = [];
     for (const t of data.tracks) {
-      const blob = b64ToBlob(t.data, t.type || "audio/mpeg");
-      const derived = await deriveNames(blob, t.name);
-      const names = {
-        title: t.title || derived.title,
-        artist: t.artist || derived.artist,
-        art: t.art || derived.art,
-      };
-      let meta;
-      if (platform.isElectron) {
-        const d = await platform.saveMedia(t.name, blob);
-        meta = { id: d.id, name: t.name, path: d.path, size: d.size, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist, art: names.art };
-      } else {
-        const id = uid();
-        await putBlob(id, blob);
-        meta = { id, name: t.name, type: t.type, duration: t.duration, leadIn: t.leadIn, tailStart: t.tailStart, title: names.title, artist: names.artist, art: names.art };
-      }
+      const meta = await materializeTrack(t);
       newTracks[meta.id] = meta;
       ids.push(meta.id);
     }
@@ -1645,7 +1761,7 @@ function App() {
             onCueTrack={cueTrack}
             onArmStandby={armStandby}
             onEditTrack={(i) => setEditorTrack(queueTracks[i])}
-            onExportPlaylist={exportPlaylist}
+            onExportPlaylist={shareStudio}
             onRecordVoice={() => setVoiceOpen(true)}
             missingIds={missingIds}
             onUpdateTrackInfo={updateTrackInfo}

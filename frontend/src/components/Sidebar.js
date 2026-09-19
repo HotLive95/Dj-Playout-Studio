@@ -62,7 +62,7 @@ export default function Sidebar({
           <input
             ref={importRef}
             type="file"
-            accept=".json,application/json"
+            accept=".hl95playout,.hlp.json,.json,application/json"
             className="hidden"
             data-testid="import-playlist-input"
             onChange={(e) => {
@@ -74,7 +74,7 @@ export default function Sidebar({
             data-testid="import-playlist-button"
             onClick={() => importRef.current?.click()}
             className="h-7 w-7 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)] transition"
-            title="Import a shared playlist"
+            title="Import a shared show (.hl95playout) from another DJ"
           >
             <FolderDown size={15} />
           </button>
