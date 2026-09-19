@@ -569,3 +569,13 @@ Root causes (two distinct offline-path bugs):
   (engine.oneTapMix). captureElement routes jingles/rolls into the record bus.
 - Verified E2E (testing agent iteration_16, 100% after fix): testing agent fixed a missing
   `import { formatTime }` in App.js. All four features work with zero runtime errors; regressions clean.
+
+## Desktop-build repo prep (2026-06)
+- Added microphone permission handler in electron/main.js (session.setPermissionRequestHandler/
+  setPermissionCheckHandler → true) so the new session Recorder can capture mic in the packaged app.
+- Removed the stale committed electron/renderer bundle and gitignored electron/renderer/ + electron/dist/
+  (both are regenerated fresh by build.sh and the GitHub Actions workflow on every build).
+- Added /app/DESKTOP_BUILD.md: Save to GitHub → Actions "Build Desktop Apps" → download .exe/.dmg;
+  plus how to enable online features via HotLive95Data/license-server.txt and optional code signing.
+- Verified: electron/main.js and preload.js pass node --check; .env/secrets already gitignored;
+  workflow builds frontend (PUBLIC_URL=./) → copies to renderer → packages win+mac → uploads artifacts.

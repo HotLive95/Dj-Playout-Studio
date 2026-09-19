@@ -1,5 +1,5 @@
 // Hot Live 95 — DJ Playout Studio  |  Electron main process (offline desktop app)
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, session } = require("electron");
 const path = require("path");
 const { pathToFileURL } = require("url");
 const fs = require("fs");
@@ -50,6 +50,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // This is a trusted, local, offline app. Grant media (microphone) so the
+  // session Recorder can capture the DJ's voice; deny nothing that it needs.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(true);
+  });
+  if (session.defaultSession.setPermissionCheckHandler) {
+    session.defaultSession.setPermissionCheckHandler(() => true);
+  }
+
   protocol.handle("hlmedia", (request) => {
     try {
       // URL form: hlmedia://local/<encodeURIComponent(full native path)>

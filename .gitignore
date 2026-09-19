@@ -84,6 +84,9 @@ android-sdk/
 # overlay black-box crash/user-report dumps — session data, never history
 **/.emergent/recordings/
 electron/node_modules/electron/dist/electron
+# Desktop build outputs (regenerated fresh by build.sh / GitHub Actions)
+electron/renderer/
+electron/dist/
 .env
 .env.*
 *.env
