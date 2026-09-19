@@ -579,3 +579,10 @@ Root causes (two distinct offline-path bugs):
   plus how to enable online features via HotLive95Data/license-server.txt and optional code signing.
 - Verified: electron/main.js and preload.js pass node --check; .env/secrets already gitignored;
   workflow builds frontend (PUBLIC_URL=./) → copies to renderer → packages win+mac → uploads artifacts.
+
+## App icons (2026-06)
+- Generated a branded Hot Live 95 icon (fire/amber mic + radio waves + "95", cyan rim, dark rounded tile).
+- electron/build-assets/icon.ico (multi-size 16-256) for Windows; icon.png (1024, rounded transparent
+  corners) for Mac(.icns)/Linux + the Electron BrowserWindow icon. Paths already wired in electron/package.json + main.js.
+- Refreshed frontend/public icons to match: icon-192.png, icon-512.png, icon-maskable-512.png (dark full-bleed),
+  icon.jpg favicon. manifest filenames unchanged.
