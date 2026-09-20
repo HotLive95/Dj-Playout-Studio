@@ -592,7 +592,30 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Share upgraded to full-studio .hl95playout (2026-06)
+## Save/Load single playlist (.hl95playlist) + voice metadata in shares (2026-06)
+- New per-playlist "Save Playlist" button on each Sidebar row (data-testid `save-playlist-{id}`, Save
+  icon, disabled when empty) writes a `.hl95playlist` file: that playlist's exact song ORDER + embedded
+  base64 audio (wave files) + all per-track settings (cueIn/cueOut, cuePoints, bpm, camelot, keyName,
+  volume, leadIn/tailStart, title/artist/art/duration). Reloading restores it exactly.
+- Refactored export into `buildStudioExport(plList, includeJingles)` shared by `shareStudio()`
+  (whole studio → .hl95playout, kind "studio") and `savePlaylistFile(id)` (one playlist → .hl95playlist,
+  kind "playlist"). Both now also carry voice-booth `transcript` + a `voice` flag per track so voice
+  drop-ins / micro-edited takes travel to co-hosts complete with captions. `materializeTrack` restores
+  transcript + re-tags artist "Voice".
+- Import ("Load"): `importPlaylist` accepts .hl95playlist/.hl95playout/.hlp.json/.json. For every incoming
+  playlist whose name already exists it now ASKS EACH TIME via window.confirm — OK = Replace the existing
+  playlist (keeps its id, swaps order/tracks/schedule), Cancel = Add as a separate copy. Focuses the first
+  added/replaced playlist. Backward-compatible with legacy v1/v2 formats.
+- Verified E2E (testing agent iteration_17, 100%): save→JSON schema (order + base64 audio + transcript/voice
+  keys), empty-playlist Save disabled, Add-copy vs Replace confirm paths, Share Show carries transcript/voice.
+  Minor optional note (not fixed): some undefined numeric fields are omitted by JSON.stringify rather than
+  serialized as null — harmless, keys with explicit defaults (cuePoints/transcript/voice) always present.
+
+## Admin passphrase reset (2026-06)
+- Admin passphrase changed from `Hotlive95dj1108**` to `1972Hotlive95dj1108**` in frontend
+  `KeyManager.js` (ADMIN_PASS), `backend/server.py` default, and `backend/.env` (ADMIN_TOKEN).
+  Backend restarted + curl-verified: new → 200, old → 401. test_credentials.md updated.
+
 - The Share button ("Share Show") now exports the WHOLE studio into a single branded .hl95playout file:
   all playlists (order + schedule), every referenced track with COMPLETE settings (cuePoints, cueIn/cueOut,
   bpm, camelot, keyName, per-track volume, leadIn/tailStart, title/artist/art/duration + embedded base64 audio),

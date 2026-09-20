@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only E2E test of new Save/Load Playlist file feature (.hl95playlist) and Share Show (.hl95playout) with voice-booth metadata. Activated with offline key, created a playlist with 3 synthetic WAV tracks, saved to a .hl95playlist file, validated JSON schema (app/kind/trackRefs/order/base64 audio/transcript/voice keys). Verified Save button is disabled for empty playlists. Verified window.confirm ADD-as-copy (Cancel) and REPLACE (OK) paths behave correctly with correct playlist counts. Share Show export validated to include transcript+voice keys on every track. Regression check on track click passed. All feature acceptance criteria met.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional (minor code quality): In buildStudioExport (App.js ~L1112), track fields cueIn/cueOut/leadIn/tailStart/bpm are omitted from JSON when undefined on the source (JSON.stringify drops undefined). Consider serializing them as null (or defaulting to 0/'' ) so the export schema is stable and downstream consumers can rely on the keys existing. `cuePoints`, `transcript`, and `voice` are always present due to explicit defaults."
+  ],
+  "critical_code_review_comments": [
+    "App.js is very large (~2079 lines). Consider splitting share/save/import into its own module for maintainability.",
+    "Existing hydration warning in console: '<span> cannot be a child of <option>' from an old React SSR hydration check — not blocking but should be cleaned up.",
+    "Optional-field serialization inconsistency: buildStudioExport writes some numeric fields as `undefined`; JSON.stringify omits them, so exported track objects have varying key sets. Consider normalizing to null."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "test_credentials": "Offline license key Q61VK-G819N-40K1B-H226T (from review_request)",
+  "seed_data_creation": "Generated 3 tiny valid PCM WAV files in /tmp/wavs/ (tone_0/1/2.wav @ 440/660/880Hz, 1s, 8kHz mono) used for track upload. Saved playlist file at /tmp/saved_playlist.hl95playlist (~65KB) and studio export at /tmp/show.hl95playout for spot-checking.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Save Playlist / Load Playlist / Share Show flows all validated. To re-run: use offline key Q61VK-G819N-40K1B-H226T; on License Gate first Activate then check legal-agree-checkbox and click legal-accept-button. Save/import buttons in Sidebar are hover-visible (opacity-0 group-hover:opacity-100) — use force=True click. window.confirm must be handled via page.on('dialog') with dialog.accept()=replace / dialog.dismiss()=add-copy. Files are JSON with base64-embedded audio; verify RIFF header on decoded base64.",
+  "rca of the issue": "N/A — no bugs found."
+}
