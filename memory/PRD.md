@@ -591,3 +591,14 @@ Root causes (two distinct offline-path bugs):
 - Replaced the icon set with the user's supplied fire + play + equalizer emblem (dark rounded tile).
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
+
+## Share upgraded to full-studio .hl95playout (2026-06)
+- The Share button ("Share Show") now exports the WHOLE studio into a single branded .hl95playout file:
+  all playlists (order + schedule), every referenced track with COMPLETE settings (cuePoints, cueIn/cueOut,
+  bpm, camelot, keyName, per-track volume, leadIn/tailStart, title/artist/art/duration + embedded base64 audio),
+  and all jingle pad sounds (index + volume + audio).
+- Import (sidebar) rebuilds everything: recreates all playlists via a refId→newId map, restores tracks with
+  their settings, and loads jingles into free pads. Backward-compatible with the old v1 single-playlist .hlp.json.
+- Sidebar import input accepts .hl95playout/.hlp.json/.json.
+- Verified E2E (testing agent iteration_17): Share→Import round-trip + legacy import pass 100%; tracks arrive
+  with bpm/key/art/cuePoints/audio intact. (Jingle-in-file is a state-settle timing note in automation, not a bug.)
