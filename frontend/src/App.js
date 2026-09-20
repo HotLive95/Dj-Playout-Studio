@@ -1073,21 +1073,18 @@ function App() {
     setBanner("");
   };
 
-  // ---------------- Share (whole studio → .hl95playout) ----------------
-  const shareStudio = async () => {
-    if (!playlists.length) {
-      setBanner("Add a playlist first, then share your show.");
-      return;
-    }
-    setBanner("Packaging your whole show…");
+  // ---------------- Share / Save (studio + per-playlist) ----------------
+  // Build a self-contained export bundle (embedded audio + all track settings,
+  // including voice-booth transcript + voice flag) for the given playlists.
+  const buildStudioExport = async (plList, includeJingles) => {
     const usedIds = new Set();
-    playlists.forEach((p) => (p.trackIds || []).forEach((id) => usedIds.add(id)));
+    plList.forEach((p) => (p.trackIds || []).forEach((id) => usedIds.add(id)));
     const out = {
       app: "hotlive95",
       kind: "studio",
       version: 2,
       exportedAt: new Date().toISOString(),
-      playlists: playlists.map((p) => ({
+      playlists: plList.map((p) => ({
         name: p.name,
         schedule: p.schedule || null,
         trackRefs: [...(p.trackIds || [])],
@@ -1101,6 +1098,7 @@ function App() {
       try {
         const url = await platform.getUrl(t);
         const blob = await (await fetch(url)).blob();
+        const isVoice = !!t.transcript || t.artist === "Voice";
         out.tracks.push({
           refId: id,
           name: t.name,
@@ -1118,38 +1116,82 @@ function App() {
           camelot: t.camelot,
           keyName: t.keyName,
           volume: t.volume,
+          transcript: t.transcript || "",
+          voice: isVoice,
           data: await blobToB64(blob),
         });
       } catch {
         /* skip a track whose file is missing */
       }
     }
-    for (let i = 0; i < jingles.length; i++) {
-      const j = jingles[i];
-      if (!j) continue;
-      try {
-        const url = await platform.getUrl(j);
-        const blob = await (await fetch(url)).blob();
-        out.jingles.push({
-          index: i,
-          name: j.name,
-          type: j.type || blob.type,
-          volume: typeof j.volume === "number" ? j.volume : 1,
-          data: await blobToB64(blob),
-        });
-      } catch {
-        /* skip a jingle whose file is missing */
+    if (includeJingles) {
+      for (let i = 0; i < jingles.length; i++) {
+        const j = jingles[i];
+        if (!j) continue;
+        try {
+          const url = await platform.getUrl(j);
+          const blob = await (await fetch(url)).blob();
+          out.jingles.push({
+            index: i,
+            name: j.name,
+            type: j.type || blob.type,
+            volume: typeof j.volume === "number" ? j.volume : 1,
+            data: await blobToB64(blob),
+          });
+        } catch {
+          /* skip a jingle whose file is missing */
+        }
       }
     }
-    const jsonBlob = new Blob([JSON.stringify(out)], { type: "application/json" });
+    return out;
+  };
+
+  const downloadJson = (obj, filename) => {
+    const jsonBlob = new Blob([JSON.stringify(obj)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(jsonBlob);
-    const stamp = new Date().toISOString().slice(0, 10);
-    a.download = `Hot Live 95 Show ${stamp}.hl95playout`;
+    a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 6000);
+  };
+
+  // Share the WHOLE studio → .hl95playout
+  const shareStudio = async () => {
+    if (!playlists.length) {
+      setBanner("Add a playlist first, then share your show.");
+      return;
+    }
+    setBanner("Packaging your whole show…");
+    const out = await buildStudioExport(playlists, true);
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadJson(out, `Hot Live 95 Show ${stamp}.hl95playout`);
+    const voiceCount = out.tracks.filter((t) => t.voice).length;
     setBanner(
-      `Show packaged — ${out.playlists.length} playlist(s), ${out.tracks.length} tracks, ${out.jingles.length} jingles. Send the .hl95playout file to any DJ.`
+      `Show packaged — ${out.playlists.length} playlist(s), ${out.tracks.length} tracks` +
+        (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
+        `, ${out.jingles.length} jingles. Send the .hl95playout file to any DJ.`
+    );
+  };
+
+  // Save a SINGLE playlist → .hl95playlist (song order + embedded wave files)
+  const savePlaylistFile = async (id) => {
+    const pl = playlists.find((p) => p.id === id);
+    if (!pl) return;
+    if (!(pl.trackIds || []).length) {
+      setBanner("That playlist is empty — add tracks before saving it.");
+      return;
+    }
+    setBanner(`Saving playlist "${pl.name}"…`);
+    const out = await buildStudioExport([pl], false);
+    out.kind = "playlist";
+    const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadJson(out, `${safe} ${stamp}.hl95playlist`);
+    const voiceCount = out.tracks.filter((t) => t.voice).length;
+    setBanner(
+      `Saved "${pl.name}" — ${out.tracks.length} track${out.tracks.length === 1 ? "" : "s"} in order` +
+        (voiceCount ? ` (${voiceCount} voice take${voiceCount === 1 ? "" : "s"})` : "") +
+        ". Reload this file anytime to restore it exactly."
     );
   };
 
@@ -1160,7 +1202,7 @@ function App() {
     const common = {
       name: t.name,
       title: t.title || derived.title,
-      artist: t.artist || derived.artist,
+      artist: t.artist || (t.voice ? "Voice" : derived.artist),
       art: t.art || derived.art,
       duration: t.duration,
       leadIn: t.leadIn,
@@ -1172,6 +1214,7 @@ function App() {
       camelot: t.camelot,
       keyName: t.keyName,
       volume: t.volume,
+      transcript: t.transcript || "",
     };
     if (platform.isElectron) {
       const d = await platform.saveMedia(t.name, blob);
@@ -1226,8 +1269,37 @@ function App() {
       for (const jd of data.jingles || []) {
         importedJingles.push({ index: jd.index, j: await materializeJingle(jd) });
       }
+
+      // Ask each time whether to replace a same-named playlist or add a copy.
+      const existingByName = new Map(
+        playlists.map((p) => [(p.name || "").trim().toLowerCase(), p])
+      );
+      const replacements = {};
+      const additions = [];
+      for (const np of newPlaylists) {
+        const match = existingByName.get((np.name || "").trim().toLowerCase());
+        if (
+          match &&
+          window.confirm(
+            `A playlist named "${match.name}" already exists.\n\nOK = Replace it with the loaded version\nCancel = Add it as a separate copy`
+          )
+        ) {
+          replacements[match.id] = {
+            ...match,
+            name: np.name,
+            schedule: np.schedule,
+            trackIds: np.trackIds,
+          };
+        } else {
+          additions.push(np);
+        }
+      }
+
       setTracks((prev) => ({ ...prev, ...newTracks }));
-      setPlaylists((prev) => [...prev, ...newPlaylists]);
+      setPlaylists((prev) => [
+        ...prev.map((p) => replacements[p.id] || p),
+        ...additions,
+      ]);
       if (importedJingles.length) {
         setJingles((prev) => {
           const n = [...prev];
@@ -1240,9 +1312,15 @@ function App() {
           return n;
         });
       }
-      if (newPlaylists[0]) setCurrentPlaylistId(newPlaylists[0].id);
+      const focusId = additions[0]?.id || Object.keys(replacements)[0];
+      if (focusId) setCurrentPlaylistId(focusId);
+      const replCount = Object.keys(replacements).length;
+      const voiceCount = (data.tracks || []).filter((t) => t.voice).length;
       setBanner(
-        `Imported show — ${newPlaylists.length} playlist(s), ${Object.keys(newTracks).length} tracks, ${importedJingles.length} jingles`
+        `Loaded ${newPlaylists.length} playlist(s) — ${Object.keys(newTracks).length} tracks` +
+          (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
+          (replCount ? `, ${replCount} replaced` : "") +
+          (importedJingles.length ? `, ${importedJingles.length} jingles` : "")
       );
       return;
     }
@@ -1731,6 +1809,7 @@ function App() {
           onSchedule={setScheduleForId}
           onExport={setExportForId}
           onImportPlaylist={importPlaylist}
+          onSavePlaylist={savePlaylistFile}
           onBatchExport={() => setBatchOpen(true)}
           durationOf={durationOf}
           shuffleAll={settings.shuffleAll}

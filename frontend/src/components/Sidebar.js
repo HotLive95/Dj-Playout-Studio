@@ -12,6 +12,7 @@ import {
   Shuffle,
   Download,
   DownloadCloud,
+  Save,
 } from "lucide-react";
 import { formatTotal } from "../lib/format";
 
@@ -25,6 +26,7 @@ export default function Sidebar({
   onSchedule,
   onExport,
   onImportPlaylist,
+  onSavePlaylist,
   onBatchExport,
   durationOf,
   shuffleAll,
@@ -62,7 +64,7 @@ export default function Sidebar({
           <input
             ref={importRef}
             type="file"
-            accept=".hl95playout,.hlp.json,.json,application/json"
+            accept=".hl95playout,.hl95playlist,.hlp.json,.json,application/json"
             className="hidden"
             data-testid="import-playlist-input"
             onChange={(e) => {
@@ -74,7 +76,7 @@ export default function Sidebar({
             data-testid="import-playlist-button"
             onClick={() => importRef.current?.click()}
             className="h-7 w-7 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)] transition"
-            title="Import a shared show (.hl95playout) from another DJ"
+            title="Load a saved playlist (.hl95playlist) or shared show (.hl95playout)"
           >
             <FolderDown size={15} />
           </button>
@@ -199,6 +201,18 @@ export default function Sidebar({
                     )}
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                    <button
+                      data-testid={`save-playlist-${pl.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSavePlaylist(pl.id);
+                      }}
+                      className="h-7 w-7 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-cue)] hover:bg-white/10 disabled:opacity-30"
+                      title="Save playlist to a file (song order + audio) — reload it anytime"
+                      disabled={pl.trackIds.length === 0}
+                    >
+                      <Save size={14} />
+                    </button>
                     <button
                       data-testid={`export-playlist-${pl.id}`}
                       onClick={(e) => {
