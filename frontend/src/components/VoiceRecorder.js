@@ -28,11 +28,13 @@ export default function VoiceRecorder({
   onSave,
   onVaultTake,
   onUpdateVaultTake,
+  prefill = null,
 }) {
   const [status, setStatus] = useState("idle"); // idle | recording | recorded | error
   const [elapsed, setElapsed] = useState(0);
   const [name, setName] = useState(
-    `Voice Track ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    prefill?.name ||
+      `Voice Track ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
   );
   const [insertIndex, setInsertIndex] = useState(defaultIndex ?? existingTracks.length);
   const [playing, setPlaying] = useState(false);
@@ -65,7 +67,7 @@ export default function VoiceRecorder({
     takesRef.current = takes;
   }, [takes]);
   const [autoTranscribe, setAutoTranscribe] = useState(true);
-  const [transcript, setTranscript] = useState("");
+  const [transcript, setTranscript] = useState(prefill?.transcript || "");
   const [transcribing, setTranscribing] = useState(false);
   const bedPreviewRef = useRef(null);
   const meterFrameRef = useRef(0);

@@ -11,16 +11,18 @@ import {
   Library,
   RotateCcw,
   Trash2,
+  Plus,
+  Eye,
   ArrowUpRight,
   ArrowDownLeft,
 } from "lucide-react";
-import { loadHistory, removeHistory } from "../lib/cloudHistory";
+import { loadHistory, removeHistory, loadNoteTemplates, saveNoteTemplate, removeNoteTemplate } from "../lib/cloudHistory";
 
 // Cloud Handoff: send the whole show to the server and get a short code + link
 // (with a scannable QR) a co-host can open to import — no file passing. Online
 // only; shows are capped at 50 MB and links expire after 30 days. A Library tab
 // lists past sent/received handoffs so they can be reopened.
-export default function CloudHandoffModal({ initialCode, onUpload, onReceive, onClose }) {
+export default function CloudHandoffModal({ initialCode, onUpload, onReceive, onStats, onClose }) {
   const [tab, setTab] = useState(initialCode ? "receive" : "send");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -35,6 +37,8 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
   const [receivePin, setReceivePin] = useState("");
   const [pinNeeded, setPinNeeded] = useState(false);
   const [receivedNote, setReceivedNote] = useState("");
+  const [templates, setTemplates] = useState(loadNoteTemplates);
+  const [stats, setStats] = useState({});
 
   const linkFor = (c) => `${window.location.origin}/show?code=${c}`;
   const link = result ? linkFor(result.code) : "";
@@ -95,6 +99,34 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch open-counts for Library entries when that tab is shown.
+  useEffect(() => {
+    if (tab !== "library" || !onStats) return;
+    let cancelled = false;
+    (async () => {
+      for (const h of history) {
+        try {
+          const s = await onStats(h.code);
+          if (!cancelled) setStats((prev) => ({ ...prev, [h.code]: s.opens }));
+        } catch {
+          /* ignore */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, history]);
+
+  const insertTemplate = (t) => setSendNote((prev) => (prev ? `${prev}\n${t}` : t));
+  const saveCurrentTemplate = () => {
+    if (!sendNote.trim()) return;
+    setTemplates(saveNoteTemplate(sendNote));
+  };
+  const deleteTemplate = (t) => setTemplates(removeNoteTemplate(t));
+
 
   const copyLink = async (l, key) => {
     try {
@@ -202,6 +234,38 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                       placeholder="e.g. Open with the promo, then run the drive-time set…"
                       className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)] resize-none"
                     />
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="cloud-note-templates">
+                      {templates.map((t) => (
+                        <span
+                          key={t}
+                          className="group inline-flex items-center gap-1 text-[11px] rounded-full pl-2.5 pr-1 py-1 border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white hover:border-[var(--hl-fire)]"
+                        >
+                          <button
+                            data-testid={`cloud-note-template-${t.slice(0, 16)}`}
+                            onClick={() => insertTemplate(t)}
+                            className="max-w-[160px] truncate"
+                            title={`Insert: ${t}`}
+                          >
+                            {t}
+                          </button>
+                          <button
+                            onClick={() => deleteTemplate(t)}
+                            className="h-4 w-4 grid place-items-center rounded-full opacity-50 hover:opacity-100 hover:text-[var(--hl-onair)]"
+                            title="Remove template"
+                          >
+                            <X size={11} />
+                          </button>
+                        </span>
+                      ))}
+                      <button
+                        data-testid="cloud-note-save-template"
+                        onClick={saveCurrentTemplate}
+                        disabled={!sendNote.trim()}
+                        className="text-[11px] rounded-full px-2.5 py-1 border border-dashed border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] disabled:opacity-40 inline-flex items-center gap-1"
+                      >
+                        <Plus size={11} /> Save as template
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
@@ -367,9 +431,17 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="font-display font-700 tracking-wider">{h.code}</div>
-                        <div className="text-[11px] text-[var(--hl-muted)]">
-                          {h.dir === "sent" ? "Sent" : "Received"}
-                          {h.expires_at ? ` · ${expiryLabel(h.expires_at)}` : ""}
+                        <div className="text-[11px] text-[var(--hl-muted)] flex items-center gap-1.5 flex-wrap">
+                          <span>{h.dir === "sent" ? "Sent" : "Received"}</span>
+                          {h.expires_at ? <span>· {expiryLabel(h.expires_at)}</span> : null}
+                          {stats[h.code] != null && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[var(--hl-cue)]"
+                              data-testid={`cloud-library-opens-${h.dir}-${h.code}`}
+                            >
+                              · <Eye size={11} /> opened {stats[h.code]}×
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">

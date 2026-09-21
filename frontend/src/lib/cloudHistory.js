@@ -43,3 +43,30 @@ export function dismissExpiry(code) {
   if (!list.includes(code)) list.push(code);
   localStorage.setItem(DISMISS_KEY, JSON.stringify(list));
 }
+
+const TPL_KEY = "hotlive95_note_templates";
+
+export function loadNoteTemplates() {
+  try {
+    const list = JSON.parse(localStorage.getItem(TPL_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveNoteTemplate(text) {
+  const t = (text || "").trim();
+  if (!t) return loadNoteTemplates();
+  const list = loadNoteTemplates().filter((x) => x !== t);
+  list.unshift(t);
+  const capped = list.slice(0, 12);
+  localStorage.setItem(TPL_KEY, JSON.stringify(capped));
+  return capped;
+}
+
+export function removeNoteTemplate(text) {
+  const list = loadNoteTemplates().filter((x) => x !== text);
+  localStorage.setItem(TPL_KEY, JSON.stringify(list));
+  return list;
+}

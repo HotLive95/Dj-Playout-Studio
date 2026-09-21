@@ -1,12 +1,12 @@
 import React, { useRef, useState, useMemo } from "react";
-import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check, Search, Folder, FolderPlus, CheckSquare, Square } from "lucide-react";
+import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check, Search, Folder, FolderPlus, CheckSquare, Square, RotateCcw, GripVertical } from "lucide-react";
 import { formatTime } from "../lib/format";
 
 const PRESET_FOLDERS = ["Intros", "Promos", "Station IDs", "Bumpers"];
 
 // A persistent drawer of every voice-booth take (auto-saved on record). DJs can
 // search, group into folders (incl. custom), multi-select for bulk move/delete,
-// re-insert, trim/rename, download, or delete. Takes travel inside show files.
+// drag to reorder, one-click re-record, trim/rename, download, or delete.
 export default function TakesVault({
   vault = [],
   customFolders = [],
@@ -19,6 +19,8 @@ export default function TakesVault({
   onBulkMove,
   onBulkDelete,
   onAddFolder,
+  onRerecord,
+  onReorder,
   onDownload,
   onDelete,
   onClose,
@@ -31,6 +33,7 @@ export default function TakesVault({
   const [selected, setSelected] = useState(() => new Set());
   const [newFolder, setNewFolder] = useState("");
   const [addingFolder, setAddingFolder] = useState(false);
+  const [dragId, setDragId] = useState(null);
   const audioRef = useRef(null);
 
   const allFolders = useMemo(() => {
@@ -81,6 +84,22 @@ export default function TakesVault({
   const commitRename = (id) => {
     onRename(id, renameVal);
     setRenamingId(null);
+  };
+  const handleDrop = (targetId) => {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      return;
+    }
+    const ids = filtered.map((v) => v.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) {
+      setDragId(null);
+      return;
+    }
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    onReorder(ids);
+    setDragId(null);
   };
   const submitNewFolder = () => {
     const n = newFolder.trim();
@@ -285,10 +304,25 @@ export default function TakesVault({
             <div
               key={v.id}
               data-testid={`vault-take-${v.id}`}
-              className={`rounded-xl border bg-black/30 p-3 flex items-start gap-3 ${
+              draggable={!query}
+              onDragStart={() => !query && setDragId(v.id)}
+              onDragOver={(e) => {
+                if (!query && dragId) e.preventDefault();
+              }}
+              onDrop={() => handleDrop(v.id)}
+              className={`rounded-xl border bg-black/30 p-3 flex items-start gap-2 ${
                 selected.has(v.id) ? "border-[var(--hl-fire)]" : "border-[var(--hl-line)]"
-              }`}
+              } ${dragId === v.id ? "opacity-50" : ""}`}
             >
+              {!query && (
+                <span
+                  data-testid={`vault-drag-${v.id}`}
+                  className="mt-2 shrink-0 cursor-grab text-[var(--hl-muted)] hover:text-white"
+                  title="Drag to reorder"
+                >
+                  <GripVertical size={15} />
+                </span>
+              )}
               <button
                 data-testid={`vault-select-${v.id}`}
                 onClick={() => toggleSelect(v.id)}
@@ -382,6 +416,14 @@ export default function TakesVault({
                   title={`Insert into ${currentPlaylistName || "current playlist"}`}
                 >
                   <Plus size={13} /> Insert
+                </button>
+                <button
+                  data-testid={`vault-rerecord-${v.id}`}
+                  onClick={() => onRerecord(v.id)}
+                  className="h-8 w-8 grid place-items-center rounded-lg text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:bg-white/10"
+                  title="Re-record — open the Voice Booth pre-loaded with this take's name"
+                >
+                  <RotateCcw size={14} />
                 </button>
                 <button
                   data-testid={`vault-edit-${v.id}`}

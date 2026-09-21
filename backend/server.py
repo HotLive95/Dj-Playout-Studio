@@ -834,7 +834,25 @@ async def get_show(code: str, request: Request, x_show_pin: Optional[str] = Head
     stream = await _shows_fs.open_download_stream(doc["file_id"])
     content = await stream.read()
     payload = json.loads(content.decode("utf-8"))
+    await db.shared_shows.update_one(
+        {"code": doc["code"]},
+        {"$inc": {"opens": 1}, "$set": {"last_opened_at": datetime.now(timezone.utc).isoformat()}},
+    )
     return {"payload": payload, "expires_at": doc.get("expires_at")}
+
+
+@api_router.get("/shows/{code}/stats")
+async def show_stats(code: str):
+    doc = await db.shared_shows.find_one({"code": (code or "").upper()})
+    if not doc:
+        raise HTTPException(status_code=404, detail="That show code was not found.")
+    return {
+        "code": doc["code"],
+        "opens": int(doc.get("opens", 0)),
+        "last_opened_at": doc.get("last_opened_at"),
+        "expires_at": doc.get("expires_at"),
+        "protected": bool(doc.get("pin_hash")),
+    }
 
 
 @api_router.post("/shows/{code}/extend")

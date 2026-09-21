@@ -88,6 +88,11 @@ export const api = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
+  showStats: async (code) => {
+    const res = await fetch(`${BASE}/api/shows/${encodeURIComponent(code)}/stats`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
 
   adminCreate: (token, dj, maxDevices, expiresAt, email) =>
     post("/api/admin/keys", { dj, email, max_devices: maxDevices, expires_at: expiresAt }, token),

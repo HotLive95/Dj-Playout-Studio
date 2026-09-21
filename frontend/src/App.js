@@ -247,6 +247,7 @@ function App() {
   const [exportForId, setExportForId] = useState(null);
   const [search, setSearch] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voicePrefill, setVoicePrefill] = useState(null);
   const [talkActive, setTalkActive] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [banner, setBanner] = useState("");
@@ -1472,6 +1473,24 @@ function App() {
     if (!n) return;
     setVaultFolders((prev) => (prev.includes(n) ? prev : [...prev, n]));
   };
+  // Reopen the Voice Booth pre-loaded with a take's name + transcript.
+  const rerecordVaultTake = (id) => {
+    const v = vault.find((x) => x.id === id);
+    if (!v) return;
+    setVaultOpen(false);
+    setVoicePrefill({ name: v.name || "", transcript: v.transcript || "" });
+    setVoiceOpen(true);
+  };
+  // Drag-sort: reorder the given ids (a folder view) back into the global vault
+  // without disturbing the positions of takes outside that view.
+  const reorderVault = (orderedIds) => {
+    setVault((prev) => {
+      const idSet = new Set(orderedIds);
+      const inOrder = orderedIds.map((id) => prev.find((v) => v.id === id)).filter(Boolean);
+      let k = 0;
+      return prev.map((v) => (idSet.has(v.id) ? inOrder[k++] : v));
+    });
+  };
 
   // ---------------- Cloud Handoff ----------------
   const uploadShow = async ({ pin, email, note } = {}) => {
@@ -2406,10 +2425,14 @@ function App() {
               ? queueTracks.findIndex((t) => t.id === currentTrackId) + 1
               : queueTracks.length
           }
-          onClose={() => setVoiceOpen(false)}
+          onClose={() => {
+            setVoiceOpen(false);
+            setVoicePrefill(null);
+          }}
           onSave={saveVoiceTrack}
           onVaultTake={saveVaultTake}
           onUpdateVaultTake={updateVaultTake}
+          prefill={voicePrefill}
         />
       )}
 
@@ -2426,6 +2449,8 @@ function App() {
           onBulkMove={bulkMoveVault}
           onBulkDelete={bulkDeleteVault}
           onAddFolder={addVaultFolder}
+          onRerecord={rerecordVaultTake}
+          onReorder={reorderVault}
           onDownload={downloadVaultTake}
           onDelete={deleteVaultTake}
           onClose={() => setVaultOpen(false)}
@@ -2437,6 +2462,7 @@ function App() {
           initialCode={initialCloudCode}
           onUpload={uploadShow}
           onReceive={receiveShow}
+          onStats={api.showStats}
           onClose={() => setCloudOpen(false)}
         />
       )}
