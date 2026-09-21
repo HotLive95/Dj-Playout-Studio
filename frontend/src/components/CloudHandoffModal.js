@@ -30,8 +30,11 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
   const [received, setReceived] = useState(false);
   const [history, setHistory] = useState(loadHistory);
   const [sendPin, setSendPin] = useState("");
+  const [sendEmail, setSendEmail] = useState("");
+  const [sendNote, setSendNote] = useState("");
   const [receivePin, setReceivePin] = useState("");
   const [pinNeeded, setPinNeeded] = useState(false);
+  const [receivedNote, setReceivedNote] = useState("");
 
   const linkFor = (c) => `${window.location.origin}/show?code=${c}`;
   const link = result ? linkFor(result.code) : "";
@@ -44,7 +47,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     setBusy(true);
     setError("");
     try {
-      const res = await onUpload(sendPin || null);
+      const res = await onUpload({ pin: sendPin || null, email: sendEmail || null, note: sendNote || "" });
       setResult(res);
       setHistory(loadHistory());
     } catch (e) {
@@ -61,7 +64,8 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     setBusy(true);
     setError("");
     try {
-      await onReceive(c, pinArg ?? receivePin ?? null);
+      const note = await onReceive(c, pinArg ?? receivePin ?? null);
+      setReceivedNote(note || "");
       setReceived(true);
       setPinNeeded(false);
       setHistory(loadHistory());
@@ -186,6 +190,32 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                       className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
                     />
                   </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                      Note for your co-host (optional)
+                    </label>
+                    <textarea
+                      data-testid="cloud-send-note"
+                      value={sendNote}
+                      onChange={(e) => setSendNote(e.target.value.slice(0, 400))}
+                      rows={2}
+                      placeholder="e.g. Open with the promo, then run the drive-time set…"
+                      className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)] resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                      Email me before it expires (optional)
+                    </label>
+                    <input
+                      data-testid="cloud-send-email"
+                      value={sendEmail}
+                      onChange={(e) => setSendEmail(e.target.value)}
+                      type="email"
+                      placeholder="you@email.com"
+                      className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
+                    />
+                  </div>
                   <button
                     data-testid="cloud-upload-button"
                     onClick={doUpload}
@@ -252,6 +282,14 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                 <div className="text-center py-4" data-testid="cloud-received">
                   <Check size={28} className="mx-auto text-[var(--hl-cue)]" />
                   <p className="text-sm mt-2">Show loaded into your studio.</p>
+                  {receivedNote && (
+                    <div
+                      className="mt-3 text-left text-sm bg-[rgba(255,171,0,0.1)] border border-[var(--hl-amber)] rounded-lg px-3 py-2 text-[var(--hl-amber)]"
+                      data-testid="cloud-received-note"
+                    >
+                      <span className="font-600">Note from sender:</span> {receivedNote}
+                    </div>
+                  )}
                   <button
                     onClick={onClose}
                     className="mt-4 px-4 py-2 rounded-lg hl-fire-gradient text-white font-600 text-sm"

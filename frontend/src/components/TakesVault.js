@@ -1,20 +1,24 @@
 import React, { useRef, useState, useMemo } from "react";
-import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check, Search, Folder } from "lucide-react";
+import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check, Search, Folder, FolderPlus, CheckSquare, Square } from "lucide-react";
 import { formatTime } from "../lib/format";
 
-const FOLDERS = ["Intros", "Promos", "Station IDs", "Bumpers"];
+const PRESET_FOLDERS = ["Intros", "Promos", "Station IDs", "Bumpers"];
 
 // A persistent drawer of every voice-booth take (auto-saved on record). DJs can
-// search, group into folders, re-insert, trim/rename, download, or delete a take.
-// Vault takes also travel inside shared / saved show files.
+// search, group into folders (incl. custom), multi-select for bulk move/delete,
+// re-insert, trim/rename, download, or delete. Takes travel inside show files.
 export default function TakesVault({
   vault = [],
+  customFolders = [],
   currentPlaylistName,
   getUrl,
   onInsert,
   onEdit,
   onRename,
   onMoveFolder,
+  onBulkMove,
+  onBulkDelete,
+  onAddFolder,
   onDownload,
   onDelete,
   onClose,
@@ -24,15 +28,22 @@ export default function TakesVault({
   const [renameVal, setRenameVal] = useState("");
   const [query, setQuery] = useState("");
   const [folderFilter, setFolderFilter] = useState("All");
+  const [selected, setSelected] = useState(() => new Set());
+  const [newFolder, setNewFolder] = useState("");
+  const [addingFolder, setAddingFolder] = useState(false);
   const audioRef = useRef(null);
 
-  // Folder chips = All + any folders in use (presets first) + Unfiled if present.
-  const usedFolders = useMemo(() => {
-    const set = new Set(vault.map((v) => v.folder || "").filter(Boolean));
-    const ordered = FOLDERS.filter((f) => set.has(f));
-    const extra = [...set].filter((f) => !FOLDERS.includes(f));
-    return [...ordered, ...extra];
-  }, [vault]);
+  const allFolders = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    [...PRESET_FOLDERS, ...customFolders, ...vault.map((v) => v.folder || "").filter(Boolean)].forEach((f) => {
+      if (f && !seen.has(f)) {
+        seen.add(f);
+        out.push(f);
+      }
+    });
+    return out;
+  }, [customFolders, vault]);
   const hasUnfiled = useMemo(() => vault.some((v) => !v.folder), [vault]);
 
   const filtered = useMemo(() => {
@@ -53,6 +64,16 @@ export default function TakesVault({
     });
   }, [vault, query, folderFilter]);
 
+  const toggleSelect = (id) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const clearSelection = () => setSelected(new Set());
+  const selectedIds = [...selected];
+
   const startRename = (v) => {
     setRenamingId(v.id);
     setRenameVal(v.name);
@@ -60,6 +81,13 @@ export default function TakesVault({
   const commitRename = (id) => {
     onRename(id, renameVal);
     setRenamingId(null);
+  };
+  const submitNewFolder = () => {
+    const n = newFolder.trim();
+    if (n) onAddFolder(n);
+    setNewFolder("");
+    setAddingFolder(false);
+    if (n) setFolderFilter(n);
   };
 
   const togglePlay = async (v) => {
@@ -139,8 +167,8 @@ export default function TakesVault({
                 className="w-full h-9 pl-9 pr-3 rounded-full bg-black/40 border border-[var(--hl-line)] text-sm outline-none focus:border-[var(--hl-fire)]"
               />
             </div>
-            <div className="flex flex-wrap gap-1.5" data-testid="vault-folder-filters">
-              {["All", ...(hasUnfiled ? ["Unfiled"] : []), ...usedFolders].map((f) => (
+            <div className="flex flex-wrap gap-1.5 items-center" data-testid="vault-folder-filters">
+              {["All", ...(hasUnfiled ? ["Unfiled"] : []), ...allFolders].map((f) => (
                 <button
                   key={f}
                   data-testid={`vault-folder-filter-${f.replace(/\s/g, "-")}`}
@@ -154,7 +182,87 @@ export default function TakesVault({
                   {f}
                 </button>
               ))}
+              {addingFolder ? (
+                <span className="inline-flex items-center gap-1">
+                  <input
+                    autoFocus
+                    data-testid="vault-new-folder-input"
+                    value={newFolder}
+                    onChange={(e) => setNewFolder(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitNewFolder();
+                      if (e.key === "Escape") setAddingFolder(false);
+                    }}
+                    placeholder="Folder name"
+                    className="w-28 bg-black/50 border border-[var(--hl-line)] rounded-full px-2.5 py-1 text-[11px] outline-none focus:border-[var(--hl-fire)]"
+                  />
+                  <button
+                    data-testid="vault-new-folder-save"
+                    onClick={submitNewFolder}
+                    className="h-5 w-5 grid place-items-center rounded-full text-[var(--hl-cue)] hover:bg-white/10"
+                  >
+                    <Check size={13} />
+                  </button>
+                </span>
+              ) : (
+                <button
+                  data-testid="vault-add-folder"
+                  onClick={() => setAddingFolder(true)}
+                  className="text-[11px] rounded-full px-2.5 py-1 border border-dashed border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] inline-flex items-center gap-1"
+                >
+                  <FolderPlus size={12} /> New folder
+                </button>
+              )}
             </div>
+            {selectedIds.length > 0 && (
+              <div
+                className="flex flex-wrap items-center gap-2 pt-1"
+                data-testid="vault-bulk-bar"
+              >
+                <span className="text-[11px] text-[var(--hl-fire)] font-600" data-testid="vault-bulk-count">
+                  {selectedIds.length} selected
+                </span>
+                <select
+                  data-testid="vault-bulk-move"
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value !== "") {
+                      onBulkMove(selectedIds, e.target.value === "__unfiled__" ? "" : e.target.value);
+                      clearSelection();
+                    }
+                    e.target.value = "";
+                  }}
+                  className="bg-black/40 border border-[var(--hl-line)] rounded px-2 py-1 text-[11px] outline-none focus:border-[var(--hl-fire)]"
+                >
+                  <option value="">Move to…</option>
+                  <option value="__unfiled__">Unfiled</option>
+                  {allFolders.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  data-testid="vault-bulk-delete"
+                  onClick={() => {
+                    if (window.confirm(`Delete ${selectedIds.length} take(s) from the vault?`)) {
+                      onBulkDelete(selectedIds);
+                      clearSelection();
+                    }
+                  }}
+                  className="text-[11px] rounded px-2.5 py-1 border border-[var(--hl-onair)] text-[var(--hl-onair)] hover:bg-[rgba(255,23,68,0.1)] inline-flex items-center gap-1"
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
+                <button
+                  data-testid="vault-bulk-clear"
+                  onClick={clearSelection}
+                  className="text-[11px] text-[var(--hl-muted)] hover:text-white"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -178,8 +286,22 @@ export default function TakesVault({
             <div
               key={v.id}
               data-testid={`vault-take-${v.id}`}
-              className="rounded-xl border border-[var(--hl-line)] bg-black/30 p-3 flex items-start gap-3"
+              className={`rounded-xl border bg-black/30 p-3 flex items-start gap-3 ${
+                selected.has(v.id) ? "border-[var(--hl-fire)]" : "border-[var(--hl-line)]"
+              }`}
             >
+              <button
+                data-testid={`vault-select-${v.id}`}
+                onClick={() => toggleSelect(v.id)}
+                className="mt-1 h-5 w-5 shrink-0 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-fire)]"
+                title="Select for bulk actions"
+              >
+                {selected.has(v.id) ? (
+                  <CheckSquare size={17} className="text-[var(--hl-fire)]" />
+                ) : (
+                  <Square size={17} />
+                )}
+              </button>
               <button
                 data-testid={`vault-play-${v.id}`}
                 onClick={() => togglePlay(v)}
@@ -237,7 +359,7 @@ export default function TakesVault({
                     className="bg-black/40 border border-[var(--hl-line)] rounded px-1.5 py-0.5 text-[11px] outline-none focus:border-[var(--hl-fire)]"
                   >
                     <option value="">Unfiled</option>
-                    {FOLDERS.map((f) => (
+                    {allFolders.map((f) => (
                       <option key={f} value={f}>
                         {f}
                       </option>

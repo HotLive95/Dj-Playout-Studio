@@ -731,6 +731,53 @@ async def _pin_attempt_ok(code: str, ip: str) -> bool:
 class ShareShowBody(BaseModel):
     payload: dict
     pin: Optional[str] = None
+    email: Optional[str] = None
+
+
+SHOW_EXPIRY_ALERT_DAYS = int(os.environ.get('SHOW_EXPIRY_ALERT_DAYS', '5'))
+
+
+async def send_show_expiry_email(doc: dict) -> bool:
+    email = doc.get("email")
+    if not RESEND_API_KEY or not email:
+        return False
+    code = doc.get("code")
+    dl = days_left(doc.get("expires_at"))
+    link = f"{PUBLIC_APP_URL}/show?code={code}" if PUBLIC_APP_URL else f"code {code}"
+    html = f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0c;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
+      <tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#121216;border:1px solid #26262e;border-radius:16px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(90deg,#ff5a1f,#ff1744);padding:22px 28px;"><div style="color:#fff;font-size:22px;font-weight:800;letter-spacing:2px;">HOT LIVE 95</div><div style="color:#ffe;opacity:.85;font-size:11px;letter-spacing:3px;">CLOUD HANDOFF EXPIRING</div></td></tr>
+        <tr><td style="padding:28px;"><p style="color:#f4f4f5;font-size:16px;margin:0 0 12px;">Your cloud share link <b style="color:#ffb020;">{code}</b> expires in <b>{dl} day(s)</b>.</p>
+        <p style="color:#c9ccd1;font-size:14px;line-height:1.6;margin:0 0 16px;">Re-share it or tap <b>Extend 30 days</b> in the studio to keep it alive.</p>
+        <p style="color:#c9ccd1;font-size:13px;margin:0;">Link: <a href="{link}" style="color:#ff6a2b;">{link}</a></p></td></tr>
+        <tr><td style="background:#0a0a0c;padding:16px 28px;border-top:1px solid #26262e;"><div style="color:#6b7280;font-size:11px;">© Hot Live 95 Detroit · A.I. Radio</div></td></tr>
+      </table></td></tr></table>
+    """
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": SENDER_EMAIL, "to": [email],
+            "subject": f"⏳ Your Hot Live 95 share link {code} expires in {dl} day(s)",
+            "html": html,
+        })
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Show expiry email failed: {e}")
+        return False
+
+
+async def process_show_expiry() -> dict:
+    """Daily pass: email the sender once when a cloud share link nears expiry."""
+    sent = 0
+    docs = await db.shared_shows.find({"email": {"$nin": [None, ""]}, "expiry_reminded": {"$ne": True}}).to_list(length=1000)
+    for doc in docs:
+        dl = days_left(doc.get("expires_at"))
+        if dl is None or dl < 0 or dl > SHOW_EXPIRY_ALERT_DAYS:
+            continue
+        if await send_show_expiry_email(doc):
+            await db.shared_shows.update_one({"code": doc["code"]}, {"$set": {"expiry_reminded": True}})
+            sent += 1
+    return {"show_reminders": sent}
 
 
 @api_router.post("/shows")
@@ -759,6 +806,8 @@ async def create_show(body: ShareShowBody):
         "created_at": now.isoformat(),
         "expires_at": expires.isoformat(),
         "protected": bool(pin_rec),
+        "email": (body.email or "").strip() or None,
+        "expiry_reminded": False,
     }
     if pin_rec:
         doc.update(pin_rec)
@@ -798,8 +847,15 @@ async def extend_show(code: str, request: Request):
     if not await _pin_attempt_ok(f"extend:{doc['code']}", ip):
         raise HTTPException(status_code=429, detail="Too many extend attempts — wait a few minutes.", headers={"Retry-After": "600"})
     expires = datetime.now(timezone.utc) + timedelta(days=SHOW_TTL_DAYS)
-    await db.shared_shows.update_one({"code": doc["code"]}, {"$set": {"expires_at": expires.isoformat()}})
+    await db.shared_shows.update_one({"code": doc["code"]}, {"$set": {"expires_at": expires.isoformat(), "expiry_reminded": False}})
     return {"code": doc["code"], "expires_at": expires.isoformat()}
+
+
+@api_router.post("/admin/run-show-expiry")
+async def admin_run_show_expiry(x_admin_token: Optional[str] = Header(None)):
+    check_admin(x_admin_token)
+    res = await process_show_expiry()
+    return {"status": "ok", **res}
 
 
 app.include_router(api_router)
@@ -830,6 +886,12 @@ async def _start_expiry_scheduler():
                     logger.info(f"Expiry pass: {res['alerts']} alert(s), {res['renews']} auto-renew(s)")
             except Exception as e:
                 logger.error(f"Expiry pass failed: {e}")
+            try:
+                sres = await process_show_expiry()
+                if sres["show_reminders"]:
+                    logger.info(f"Show expiry pass: {sres['show_reminders']} reminder(s)")
+            except Exception as e:
+                logger.error(f"Show expiry pass failed: {e}")
             await asyncio.sleep(12 * 3600)
     global _scheduler_task
     # Keep a strong reference so the background loop is not garbage-collected mid-flight.

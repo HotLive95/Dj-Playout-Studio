@@ -267,6 +267,7 @@ function App() {
   const [missingIds, setMissingIds] = useState(() => new Set());
   const [standby, setStandby] = useState({ trackId: null, faderPos: 0 });
   const [vault, setVault] = useState([]);
+  const [vaultFolders, setVaultFolders] = useState([]);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [initialCloudCode, setInitialCloudCode] = useState(null);
@@ -304,6 +305,7 @@ function App() {
         setSettings({ ...defaultSettings, ...(state.settings || {}), autoDuck: false });
         setJingles(state.jingles || []);
         setVault(state.vault || []);
+        setVaultFolders(state.vaultFolders || []);
       }
       setLoaded(true);
     })();
@@ -658,8 +660,8 @@ function App() {
   // ---- Persist ----
   useEffect(() => {
     if (!loaded) return;
-    platform.saveState({ tracks, playlists, currentPlaylistId, settings, jingles, vault });
-  }, [tracks, playlists, currentPlaylistId, settings, jingles, vault, loaded]);
+    platform.saveState({ tracks, playlists, currentPlaylistId, settings, jingles, vault, vaultFolders });
+  }, [tracks, playlists, currentPlaylistId, settings, jingles, vault, vaultFolders, loaded]);
 
   // ---- Backup reminder: mark the show "dirty" (unsaved to a file) on real edits ----
   useEffect(() => {
@@ -1450,11 +1452,32 @@ function App() {
   };
   const renameVaultTake = (id, name) => updateVaultTake(id, { name: (name || "").trim() || "Voice Take" });
   const moveVaultToFolder = (id, folder) => updateVaultTake(id, { folder: folder || "" });
+  const bulkMoveVault = (ids, folder) =>
+    setVault((prev) => prev.map((v) => (ids.includes(v.id) ? { ...v, folder: folder || "" } : v)));
+  const bulkDeleteVault = async (ids) => {
+    for (const id of ids) {
+      const v = vault.find((x) => x.id === id);
+      if (v) {
+        try {
+          await platform.deleteFile(v);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    setVault((prev) => prev.filter((x) => !ids.includes(x.id)));
+  };
+  const addVaultFolder = (name) => {
+    const n = (name || "").trim();
+    if (!n) return;
+    setVaultFolders((prev) => (prev.includes(n) ? prev : [...prev, n]));
+  };
 
   // ---------------- Cloud Handoff ----------------
-  const uploadShow = async (pin) => {
+  const uploadShow = async ({ pin, email, note } = {}) => {
     const out = await buildStudioExport(playlists, true, true);
-    const res = await api.uploadShow(out, pin);
+    if (note) out.note = note;
+    const res = await api.uploadShow(out, pin, email);
     setDirty(false);
     try {
       addHistory({ code: res.code, dir: "sent", expires_at: res.expires_at, size: res.size, protected: !!res.protected });
@@ -1471,6 +1494,7 @@ function App() {
       /* ignore */
     }
     await applyImport(payload);
+    return payload?.note || "";
   };
   const extendCloudLink = async (code) => {
     try {
@@ -2392,12 +2416,16 @@ function App() {
       {vaultOpen && (
         <TakesVault
           vault={vault}
+          customFolders={vaultFolders}
           currentPlaylistName={currentPlaylist?.name}
           getUrl={getUrl}
           onInsert={insertVaultTake}
           onEdit={editVaultTake}
           onRename={renameVaultTake}
           onMoveFolder={moveVaultToFolder}
+          onBulkMove={bulkMoveVault}
+          onBulkDelete={bulkDeleteVault}
+          onAddFolder={addVaultFolder}
           onDownload={downloadVaultTake}
           onDelete={deleteVaultTake}
           onClose={() => setVaultOpen(false)}
