@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 21 full backend+frontend regression for the four new features (Vault Bulk Actions, Custom Folders, Show Notes, Handoff Expiry Email). Backend: added /app/backend/tests/test_shows_expiry_email.py — 5/5 pass. POST /api/shows accepts email + returns code; POST /api/admin/run-show-expiry with header X-Admin-Token '1972Hotlive95dj1108**' → 200 {status:'ok', show_reminders:N}; missing/bad token → 401. process_show_expiry() unit test inserts a shared_shows doc (fake email, expires_at now+2d), mocks send_show_expiry_email, and confirms the doc is flipped expiry_reminded:true exactly once (second pass does NOT re-email the same code). Existing tests still pass: test_shows.py 5/5 and test_shows_pin_extend.py 9/9. NOTE: pre-existing licensing tests fail unrelated to this iteration. Frontend Playwright: activated with offline key; Bulk Actions — selecting two takes shows vault-bulk-bar with count '2 selected', bulk-move to Promos populates the Promos filter (both takes appear) and clears the bar; re-select + vault-bulk-delete (confirm auto-accepted) removes both takes. Custom Folders — vault-add-folder → typed 'Weather' → vault-new-folder-save creates chip 'vault-folder-filter-Weather'; the per-take vault-folder-seedC select now lists ['', 'Intros', 'Promos', 'Station IDs', 'Bumpers', 'Weather']; moved seedC → Weather; persisted after full page reload (chip remains, seedC.folder='Weather', localStorage.vaultFolders=['Weather']). Show Notes — cloud-send-note + cloud-send-email fields exist, upload with note/email returns 6-char code (H2M8NS); switching to Receive tab, entering the code, and clicking cloud-receive-button yields cloud-received AND cloud-received-note showing 'Note from sender: Open with the promo'. No blocking console errors (only the pre-existing benign 'span cannot be a child of option' React hydration warning from PlayerBar / TakesVault selects, already flagged in iteration_20).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PlayerBar & TakesVault <select> options", "issues": ["Pre-existing React hydration warning '<span> cannot be a child of <option>' (visual-editor dev tooling wraps option children in <span>) — visible in console but non-blocking; carried over from iteration_20."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_shows_expiry_email.py",
+    "/app/backend/tests/test_shows_pin_extend.py",
+    "/app/backend/tests/test_shows.py",
+    "/app/test_reports/pytest/iteration_21.xml"
+  ],
+  "action_items": [
+    "(Carry-over from iteration_20) /api/shows/{code}/extend still has no auth/PIN check — anyone knowing a 6-char code can extend it. Rate-limit added (good) but a PIN-protected share should require X-Show-PIN to extend.",
+    "(Optional) Consider clearing the auto-set folder filter to 'All' after creating a custom folder if the vault has no takes in that folder — currently creating 'Weather' auto-selects the empty Weather filter, hiding all existing takes until user clicks 'All'. Minor UX polish."
+  ],
+  "critical_code_review_comments": [
+    "server.py process_show_expiry() uses to_list(length=1000) — silently caps at 1000 docs. If the shared_shows collection ever grows large, some near-expiry emails will be missed. Consider iterating with an async cursor or increasing the cap.",
+    "server.py send_show_expiry_email() logs 'Show expiry email failed' but returns False silently — process_show_expiry then leaves expiry_reminded:false, so the same doc will be retried on every scheduler pass indefinitely. Consider tracking a retry count or last_attempt_at to avoid hammering Resend on a permanently-bad address.",
+    "App.js receiveShow returns payload?.note but CloudHandoffModal.doReceive doesn't clear receivedNote when a subsequent receive fails — stale note from a previous successful receive could linger. Minor.",
+    "TakesVault submitNewFolder auto-selects the newly-created (empty) folder as the filter, hiding all existing takes; user has to click 'All' to see anything. Minor UX papercut.",
+    "Backend admin endpoint POST /api/admin/run-show-expiry has no rate limit — not critical since it's admin-token gated, but a leaked token would allow scheduler abuse."
+  ],
+  "updated_files": ["/app/backend/tests/test_shows_expiry_email.py"],
+  "success_rate": {"backend": "100% for iteration-21 targets (5/5 new + 14/14 pre-existing shows tests). Licensing suite has pre-existing failures unrelated to this iteration.", "frontend": "100% (all assertions passed)"},
+  "test_credentials": "Offline activation key: Q61VK-G819N-40K1B-H226T. Admin token: 1972Hotlive95dj1108** (header X-Admin-Token).",
+  "seed_data_creation": "localStorage 'hotlive95_state' seeded with 3 vault takes (seedA Morning Intro / seedB Traffic Bumper / seedC Promo Slot) via page.evaluate before reload. One test cloud share created with fake email 'fake-test@example.invalid' and note 'Open with the promo' (code H2M8NS) — Resend live key was NOT triggered because email delivery was NOT asserted; backend unit test mocks send_show_expiry_email so no real email was ever sent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All four new features (Vault Bulk Actions, Custom Folders, Show Notes, Handoff Expiry Email endpoint + process_show_expiry) verified end-to-end. Backend tests at /app/backend/tests/test_shows_expiry_email.py include a Motor loop fix (re-instantiates AsyncIOMotorClient inside asyncio.run to avoid 'attached to a different loop' when calling server.process_show_expiry directly from pytest). For future frontend tests: after creating a custom folder in the Takes Vault, remember to click 'vault-folder-filter-All' because the newly-created folder is auto-selected as the active filter and hides all existing takes. Do NOT assert Resend email delivery in tests — RESEND_API_KEY is live.",
+  "rca of the issue": "n/a — no blocking bugs found in this iteration."
+}

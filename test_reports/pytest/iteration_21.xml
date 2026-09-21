@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="7" failures="5" skipped="0" tests="36" time="3.406" timestamp="2026-09-21T00:41:28.755436+00:00" hostname="agent-env-24bb9bca-807e-4e7f-909b-ad425868660c"><testcase classname="tests.test_shows.TestShowsAPI" name="test_create_show_success" time="0.207" /><testcase classname="tests.test_shows_pin_extend.TestShowPin" name="test_create_with_pin_returns_protected" time="0.268" /><testcase classname="tests.test_shows.TestShowsAPI" name="test_get_show_success" time="0.076" /><testcase classname="tests.test_shows_pin_extend.TestShowPin" name="test_create_with_invalid_pin_422" time="0.065" /><testcase classname="tests.test_shows.TestShowsAPI" name="test_get_show_case_insensitive" time="0.119" /><testcase classname="tests.test_shows_pin_extend.TestShowPin" name="test_get_protected_no_pin_401" time="0.069" /><testcase classname="tests.test_shows_pin_extend.TestShowPin" name="test_get_protected_wrong_pin_403" time="0.126" /><testcase classname="tests.test_shows.TestShowsAPI" name="test_get_show_unknown_returns_404" time="0.073" /><testcase classname="tests.test_shows.TestShowsAPI" name="test_create_show_missing_payload_400" time="0.083" /><testcase classname="tests.test_shows_pin_extend.TestShowPin" name="test_get_protected_right_pin_200" time="0.125" /><testcase classname="tests.test_shows_pin_extend.TestShowPin" name="test_create_no_pin_still_works" time="0.067" /><testcase classname="tests.test_licensing.TestRenewAutoRenew" name="test_renew_days_variants" time="0.134"><error message="failed on setup with &quot;AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_licensing.py:21: in created_key
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_shows_pin_extend.TestShowPin" name="test_get_nopin_show_no_header_200" time="0.069" /><testcase classname="tests.test_licensing.TestRenewAutoRenew" name="test_auto_renew_toggle" time="0.000"><error message="failed on setup with &quot;AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_licensing.py:21: in created_key
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_licensing.TestRenewAutoRenew" name="test_revoke_toggle_and_reflected_in_validate" time="0.000"><error message="failed on setup with &quot;AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_licensing.py:21: in created_key
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_licensing.TestAdminAuth" name="test_admin_requires_token" time="0.157" /><testcase classname="tests.test_shows_expiry_email.TestAdminRunShowExpiry" name="test_missing_token_401" time="0.141" /><testcase classname="tests.test_licensing.TestAdminAuth" name="test_admin_wrong_token" time="0.122" /><testcase classname="tests.test_shows_expiry_email.TestAdminRunShowExpiry" name="test_bad_token_401" time="0.167" /><testcase classname="tests.test_licensing.TestKeyCreateList" name="test_create_with_email_returns_email_sent" time="0.000"><error message="failed on setup with &quot;AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_licensing.py:21: in created_key
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_licensing.TestKeyCreateList" name="test_list_contains_key_with_fields" time="0.000"><error message="failed on setup with &quot;AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_licensing.py:21: in created_key
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_licensing.TestPublicStatus" name="test_status_unknown" time="0.143" /><testcase classname="tests.test_shows_expiry_email.TestAdminRunShowExpiry" name="test_good_token_returns_ok" time="0.133" /><testcase classname="tests.test_licensing.TestPublicStatus" name="test_status_returns_summary" time="0.000"><error message="failed on setup with &quot;AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_licensing.py:21: in created_key
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_licensing.TestSettingsAndExpiryCheck" name="test_settings_persist" time="0.145"><failure message="assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code">backend/tests/test_licensing.py:151: in test_settings_persist
+    assert r.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</failure></testcase><testcase classname="tests.test_licensing.TestSettingsAndExpiryCheck" name="test_run_expiry_check" time="0.159"><failure message="assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code">backend/tests/test_licensing.py:158: in test_run_expiry_check
+    assert r.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</failure></testcase><testcase classname="tests.test_licensing.TestActivateValidate" name="test_activate_ok_and_cap_exceeded" time="0.121"><error message="failed on setup with &quot;AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_licensing.py:21: in created_key
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_licensing.TestActivateValidate" name="test_activate_unknown_key" time="0.159" /><testcase classname="tests.test_shows_pin_extend.TestShowExtend" name="test_extend_updates_expiry" time="0.277" /><testcase classname="tests.test_licensing.TestRoot" name="test_root" time="0.147" /><testcase classname="tests.test_licensing.TestDelete" name="test_delete_key" time="0.114"><failure message="KeyError: 'key'">backend/tests/test_licensing.py:171: in test_delete_key
+    key = r.json()["key"]
+          ^^^^^^^^^^^^^^^
+E   KeyError: 'key'</failure></testcase><testcase classname="tests.test_shows_pin_extend.TestShowExtend" name="test_extend_unknown_code_404" time="0.125" /><testcase classname="tests.test_licensing.TestNoDoubleAutoRenew" name="test_auto_renew_runs_once" time="0.142"><failure message="AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code">backend/tests/test_licensing.py:206: in test_auto_renew_runs_once
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</failure></testcase><testcase classname="tests.test_licensing.TestInsertBeforeEmailOrdering" name="test_key_appears_immediately_after_create" time="0.123"><failure message="AssertionError: {&quot;detail&quot;:&quot;Invalid admin token&quot;}&#10;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code">backend/tests/test_licensing.py:186: in test_key_appears_immediately_after_create
+    assert r.status_code == 200, r.text
+E   AssertionError: {"detail":"Invalid admin token"}
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</failure></testcase><testcase classname="tests.test_shows_expiry_email.TestShowsCreateWithEmail" name="test_create_show_with_email_returns_code" time="0.151" /><testcase classname="tests.test_shows_expiry_email.TestProcessShowExpiryUnit" name="test_process_show_expiry_flags_reminded" time="0.347" /></testsuite></testsuites>

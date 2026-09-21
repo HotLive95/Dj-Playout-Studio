@@ -87,7 +87,6 @@ export default function TakesVault({
     if (n) onAddFolder(n);
     setNewFolder("");
     setAddingFolder(false);
-    if (n) setFolderFilter(n);
   };
 
   const togglePlay = async (v) => {

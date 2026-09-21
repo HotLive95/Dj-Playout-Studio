@@ -592,7 +592,25 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Vault Search/Folders + Handoff PIN + Auto-Refresh Link (2026-06)
+## Vault Bulk Actions + Custom Folders + Show Notes + Expiry Email (2026-06)
+- **Vault Bulk Actions**: `TakesVault` per-row select (`vault-select-{id}`) + a `vault-bulk-bar`
+  (`vault-bulk-count`, `vault-bulk-move` folder select, `vault-bulk-delete`, `vault-bulk-clear`).
+  App `bulkMoveVault`/`bulkDeleteVault`.
+- **Custom Folders**: `vault-add-folder` → `vault-new-folder-input`/`vault-new-folder-save` creates a
+  folder; persisted in `vaultFolders` (App state + saveState). Chips, per-take selector, and bulk-move
+  all use presets + custom + in-use folders.
+- **Show Notes**: optional `cloud-send-note` on the Cloud Send tab → embedded as `payload.note`;
+  shown to the co-host on receive (`cloud-received-note`, App receiveShow returns the note).
+- **Handoff Expiry Email**: optional `cloud-send-email` at upload → backend stores `email` +
+  `expiry_reminded`; daily scheduler `process_show_expiry` emails the sender once (Resend) when a share
+  is within `SHOW_EXPIRY_ALERT_DAYS` (5) of expiry; re-armed on extend. Admin trigger
+  `POST /api/admin/run-show-expiry`.
+- Verified: backend 5/5 new pytest (test_shows_expiry_email.py) + 14/14 shows regression; frontend 100%
+  (iteration_21). Post-test: stopped auto-selecting the empty new folder.
+- Known/deferred: `/extend` has no PIN check (owner doesn't retain the PIN; rate-limited instead);
+  process_show_expiry retries a permanently-bad email until it succeeds (acceptable at 12h cadence).
+
+
 - **Vault Search**: `TakesVault` has a `vault-search` box filtering takes by name or transcript;
   `vault-no-results` empty state.
 - **Vault Folders**: takes carry a `folder` field (presets Intros/Promos/Station IDs/Bumpers +
