@@ -733,6 +733,7 @@ class ShareShowBody(BaseModel):
     payload: dict
     pin: Optional[str] = None
     email: Optional[str] = None
+    alert_on_open: Optional[bool] = True
 
 
 SHOW_EXPIRY_ALERT_DAYS = int(os.environ.get('SHOW_EXPIRY_ALERT_DAYS', '5'))
@@ -834,6 +835,7 @@ async def create_show(body: ShareShowBody):
         "expires_at": expires.isoformat(),
         "protected": bool(pin_rec),
         "email": (body.email or "").strip() or None,
+        "alert_on_open": bool(body.alert_on_open),
         "expiry_reminded": False,
     }
     if pin_rec:
@@ -866,8 +868,14 @@ async def get_show(code: str, request: Request, x_show_pin: Optional[str] = Head
         {"$inc": {"opens": 1}, "$set": {"last_opened_at": datetime.now(timezone.utc).isoformat()}},
         return_document=ReturnDocument.AFTER,
     )
-    # Ping the sender the first time their handoff is opened.
-    if updated and updated.get("email") and not updated.get("open_alert_sent") and int(updated.get("opens", 0)) == 1:
+    # Ping the sender the first time their handoff is opened (if opted in).
+    if (
+        updated
+        and updated.get("email")
+        and updated.get("alert_on_open", True)
+        and not updated.get("open_alert_sent")
+        and int(updated.get("opens", 0)) == 1
+    ):
         if await send_show_open_email(updated):
             await db.shared_shows.update_one({"code": doc["code"]}, {"$set": {"open_alert_sent": True}})
     return {"payload": payload, "expires_at": doc.get("expires_at")}

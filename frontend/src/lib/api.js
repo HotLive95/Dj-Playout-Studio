@@ -45,11 +45,11 @@ export const api = {
   },
 
   // Cloud Handoff: upload a whole show, get a short code + expiry back.
-  uploadShow: async (payload, pin, email) => {
+  uploadShow: async (payload, pin, email, alertOnOpen) => {
     const res = await fetch(`${BASE}/api/shows`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload, pin: pin || null, email: email || null }),
+      body: JSON.stringify({ payload, pin: pin || null, email: email || null, alert_on_open: alertOnOpen !== false }),
     });
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;

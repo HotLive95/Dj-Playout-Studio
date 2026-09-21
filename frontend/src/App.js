@@ -1493,10 +1493,10 @@ function App() {
   };
 
   // ---------------- Cloud Handoff ----------------
-  const uploadShow = async ({ pin, email, note } = {}) => {
+  const uploadShow = async ({ pin, email, note, alertOnOpen } = {}) => {
     const out = await buildStudioExport(playlists, true, true);
     if (note) out.note = note;
-    const res = await api.uploadShow(out, pin, email);
+    const res = await api.uploadShow(out, pin, email, alertOnOpen);
     setDirty(false);
     try {
       addHistory({ code: res.code, dir: "sent", expires_at: res.expires_at, size: res.size, protected: !!res.protected });

@@ -34,6 +34,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
   const [sendPin, setSendPin] = useState("");
   const [sendEmail, setSendEmail] = useState("");
   const [sendNote, setSendNote] = useState("");
+  const [sendAlertOnOpen, setSendAlertOnOpen] = useState(true);
   const [receivePin, setReceivePin] = useState("");
   const [pinNeeded, setPinNeeded] = useState(false);
   const [receivedNote, setReceivedNote] = useState("");
@@ -53,7 +54,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     setBusy(true);
     setError("");
     try {
-      const res = await onUpload({ pin: sendPin || null, email: sendEmail || null, note: sendNote || "" });
+      const res = await onUpload({ pin: sendPin || null, email: sendEmail || null, note: sendNote || "", alertOnOpen: sendAlertOnOpen });
       setResult(res);
       setHistory(loadHistory());
     } catch (e) {
@@ -319,6 +320,21 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                       placeholder="you@email.com"
                       className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
                     />
+                    {sendEmail.trim() && (
+                      <label
+                        className="mt-2 flex items-center gap-2 text-[12px] text-[var(--hl-muted)] cursor-pointer select-none"
+                        data-testid="cloud-alert-toggle-label"
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid="cloud-alert-on-open"
+                          checked={sendAlertOnOpen}
+                          onChange={(e) => setSendAlertOnOpen(e.target.checked)}
+                          className="accent-[var(--hl-fire)]"
+                        />
+                        Also email me the first time a co-host opens it
+                      </label>
+                    )}
                   </div>
                   <button
                     data-testid="cloud-upload-button"

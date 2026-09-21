@@ -154,6 +154,31 @@ export default function TakesVault({
     }
   };
 
+  const seekPlay = async (v, fraction) => {
+    const url = await getUrl(v);
+    if (!url) return;
+    if (!audioRef.current) audioRef.current = new Audio();
+    const a = audioRef.current;
+    a.src = url;
+    a.onended = () => setPlayingId(null);
+    const seek = () => {
+      try {
+        const dur = v.duration || a.duration || 0;
+        a.currentTime = Math.max(0, Math.min(dur * fraction, (a.duration || dur || 1) - 0.05));
+      } catch {
+        /* ignore */
+      }
+    };
+    a.onloadedmetadata = seek;
+    try {
+      await a.play();
+      seek();
+      setPlayingId(v.id);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const fmtDate = (iso) => {
     try {
       return new Date(iso).toLocaleString([], {
@@ -411,14 +436,19 @@ export default function TakesVault({
                 </div>
                 {peaksMap[v.id] && peaksMap[v.id].length > 0 && (
                   <div
-                    className="mt-1.5 flex items-end gap-[1.5px] h-6"
+                    className="mt-1.5 flex items-end gap-[1.5px] h-6 cursor-pointer"
                     data-testid={`vault-wave-${v.id}`}
-                    aria-hidden="true"
+                    title="Click to preview from here"
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                      seekPlay(v, frac);
+                    }}
                   >
                     {peaksMap[v.id].map((p, i) => (
                       <span
                         key={i}
-                        className="flex-1 rounded-sm bg-[var(--hl-fire)]"
+                        className="flex-1 rounded-sm bg-[var(--hl-fire)] pointer-events-none"
                         style={{ height: `${Math.max(6, Math.min(100, p * 130))}%`, opacity: 0.55 }}
                       />
                     ))}
