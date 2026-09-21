@@ -794,6 +794,24 @@ export default function VoiceRecorder({
             </div>
           )}
 
+          {status !== "recorded" && prefill?.transcript && (
+            <div
+              className="rounded-xl border border-[var(--hl-cue)] bg-[rgba(58,160,255,0.08)] p-3"
+              data-testid="voice-script-prompt"
+            >
+              <div className="text-[11px] uppercase tracking-wider text-[var(--hl-cue)] mb-1 flex items-center gap-1.5">
+                <Music2 size={12} /> Script to read
+              </div>
+              <textarea
+                data-testid="voice-script-text"
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                rows={3}
+                className="w-full bg-black/40 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)] resize-none"
+              />
+            </div>
+          )}
+
           <div className="grid place-items-center py-1">
             {status !== "recorded" ? (
               <button

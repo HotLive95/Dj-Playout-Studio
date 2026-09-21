@@ -592,7 +592,23 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Vault Bulk Actions + Custom Folders + Show Notes + Expiry Email (2026-06)
+## One-Click Re-record + Vault Drag-Sort + Handoff Analytics + Note Templates (2026-06)
+- **One-Click Re-record**: `vault-rerecord-{id}` reopens the Voice Booth pre-loaded with the take's
+  name + transcript (VoiceRecorder `prefill` prop; App `rerecordVaultTake` sets `voicePrefill`). Added a
+  pre-record "Script to read" panel (`voice-script-prompt`/`voice-script-text`) so the DJ sees the words
+  before/while recording (fixes the note that the transcript field only appeared post-record).
+- **Vault Drag-Sort**: draggable rows (`vault-drag-{id}`, HTML5 DnD) when search is empty; App
+  `reorderVault(orderedIds)` reorders the global vault while preserving out-of-view takes; persists.
+- **Handoff Analytics**: GET /api/shows/{code} `$inc opens` + `last_opened_at`; GET
+  /api/shows/{code}/stats returns the count; Library rows show `cloud-library-opens-{dir}-{code}`
+  ("opened N×"), fetched via `api.showStats` when the Library tab is active.
+- **Note Templates**: `cloud-note-save-template` saves the current note; chips under
+  `cloud-note-templates` insert a template into the note; persisted in localStorage
+  `hotlive95_note_templates` (lib/cloudHistory.js load/save/removeNoteTemplate).
+- Verified: backend 4/4 new pytest (test_shows_stats.py) + all shows regression green; frontend 100%
+  (iteration_22). Post-test: added the pre-record script prompt.
+
+
 - **Vault Bulk Actions**: `TakesVault` per-row select (`vault-select-{id}`) + a `vault-bulk-bar`
   (`vault-bulk-count`, `vault-bulk-move` folder select, `vault-bulk-delete`, `vault-bulk-clear`).
   App `bulkMoveVault`/`bulkDeleteVault`.
