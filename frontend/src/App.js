@@ -29,7 +29,7 @@ import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessi
 import { camelotCompatible } from "@/lib/key";
 import { formatTime } from "@/lib/format";
 import { deriveNames, parseFilename } from "@/lib/id3";
-import { addHistory, loadHistory, loadDismissed, dismissExpiry as dismissExpiryCode } from "@/lib/cloudHistory";
+import { addHistory, loadHistory, loadDismissed, dismissExpiry as dismissExpiryCode, updateHistoryExpiry } from "@/lib/cloudHistory";
 
 const uid = () =>
   (crypto.randomUUID && crypto.randomUUID()) ||
@@ -1233,6 +1233,7 @@ function App() {
             name: v.name,
             duration: v.duration,
             transcript: v.transcript || "",
+            folder: v.folder || "",
             date: v.date,
             type: v.type || blob.type,
             data: await blobToB64(blob),
@@ -1343,6 +1344,7 @@ function App() {
       name: vd.name || "Voice Take",
       duration: vd.duration || 0,
       transcript: vd.transcript || "",
+      folder: vd.folder || "",
       date: vd.date || new Date().toISOString(),
       type: vd.type || "audio/wav",
     };
@@ -1447,27 +1449,39 @@ function App() {
     setEditorTrack({ ...v, title: v.name });
   };
   const renameVaultTake = (id, name) => updateVaultTake(id, { name: (name || "").trim() || "Voice Take" });
+  const moveVaultToFolder = (id, folder) => updateVaultTake(id, { folder: folder || "" });
 
   // ---------------- Cloud Handoff ----------------
-  const uploadShow = async () => {
+  const uploadShow = async (pin) => {
     const out = await buildStudioExport(playlists, true, true);
-    const res = await api.uploadShow(out);
+    const res = await api.uploadShow(out, pin);
     setDirty(false);
     try {
-      addHistory({ code: res.code, dir: "sent", expires_at: res.expires_at, size: res.size });
+      addHistory({ code: res.code, dir: "sent", expires_at: res.expires_at, size: res.size, protected: !!res.protected });
     } catch {
       /* ignore */
     }
     return res;
   };
-  const receiveShow = async (code) => {
-    const { payload, expires_at } = await api.fetchShow(code);
+  const receiveShow = async (code, pin) => {
+    const { payload, expires_at } = await api.fetchShow(code, pin);
     try {
       addHistory({ code: (code || "").toUpperCase(), dir: "received", expires_at: expires_at || null });
     } catch {
       /* ignore */
     }
     await applyImport(payload);
+  };
+  const extendCloudLink = async (code) => {
+    try {
+      const { expires_at } = await api.extendShow(code);
+      updateHistoryExpiry(code, expires_at);
+      dismissExpiryCode(code);
+      setExpiryNudge(null);
+      setBanner(`Extended link ${code} — now expires ${new Date(expires_at).toLocaleDateString()}.`);
+    } catch {
+      setBanner("Couldn't extend that link. Check your connection and try again.");
+    }
   };
 
   const importPlaylist = async (file) => {
@@ -2110,13 +2124,10 @@ function App() {
           </span>
           <button
             data-testid="expiry-reshare"
-            onClick={() => {
-              setInitialCloudCode(null);
-              setCloudOpen(true);
-            }}
+            onClick={() => extendCloudLink(expiryNudge.code)}
             className="px-3 py-1 rounded-md bg-[var(--hl-cue)] text-black font-600 text-xs hover:brightness-110"
           >
-            Re-share
+            Extend 30 days
           </button>
           <button
             data-testid="expiry-dismiss"
@@ -2386,6 +2397,7 @@ function App() {
           onInsert={insertVaultTake}
           onEdit={editVaultTake}
           onRename={renameVaultTake}
+          onMoveFolder={moveVaultToFolder}
           onDownload={downloadVaultTake}
           onDelete={deleteVaultTake}
           onClose={() => setVaultOpen(false)}

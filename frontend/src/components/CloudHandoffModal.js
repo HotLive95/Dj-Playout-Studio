@@ -29,15 +29,22 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
   const [code, setCode] = useState(initialCode || "");
   const [received, setReceived] = useState(false);
   const [history, setHistory] = useState(loadHistory);
+  const [sendPin, setSendPin] = useState("");
+  const [receivePin, setReceivePin] = useState("");
+  const [pinNeeded, setPinNeeded] = useState(false);
 
   const linkFor = (c) => `${window.location.origin}/show?code=${c}`;
   const link = result ? linkFor(result.code) : "";
 
   const doUpload = async () => {
+    if (sendPin && !/^[0-9]{4,6}$/.test(sendPin)) {
+      setError("PIN must be 4–6 digits (or leave it blank).");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const res = await onUpload();
+      const res = await onUpload(sendPin || null);
       setResult(res);
       setHistory(loadHistory());
     } catch (e) {
@@ -46,7 +53,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     setBusy(false);
   };
 
-  const doReceive = async (codeArg) => {
+  const doReceive = async (codeArg, pinArg) => {
     const c = (codeArg ?? code ?? "").trim().toUpperCase();
     if (!c) return;
     setCode(c);
@@ -54,11 +61,22 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     setBusy(true);
     setError("");
     try {
-      await onReceive(c);
+      await onReceive(c, pinArg ?? receivePin ?? null);
       setReceived(true);
+      setPinNeeded(false);
       setHistory(loadHistory());
     } catch (e) {
-      setError(e.message || "Could not load that show. Double-check the code.");
+      if (e.status === 401) {
+        setPinNeeded(true);
+        setError("This show is PIN-protected. Enter the PIN your co-host set.");
+      } else if (e.status === 403) {
+        setPinNeeded(true);
+        setError("That PIN is incorrect. Try again.");
+      } else if (e.status === 429) {
+        setError("Too many PIN attempts — wait a few minutes and try again.");
+      } else {
+        setError(e.message || "Could not load that show. Double-check the code.");
+      }
     }
     setBusy(false);
   };
@@ -155,6 +173,19 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                     Upload your whole show (all playlists, jingles, and voice takes) and get a short
                     code + link to send a co-host. Online only · 50 MB max · link expires in 30 days.
                   </p>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                      PIN (optional)
+                    </label>
+                    <input
+                      data-testid="cloud-send-pin"
+                      value={sendPin}
+                      onChange={(e) => setSendPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      inputMode="numeric"
+                      placeholder="4–6 digits — only a co-host with the PIN can open it"
+                      className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)]"
+                    />
+                  </div>
                   <button
                     data-testid="cloud-upload-button"
                     onClick={doUpload}
@@ -179,6 +210,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                     </div>
                     <div className="text-[11px] text-[var(--hl-muted)] mt-1">
                       {fmtSize(result.size)} · {expiryLabel(result.expires_at)}
+                      {result.protected ? " · PIN-protected 🔒" : ""}
                     </div>
                   </div>
                   <div className="grid place-items-center">
@@ -241,9 +273,21 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                     maxLength={8}
                     className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-3 text-center text-2xl font-display tracking-[0.3em] outline-none focus:border-[var(--hl-fire)]"
                   />
+                  {pinNeeded && (
+                    <input
+                      data-testid="cloud-receive-pin"
+                      value={receivePin}
+                      onChange={(e) => setReceivePin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      onKeyDown={(e) => e.key === "Enter" && doReceive(code, receivePin)}
+                      inputMode="numeric"
+                      autoFocus
+                      placeholder="Enter PIN"
+                      className="w-full bg-black/50 border border-[var(--hl-cue)] rounded-lg px-3 py-3 text-center text-xl font-display tracking-[0.3em] outline-none focus:border-[var(--hl-fire)]"
+                    />
+                  )}
                   <button
                     data-testid="cloud-receive-button"
-                    onClick={() => doReceive()}
+                    onClick={() => doReceive(code, pinNeeded ? receivePin : null)}
                     disabled={busy || !code.trim()}
                     className="w-full h-11 rounded-lg hl-fire-gradient text-white font-600 flex items-center justify-center gap-2 disabled:opacity-60"
                   >

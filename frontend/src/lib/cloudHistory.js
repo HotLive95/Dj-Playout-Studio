@@ -24,6 +24,11 @@ export function removeHistory(code, dir) {
   localStorage.setItem(KEY, JSON.stringify(list));
 }
 
+export function updateHistoryExpiry(code, expires_at) {
+  const list = loadHistory().map((h) => (h.code === code ? { ...h, expires_at } : h));
+  localStorage.setItem(KEY, JSON.stringify(list));
+}
+
 export function loadDismissed() {
   try {
     const list = JSON.parse(localStorage.getItem(DISMISS_KEY) || "[]");

@@ -1,6 +1,7 @@
-from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File
+from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 import os
 import asyncio
@@ -8,6 +9,8 @@ import logging
 import random
 import json
 import secrets
+import hashlib
+import hmac
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional
@@ -667,13 +670,67 @@ SHOW_TTL_DAYS = 30
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars
 _shows_fs = AsyncIOMotorGridFSBucket(db, bucket_name="shows")
 
+# Optional per-show PIN (scrypt + server-side pepper). A short PIN is a
+# convenience gate, not real auth — pair with online rate-limiting + HTTPS.
+_PIN_PEPPER = bytes.fromhex(os.environ.get('SHOW_PIN_PEPPER', secrets.token_hex(32)))
+_SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1, "dklen": 32}
+PIN_MAX_ATTEMPTS = 6
+PIN_WINDOW_SEC = 600
+
 
 def _gen_code(n: int = 6) -> str:
     return "".join(secrets.choice(CODE_ALPHABET) for _ in range(n))
 
 
+def _valid_pin(pin: str) -> bool:
+    return bool(pin) and pin.isascii() and pin.isdigit() and 4 <= len(pin) <= 6
+
+
+def _peppered(pin: str) -> bytes:
+    return hmac.new(_PIN_PEPPER, pin.encode("ascii"), hashlib.sha256).digest()
+
+
+def make_pin_record(pin: str) -> dict:
+    salt = secrets.token_bytes(16)
+    derived = hashlib.scrypt(_peppered(pin), salt=salt, maxmem=128 * 1024 * 1024, **_SCRYPT)
+    return {
+        "pin_hash": base64.b64encode(derived).decode("ascii"),
+        "pin_salt": base64.b64encode(salt).decode("ascii"),
+    }
+
+
+def verify_pin(pin: str, rec: dict) -> bool:
+    try:
+        if not _valid_pin(pin):
+            return False
+        salt = base64.b64decode(rec["pin_salt"])
+        expected = base64.b64decode(rec["pin_hash"])
+        actual = hashlib.scrypt(_peppered(pin), salt=salt, maxmem=128 * 1024 * 1024, **_SCRYPT)
+        return hmac.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+
+async def _pin_attempt_ok(code: str, ip: str) -> bool:
+    key = f"{code}:{ip}"
+    now = datetime.now(timezone.utc)
+    doc = await db.pin_attempts.find_one({"_id": key})
+    if not doc or is_expired(doc.get("window_ends")):
+        await db.pin_attempts.update_one(
+            {"_id": key},
+            {"$set": {"count": 1, "window_ends": (now + timedelta(seconds=PIN_WINDOW_SEC)).isoformat()}},
+            upsert=True,
+        )
+        return True
+    if doc.get("count", 0) >= PIN_MAX_ATTEMPTS:
+        return False
+    await db.pin_attempts.update_one({"_id": key}, {"$inc": {"count": 1}})
+    return True
+
+
 class ShareShowBody(BaseModel):
     payload: dict
+    pin: Optional[str] = None
 
 
 @api_router.post("/shows")
@@ -682,6 +739,11 @@ async def create_show(body: ShareShowBody):
     if len(raw) > SHOW_MAX_BYTES:
         mb = len(raw) / (1024 * 1024)
         raise HTTPException(status_code=413, detail=f"Show is too large ({mb:.0f} MB). The cloud link limit is 50 MB — use Save Show to a file instead.")
+    pin_rec = None
+    if body.pin:
+        if not _valid_pin(body.pin):
+            raise HTTPException(status_code=422, detail="PIN must be 4-6 digits.")
+        pin_rec = await run_in_threadpool(make_pin_record, body.pin)
     code = _gen_code()
     for _ in range(6):
         if not await db.shared_shows.find_one({"code": code}):
@@ -690,27 +752,50 @@ async def create_show(body: ShareShowBody):
     now = datetime.now(timezone.utc)
     expires = now + timedelta(days=SHOW_TTL_DAYS)
     file_id = await _shows_fs.upload_from_stream(code, raw)
-    await db.shared_shows.insert_one({
+    doc = {
         "code": code,
         "file_id": file_id,
         "size": len(raw),
         "created_at": now.isoformat(),
         "expires_at": expires.isoformat(),
-    })
-    return {"code": code, "expires_at": expires.isoformat(), "size": len(raw)}
+        "protected": bool(pin_rec),
+    }
+    if pin_rec:
+        doc.update(pin_rec)
+    await db.shared_shows.insert_one(doc)
+    return {"code": code, "expires_at": expires.isoformat(), "size": len(raw), "protected": bool(pin_rec)}
 
 
 @api_router.get("/shows/{code}")
-async def get_show(code: str):
+async def get_show(code: str, request: Request, x_show_pin: Optional[str] = Header(None)):
     doc = await db.shared_shows.find_one({"code": (code or "").upper()})
     if not doc:
         raise HTTPException(status_code=404, detail="That show code was not found.")
     if is_expired(doc.get("expires_at")):
         raise HTTPException(status_code=410, detail="This share link has expired.")
+    if doc.get("pin_hash"):
+        ip = request.client.host if request.client else "unknown"
+        if not await _pin_attempt_ok(doc["code"], ip):
+            raise HTTPException(status_code=429, detail="Too many PIN attempts — wait a few minutes.", headers={"Retry-After": "600"})
+        if not x_show_pin:
+            raise HTTPException(status_code=401, detail="This show is PIN-protected. Enter the PIN.")
+        ok = await run_in_threadpool(verify_pin, x_show_pin, doc)
+        if not ok:
+            raise HTTPException(status_code=403, detail="That PIN is incorrect.")
     stream = await _shows_fs.open_download_stream(doc["file_id"])
     content = await stream.read()
     payload = json.loads(content.decode("utf-8"))
     return {"payload": payload, "expires_at": doc.get("expires_at")}
+
+
+@api_router.post("/shows/{code}/extend")
+async def extend_show(code: str):
+    doc = await db.shared_shows.find_one({"code": (code or "").upper()})
+    if not doc:
+        raise HTTPException(status_code=404, detail="That show code was not found.")
+    expires = datetime.now(timezone.utc) + timedelta(days=SHOW_TTL_DAYS)
+    await db.shared_shows.update_one({"code": doc["code"]}, {"$set": {"expires_at": expires.isoformat()}})
+    return {"code": doc["code"], "expires_at": expires.isoformat()}
 
 
 app.include_router(api_router)

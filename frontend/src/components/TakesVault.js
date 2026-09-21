@@ -1,9 +1,11 @@
-import React, { useRef, useState } from "react";
-import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check } from "lucide-react";
+import React, { useRef, useState, useMemo } from "react";
+import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check, Search, Folder } from "lucide-react";
 import { formatTime } from "../lib/format";
 
+const FOLDERS = ["Intros", "Promos", "Station IDs", "Bumpers"];
+
 // A persistent drawer of every voice-booth take (auto-saved on record). DJs can
-// re-insert a take into the current playlist, trim/rename it, download, or delete.
+// search, group into folders, re-insert, trim/rename, download, or delete a take.
 // Vault takes also travel inside shared / saved show files.
 export default function TakesVault({
   vault = [],
@@ -12,6 +14,7 @@ export default function TakesVault({
   onInsert,
   onEdit,
   onRename,
+  onMoveFolder,
   onDownload,
   onDelete,
   onClose,
@@ -19,7 +22,36 @@ export default function TakesVault({
   const [playingId, setPlayingId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal] = useState("");
+  const [query, setQuery] = useState("");
+  const [folderFilter, setFolderFilter] = useState("All");
   const audioRef = useRef(null);
+
+  // Folder chips = All + any folders in use (presets first) + Unfiled if present.
+  const usedFolders = useMemo(() => {
+    const set = new Set(vault.map((v) => v.folder || "").filter(Boolean));
+    const ordered = FOLDERS.filter((f) => set.has(f));
+    const extra = [...set].filter((f) => !FOLDERS.includes(f));
+    return [...ordered, ...extra];
+  }, [vault]);
+  const hasUnfiled = useMemo(() => vault.some((v) => !v.folder), [vault]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return vault.filter((v) => {
+      if (folderFilter === "All") {
+        /* keep */
+      } else if (folderFilter === "Unfiled") {
+        if (v.folder) return false;
+      } else if ((v.folder || "") !== folderFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        (v.name || "").toLowerCase().includes(q) ||
+        (v.transcript || "").toLowerCase().includes(q)
+      );
+    });
+  }, [vault, query, folderFilter]);
 
   const startRename = (v) => {
     setRenamingId(v.id);
@@ -95,6 +127,37 @@ export default function TakesVault({
           </button>
         </div>
 
+        {vault.length > 0 && (
+          <div className="px-4 pt-3 pb-1 space-y-2 border-b border-[var(--hl-line)]">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--hl-muted)] pointer-events-none" />
+              <input
+                data-testid="vault-search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search takes by name or transcript…"
+                className="w-full h-9 pl-9 pr-3 rounded-full bg-black/40 border border-[var(--hl-line)] text-sm outline-none focus:border-[var(--hl-fire)]"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5" data-testid="vault-folder-filters">
+              {["All", ...(hasUnfiled ? ["Unfiled"] : []), ...usedFolders].map((f) => (
+                <button
+                  key={f}
+                  data-testid={`vault-folder-filter-${f.replace(/\s/g, "-")}`}
+                  onClick={() => setFolderFilter(f)}
+                  className={`text-[11px] rounded-full px-2.5 py-1 border transition ${
+                    folderFilter === f
+                      ? "border-[var(--hl-fire)] text-[var(--hl-fire)] bg-[rgba(255,90,31,0.12)]"
+                      : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="p-4 overflow-y-auto hl-scroll space-y-2">
           {vault.length === 0 && (
             <div
@@ -106,7 +169,12 @@ export default function TakesVault({
               survives reloads.
             </div>
           )}
-          {vault.map((v) => (
+          {vault.length > 0 && filtered.length === 0 && (
+            <div className="text-center text-[var(--hl-muted)] text-sm px-6 py-10" data-testid="vault-no-results">
+              No takes match your search or folder.
+            </div>
+          )}
+          {filtered.map((v) => (
             <div
               key={v.id}
               data-testid={`vault-take-${v.id}`}
@@ -159,6 +227,22 @@ export default function TakesVault({
                   <span className="tabular-nums">{formatTime(v.duration || 0)}</span>
                   <span>·</span>
                   <span>{fmtDate(v.date)}</span>
+                </div>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <Folder size={12} className="text-[var(--hl-muted)] shrink-0" />
+                  <select
+                    data-testid={`vault-folder-${v.id}`}
+                    value={v.folder || ""}
+                    onChange={(e) => onMoveFolder(v.id, e.target.value)}
+                    className="bg-black/40 border border-[var(--hl-line)] rounded px-1.5 py-0.5 text-[11px] outline-none focus:border-[var(--hl-fire)]"
+                  >
+                    <option value="">Unfiled</option>
+                    {FOLDERS.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 {v.transcript && (
                   <div

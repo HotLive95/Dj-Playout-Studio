@@ -45,11 +45,11 @@ export const api = {
   },
 
   // Cloud Handoff: upload a whole show, get a short code + expiry back.
-  uploadShow: async (payload) => {
+  uploadShow: async (payload, pin) => {
     const res = await fetch(`${BASE}/api/shows`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload }),
+      body: JSON.stringify({ payload, pin: pin || null }),
     });
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
@@ -59,12 +59,16 @@ export const api = {
       } catch {
         /* ignore */
       }
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
     return res.json();
   },
-  fetchShow: async (code) => {
-    const res = await fetch(`${BASE}/api/shows/${encodeURIComponent(code)}`);
+  fetchShow: async (code, pin) => {
+    const res = await fetch(`${BASE}/api/shows/${encodeURIComponent(code)}`, {
+      headers: pin ? { "X-Show-PIN": pin } : {},
+    });
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
       try {
@@ -73,8 +77,15 @@ export const api = {
       } catch {
         /* ignore */
       }
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
+    return res.json();
+  },
+  extendShow: async (code) => {
+    const res = await fetch(`${BASE}/api/shows/${encodeURIComponent(code)}/extend`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
 
