@@ -592,7 +592,25 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## One-Click Re-record + Vault Drag-Sort + Handoff Analytics + Note Templates (2026-06)
+## Folder Drag-Sort + Open Alerts + Template Categories + Vault Waveform (2026-06)
+- **Folder-scoped Drag-Sort**: verified — dragging within a folder view reorders only that folder;
+  `App.reorderVault` slots the reordered ids back into their original global positions so out-of-view
+  takes stay put (persists across reload).
+- **Open Alerts**: `get_show` uses `find_one_and_update` ($inc opens, ReturnDocument.AFTER); the FIRST
+  open (opens==1) of a share that has an `email` and no `open_alert_sent` sends a one-time
+  `send_show_open_email` (Resend), then sets `open_alert_sent`. Fails gracefully (GET stays 200).
+- **Template Categories**: note templates now store `{text, tag}` (NOTE_TAGS: Drive-time/Overnight/
+  Promo/Weekend/General); `cloud-note-template-tag` select on save, `cloud-note-tag-filter-{tag}` chips
+  filter templates; legacy plain-string templates auto-normalized on load.
+- **Vault Waveform**: `TakesVault` lazily decodes each take (`decodeToBuffer`+`computePeaks(44)`, cached
+  in `peaksMap` via `requestedRef` dedupe) and renders a mini bar waveform `vault-wave-{id}`; omitted
+  gracefully if audio can't be decoded.
+- Verified: backend 5/5 new pytest (test_shows_open_alert.py) + 9/9 prior shows tests; frontend 100%
+  (iteration_23).
+- Deferred carry-overs: `/extend` PIN gate; VoiceRecorder transcript field only post-record (mitigated
+  by the pre-record `voice-script-prompt`); onStats serial fetch batching.
+
+
 - **One-Click Re-record**: `vault-rerecord-{id}` reopens the Voice Booth pre-loaded with the take's
   name + transcript (VoiceRecorder `prefill` prop; App `rerecordVaultTake` sets `voicePrefill`). Added a
   pre-record "Script to read" panel (`voice-script-prompt`/`voice-script-text`) so the DJ sees the words

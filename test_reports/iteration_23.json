@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 23 — full backend+frontend verification of the four new features (Folder-scoped Drag-Sort, Open Alerts, Template Categories, Vault Waveform) on top of the tested Vault + Cloud Handoff stack. Backend: added /app/backend/tests/test_shows_open_alert.py (5/5 pass) — POST /api/shows with email=fake-test@example.invalid returns a 6-char code; first GET /api/shows/{code} returns 200 with payload (Resend fail to .invalid handled gracefully — no 5xx bubble), /stats reports opens=1 and non-null last_opened_at; second GET → opens=2, still 200; /stats also exposes expires_at + protected=false; share without email path is unaffected. Prior test_shows.py (5/5), test_shows_stats.py (4/4), test_shows_pin_extend.py, test_shows_expiry_email.py all still green. Frontend Playwright (offline key Q61VK-G819N-40K1B-H226T, legal accepted, dialog handler + IndexedDB seed of tiny mono 16-bit PCM WAV blobs for takes A/B/C/D): (1) Folder-scoped Drag-Sort — seeded vault A(Promos), B(Promos), C(Unfiled), D(Promos); Promos filter shows only A,B,D and hides C; dragging D above A via real DragEvent+DataTransfer with 150 ms gaps (dragstart→dragenter/dragover→drop→dragend) reorders the Promos view to [D,A,B]; switching to 'All' preserves C at global index 2 → [D,A,C,B]; localStorage 'hotlive95_state'.vault matches; full page reload keeps the [D,A,C,B] order. (2) Vault Waveform — 3s after opening the vault with decodable WAV blobs, vault-wave-B and vault-wave-D render mini bar rows; no crash/console errors from lazy decode. (3) Template Categories — cleared 'hotlive95_note_templates', typed a Promo note, selected 'Promo' in cloud-note-template-tag select, clicked cloud-note-save-template → chip shows leading '[Promo]' label; saved a second 'Overnight' template → cloud-note-tag-filters row + cloud-note-tag-filter-Promo/-Overnight chips appear; clicking Promo filter hides the Overnight template; clicking the Promo chip inserts its text into cloud-send-note; localStorage now stores objects with {text,tag}. Injected a legacy plain string 'TEST_Legacy_String' and reloaded — it still renders alongside tagged templates (backward-compat normalization confirmed). (4) Open Alerts — the observable side (opens counter + 200 status on .invalid recipient) is fully covered by the new pytest module; not asserting live Resend delivery per instructions. No new blocking console errors — only the pre-existing benign 'visual-editor <span> cannot be a child of <option>' hydration warning from PlayerBar dev-tooling.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PlayerBar <select> options", "issues": ["Pre-existing (iterations 20-22) visual-editor injects <span> children into <option>, producing a React hydration warning. Non-blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_shows_open_alert.py",
+    "/app/test_reports/pytest/iteration_23.xml"
+  ],
+  "action_items": [
+    "(Carry-over minor) VoiceRecorder transcript textarea only mounts after a take is recorded — pre-record the prefill sits invisibly in state.",
+    "(Carry-over) /api/shows/{code}/extend still gates only on IP+code rate-limit; anyone with the code can extend the link. Consider requiring the PIN when protected=true.",
+    "(Carry-over) Creating a custom folder in TakesVault auto-selects the empty new folder as the filter, hiding all takes."
+  ],
+  "critical_code_review_comments": [
+    "TakesVault.handleDrop (line 114-128): reorder indices are computed against the folder-filtered list and App.reorderVault correctly preserves out-of-view takes by slotting reordered ids back into their original global positions — verified end-to-end in this iteration. Good.",
+    "server.py get_show (line 864-872): switching to find_one_and_update($inc opens, ReturnDocument.AFTER) is the right primitive to make the 'first open' check atomic and race-free. Nice fix.",
+    "server.py send_show_open_email raises on Resend failure but is wrapped in try/except returning False, so the outer GET stays 200 even with a bad recipient — confirmed on .invalid domain in the new test.",
+    "TakesVault peaks useEffect (line 43-63) only tracks `vault` as a dep and uses requestedRef.current for dedupe — a take whose audio blob is added AFTER first mount will never get a re-decode attempt because its id is already in requestedRef. Currently OK because takes always arrive with their blob, but worth documenting.",
+    "cloudHistory.saveNoteTemplate still silently dedupes case-sensitively (x.text !== t) and caps at 12 with no user feedback (carry-over).",
+    "CloudHandoffModal onStats useEffect still fires N serial GETs per library entry (carry-over — batch + cache recommendation stands)."
+  ],
+  "updated_files": ["/app/backend/tests/test_shows_open_alert.py", "/app/test_reports/iteration_23.json"],
+  "success_rate": {"backend": "100% (5/5 new open-alert + 9/9 prior show tests)", "frontend": "100% for the four new features (folder-scoped drag, waveform, template categories, legacy compat)"},
+  "test_credentials": "Offline activation key: Q61VK-G819N-40K1B-H226T. Admin token: 1972Hotlive95dj1108** (X-Admin-Token header).",
+  "seed_data_creation": "Frontend: IndexedDB 'hotlive95/audio' seeded with 4 tiny mono WAV blobs keyed A/B/C/D + localStorage 'hotlive95_state'.vault with 4 takes (A/B/D in 'Promos', C Unfiled). Backend: 2 disposable cloud shares created with TEST_open_alert_show playlist (one with email=fake-test@example.invalid, one without email). All test data prefixed TEST_ for later cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "HTML5 drag-sort in TakesVault MUST use a real DragEvent with a real DataTransfer instance and 150 ms waits between dragstart → dragover → drop (setDragId is async React state). Playwright's dispatch_event('dragstart', {dataTransfer:{}}) fails because dataTransfer isn't converted — instead run page.evaluate() and use `new DragEvent(type, {dataTransfer: new DataTransfer(), bubbles:true, cancelable:true})`. To exercise the vault waveform, seed IndexedDB store 'hotlive95/audio' with a valid mono 16-bit PCM WAV Blob keyed by take.id; peaks then appear ~3 s after the vault opens. Templates now persist as {text,tag} objects — loadNoteTemplates normalizes legacy strings, so injecting a plain string into 'hotlive95_note_templates' is a good back-compat check.",
+  "rca of the issue": "N/A — no product bugs. Only tooling note: Playwright ElementHandle.dispatch_event cannot serialize a bare {} into a DataTransfer, so the first attempt at the folder-scoped drag failed with 'Failed to convert value to DataTransfer'. Switching to page.evaluate + real DragEvent + real DataTransfer inside the page context fixed it and matched the async-setDragId timing requirement from iteration 22."
+}
