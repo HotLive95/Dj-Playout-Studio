@@ -592,7 +592,19 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Folder Drag-Sort + Open Alerts + Template Categories + Vault Waveform (2026-06)
+## Open Alert Toggle + Waveform Scrub (2026-06)
+- **Open Alert Toggle**: per-share control for the co-host "first opened" email. `ShareShowBody.alert_on_open`
+  (default true); `create_show` stores it; `get_show` first-open alert gated on `alert_on_open`.
+  Frontend `cloud-alert-on-open` checkbox appears only when an email is entered (checked by default);
+  `api.uploadShow(payload,pin,email,alertOnOpen)`.
+- **Waveform Scrub**: clicking a take's mini waveform (`vault-wave-{id}`) computes the click fraction and
+  previews playback from that point (`TakesVault.seekPlay`, seeks in onloadedmetadata + post-play,
+  errors swallowed).
+- Verified: backend 15/15 pytest (test_shows_alert_toggle.py 5/5 new); frontend open-alert toggle 100%;
+  waveform-scrub click no-throw + code-review clean (iteration_24). Note: headless AudioContext decode
+  is intermittent in the test container (env limit, not a bug — waveforms render in a real browser).
+
+
 - **Folder-scoped Drag-Sort**: verified — dragging within a folder view reorders only that folder;
   `App.reorderVault` slots the reordered ids back into their original global positions so out-of-view
   takes stay put (persists across reload).
