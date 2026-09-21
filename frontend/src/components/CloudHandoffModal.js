@@ -267,7 +267,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                   {history.map((h) => (
                     <div
                       key={`${h.dir}-${h.code}`}
-                      data-testid={`cloud-library-item-${h.code}`}
+                      data-testid={`cloud-library-item-${h.dir}-${h.code}`}
                       className="rounded-xl border border-[var(--hl-line)] bg-black/30 p-3 flex items-center gap-3"
                     >
                       <div
@@ -289,7 +289,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
-                          data-testid={`cloud-library-reopen-${h.code}`}
+                          data-testid={`cloud-library-reopen-${h.dir}-${h.code}`}
                           onClick={() => doReceive(h.code)}
                           className="h-8 px-2.5 grid place-items-center rounded-lg border border-[var(--hl-line)] text-[var(--hl-cue)] hover:border-[var(--hl-cue)] text-xs font-600 flex-row gap-1"
                           title="Reopen this show"
@@ -297,7 +297,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                           <RotateCcw size={13} /> Reopen
                         </button>
                         <button
-                          data-testid={`cloud-library-copy-${h.code}`}
+                          data-testid={`cloud-library-copy-${h.dir}-${h.code}`}
                           onClick={() => copyLink(linkFor(h.code), h.code)}
                           className="h-8 w-8 grid place-items-center rounded-lg text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:bg-white/10"
                           title="Copy link"
@@ -305,7 +305,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                           {copied === h.code ? <Check size={14} className="text-[var(--hl-cue)]" /> : <Copy size={14} />}
                         </button>
                         <button
-                          data-testid={`cloud-library-remove-${h.code}`}
+                          data-testid={`cloud-library-remove-${h.dir}-${h.code}`}
                           onClick={() => removeEntry(h.code, h.dir)}
                           className="h-8 w-8 grid place-items-center rounded-lg text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:bg-white/10"
                           title="Remove from library"

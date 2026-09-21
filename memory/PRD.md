@@ -592,7 +592,24 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Voice Take Vault + Cloud Handoff + Whole-show Replace-All + Backup Reminder (2026-06)
+## Vault Trim/Rename + Cloud QR + Show Library + Expiry Nudge (2026-06)
+- **Vault Trim/Rename**: `TakesVault` rows now have a Scissors `vault-edit-{id}` (opens the take in the
+  Track Editor via App `editVaultTake` → trimmed result saves into the current playlist through the
+  existing `saveEditedTrack`) and inline rename (`vault-rename-{id}` → `vault-rename-input-{id}` →
+  `vault-rename-save-{id}` → `renameVaultTake`, persisted).
+- **Cloud QR**: `CloudHandoffModal` Send result shows a scannable `QRCodeCanvas` (qrcode.react,
+  `cloud-qr`) of the share link so a co-host can grab it from a phone.
+- **Show Library**: new `cloud-tab-library` lists past sent/received handoffs (from
+  `lib/cloudHistory.js`, localStorage `hotlive95_cloud_history`; recorded by App `uploadShow`/
+  `receiveShow`). Each row: Reopen (re-imports by code), Copy link, Remove. Test-ids namespaced by
+  direction: `cloud-library-{item,reopen,copy,remove}-{dir}-{code}`.
+- **Expiry Nudge**: App warns (`expiry-nudge` bar) when a SENT cloud link expires within 5 days
+  (`refreshExpiryNudge`, recomputed on load + when the cloud modal closes); `expiry-reshare` opens the
+  modal, `expiry-dismiss` persists dismissal in localStorage `hotlive95_expiry_dismissed`.
+- Verified E2E (testing agent iteration_19): all four 100%. Fixed the flagged duplicate library
+  test-id collision by namespacing with direction.
+
+
 - **Voice Take Vault**: every Voice Booth take is auto-saved to a persistent vault the moment it's
   recorded (VoiceRecorder `onVaultTake` encodes WAV → App `saveVaultTake` stores blob in IndexedDB/
   Electron media + a `vault[]` entry {id,name,duration,transcript,date}). Header `open-takes-vault`

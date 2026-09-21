@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only regression for iteration 19 covering the four Cloud Handoff / Vault enhancements. Activation (offline key) reached the studio. Cloud Send generated a 6-char share code + link + QR canvas (data-testid=cloud-qr) with working copy. The Library tab renders past sent handoffs with correct testids, Reopen triggered a receive and loaded cloud-received, copy-link works, and remove clears the row. Vault seed → open vault → rename via vault-rename-{id} → vault-rename-input-{id} → vault-rename-save-{id} updated the displayed name AND persisted across a full page reload. vault-edit-{id} opened the Track Editor modal (data-testid=track-editor-modal) titled 'Track Editor — Seed Take Editor' with expected 'Could not load this track for editing.' for the seed (no blob) — acceptable per spec. Expiry nudge (2 days) appeared with correct code/days text, expiry-reshare opened the Cloud Handoff modal, expiry-dismiss hid the bar and dismissal persisted after reload. No blocking console errors (only benign React hydration warning about <span> inside <option>).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CloudHandoffModal Library", "issue": "When the same code exists in history for both directions (e.g. after Reopen on a code you sent, a 'received' entry with the same code is added), the row test-ids collide: two elements share data-testid='cloud-library-item-{CODE}' / cloud-library-remove-{CODE} / reopen / copy. Playwright strict-mode click fails without .first. React key uses `${dir}-${code}` so consider embedding dir into the data-testid too (e.g. cloud-library-remove-{dir}-{CODE}).", "selector": "[data-testid=cloud-library-remove-{CODE}]", "priority": "MEDIUM"},
+      {"component": "TrackEditor", "issue": "Modal exposes data-testid='track-editor-modal' but the review request/expected testid is 'track-editor'. Not blocking (both are self-consistent) but worth aligning docs or adding an alias.", "selector": "[data-testid=track-editor]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_19.json"],
+  "action_items": [
+    "Disambiguate library row test-ids by including direction: cloud-library-item-{dir}-{code} (and remove/reopen/copy siblings) so tools/tests can target sent vs received unambiguously.",
+    "Optional: alias track-editor-modal as track-editor (or update docs) for consistency with review spec."
+  ],
+  "critical_code_review_comments": [
+    "cloudHistory.addHistory dedupes by (code+dir) only, so reopening a code you originally sent adds a duplicate 'received' entry — combined with (code)-only test-ids this causes the duplicate-testid issue above.",
+    "expiry-nudge logic (App.js L694-707) is clean; uses loadDismissed + <5 day window correctly and refreshes when the Cloud modal closes.",
+    "QR uses qrcode.react QRCodeCanvas inside div[data-testid=cloud-qr] — correctly renders a <canvas>."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100% for the 4 enhancements (all critical assertions passed)"},
+  "test_credentials": "Offline activation key: Q61VK-G819N-40K1B-H226T (persisted in localStorage hotlive95_license).",
+  "seed_data_creation": "Seeded a vault take by injecting into localStorage 'hotlive95_state'.vault and a sent-with-2-day-expiry entry into localStorage 'hotlive95_cloud_history'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Cloud handoff, vault rename, vault edit, expiry nudge all work end-to-end. Only cosmetic issue: duplicate data-testid for library rows when both sent+received exist for the same code — future selectors should use .first() or main agent can namespace by direction. Track Editor modal exposes data-testid='track-editor-modal', not 'track-editor'.",
+  "rca of the issue": "n/a — no blocking bugs."
+}
