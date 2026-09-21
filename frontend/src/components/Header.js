@@ -1,7 +1,7 @@
 import React from "react";
-import { KeyRound, IdCard, Search, X, Circle, Square } from "lucide-react";
+import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud } from "lucide-react";
 
-export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord }) {
+export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud }) {
   const fmtRec = (s) => {
     const t = Math.floor(s || 0);
     return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
@@ -79,6 +79,30 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
               REC
             </>
           )}
+        </button>
+        <button
+          data-testid="open-takes-vault"
+          onClick={onOpenVault}
+          className="relative h-9 w-9 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)] transition"
+          title="Takes Vault — your saved voice-booth recordings"
+        >
+          <Archive size={16} />
+          {vaultCount > 0 && (
+            <span
+              data-testid="vault-count-badge"
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 grid place-items-center rounded-full bg-[var(--hl-cue)] text-black text-[10px] font-700"
+            >
+              {vaultCount}
+            </span>
+          )}
+        </button>
+        <button
+          data-testid="open-cloud-handoff"
+          onClick={onOpenCloud}
+          className="h-9 w-9 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] transition"
+          title="Cloud Handoff — send your show to a co-host via a link"
+        >
+          <Cloud size={16} />
         </button>
         <button
           data-testid="open-license-status"

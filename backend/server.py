@@ -1,11 +1,13 @@
 from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 import os
 import asyncio
 import logging
 import random
+import json
+import secrets
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional
@@ -657,6 +659,58 @@ async def admin_run_expiry_check(x_admin_token: Optional[str] = Header(None)):
     check_admin(x_admin_token)
     res = await process_expiry()
     return {"status": "ok", "alerts_sent": res["alerts"], "auto_renewed": res["renews"], "owner_email": OWNER_EMAIL or None}
+
+
+# ---------- Cloud Handoff: share a whole show via a short code/link ----------
+SHOW_MAX_BYTES = 50 * 1024 * 1024  # 50 MB cap
+SHOW_TTL_DAYS = 30
+CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars
+_shows_fs = AsyncIOMotorGridFSBucket(db, bucket_name="shows")
+
+
+def _gen_code(n: int = 6) -> str:
+    return "".join(secrets.choice(CODE_ALPHABET) for _ in range(n))
+
+
+class ShareShowBody(BaseModel):
+    payload: dict
+
+
+@api_router.post("/shows")
+async def create_show(body: ShareShowBody):
+    raw = json.dumps(body.payload).encode("utf-8")
+    if len(raw) > SHOW_MAX_BYTES:
+        mb = len(raw) / (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Show is too large ({mb:.0f} MB). The cloud link limit is 50 MB — use Save Show to a file instead.")
+    code = _gen_code()
+    for _ in range(6):
+        if not await db.shared_shows.find_one({"code": code}):
+            break
+        code = _gen_code()
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=SHOW_TTL_DAYS)
+    file_id = await _shows_fs.upload_from_stream(code, raw)
+    await db.shared_shows.insert_one({
+        "code": code,
+        "file_id": file_id,
+        "size": len(raw),
+        "created_at": now.isoformat(),
+        "expires_at": expires.isoformat(),
+    })
+    return {"code": code, "expires_at": expires.isoformat(), "size": len(raw)}
+
+
+@api_router.get("/shows/{code}")
+async def get_show(code: str):
+    doc = await db.shared_shows.find_one({"code": (code or "").upper()})
+    if not doc:
+        raise HTTPException(status_code=404, detail="That show code was not found.")
+    if is_expired(doc.get("expires_at")):
+        raise HTTPException(status_code=410, detail="This share link has expired.")
+    stream = await _shows_fs.open_download_stream(doc["file_id"])
+    content = await stream.read()
+    payload = json.loads(content.decode("utf-8"))
+    return {"payload": payload, "expires_at": doc.get("expires_at")}
 
 
 app.include_router(api_router)

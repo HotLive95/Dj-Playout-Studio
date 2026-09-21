@@ -44,6 +44,40 @@ export const api = {
     return res.json();
   },
 
+  // Cloud Handoff: upload a whole show, get a short code + expiry back.
+  uploadShow: async (payload) => {
+    const res = await fetch(`${BASE}/api/shows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload }),
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        if (j?.detail) msg = j.detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  },
+  fetchShow: async (code) => {
+    const res = await fetch(`${BASE}/api/shows/${encodeURIComponent(code)}`);
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        if (j?.detail) msg = j.detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  },
+
   adminCreate: (token, dj, maxDevices, expiresAt, email) =>
     post("/api/admin/keys", { dj, email, max_devices: maxDevices, expires_at: expiresAt }, token),
   adminRenew: (token, key, days) => post(`/api/admin/keys/${key}/renew`, { days }, token),

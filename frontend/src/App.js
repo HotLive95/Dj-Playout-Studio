@@ -18,6 +18,8 @@ import CustomFxModal from "@/components/CustomFxModal";
 import { MobileMiniPlayer } from "@/components/MobileMiniPlayer";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { LicenseStatus } from "@/components/LicenseStatus";
+import TakesVault from "@/components/TakesVault";
+import CloudHandoffModal from "@/components/CloudHandoffModal";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
@@ -263,6 +265,12 @@ function App() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [missingIds, setMissingIds] = useState(() => new Set());
   const [standby, setStandby] = useState({ trackId: null, faderPos: 0 });
+  const [vault, setVault] = useState([]);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [cloudOpen, setCloudOpen] = useState(false);
+  const [initialCloudCode, setInitialCloudCode] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [backupDismissed, setBackupDismissed] = useState(false);
 
   const engineRef = useRef(null);
   const autoCueRef = useRef(false);
@@ -279,6 +287,8 @@ function App() {
   const playJingleRef = useRef(() => {});
   const cueInRef = useRef(() => {});
   const cueOutRef = useRef(() => {});
+  const dirtyReadyRef = useRef(false);
+  const dirtyRef = useRef(false);
   const [autoStartPending, setAutoStartPending] = useState(null);
   jinglesRef.current = jingles;
 
@@ -292,9 +302,23 @@ function App() {
         setCurrentPlaylistId(state.currentPlaylistId || state.playlists?.[0]?.id || null);
         setSettings({ ...defaultSettings, ...(state.settings || {}), autoDuck: false });
         setJingles(state.jingles || []);
+        setVault(state.vault || []);
       }
       setLoaded(true);
     })();
+  }, []);
+
+  // A share link (…/show?code=ABC) opens the Cloud Handoff receiver.
+  useEffect(() => {
+    try {
+      const c = new URLSearchParams(window.location.search).get("code");
+      if (c) {
+        setInitialCloudCode(c.toUpperCase());
+        setCloudOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   // ---- License (with device lock + optional online activation) ----
@@ -633,8 +657,36 @@ function App() {
   // ---- Persist ----
   useEffect(() => {
     if (!loaded) return;
-    platform.saveState({ tracks, playlists, currentPlaylistId, settings, jingles });
-  }, [tracks, playlists, currentPlaylistId, settings, jingles, loaded]);
+    platform.saveState({ tracks, playlists, currentPlaylistId, settings, jingles, vault });
+  }, [tracks, playlists, currentPlaylistId, settings, jingles, vault, loaded]);
+
+  // ---- Backup reminder: mark the show "dirty" (unsaved to a file) on real edits ----
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => {
+      dirtyReadyRef.current = true;
+    }, 0);
+    return () => clearTimeout(t);
+  }, [loaded]);
+  useEffect(() => {
+    if (!loaded || !dirtyReadyRef.current) return;
+    setDirty(true);
+    setBackupDismissed(false);
+  }, [playlists, tracks, jingles, loaded]);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (dirtyRef.current) {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   // ---- Background BPM detection for the current playlist (one track at a time) ----
   const bpmBusyRef = useRef(false);
@@ -1076,7 +1128,7 @@ function App() {
   // ---------------- Share / Save (studio + per-playlist) ----------------
   // Build a self-contained export bundle (embedded audio + all track settings,
   // including voice-booth transcript + voice flag) for the given playlists.
-  const buildStudioExport = async (plList, includeJingles) => {
+  const buildStudioExport = async (plList, includeJingles, includeVault) => {
     const usedIds = new Set();
     plList.forEach((p) => (p.trackIds || []).forEach((id) => usedIds.add(id)));
     const out = {
@@ -1091,6 +1143,7 @@ function App() {
       })),
       tracks: [],
       jingles: [],
+      vault: [],
     };
     for (const id of usedIds) {
       const t = tracks[id];
@@ -1143,6 +1196,24 @@ function App() {
         }
       }
     }
+    if (includeVault) {
+      for (const v of vault) {
+        try {
+          const url = await platform.getUrl(v);
+          const blob = await (await fetch(url)).blob();
+          out.vault.push({
+            name: v.name,
+            duration: v.duration,
+            transcript: v.transcript || "",
+            date: v.date,
+            type: v.type || blob.type,
+            data: await blobToB64(blob),
+          });
+        } catch {
+          /* skip a vault take whose file is missing */
+        }
+      }
+    }
     return out;
   };
 
@@ -1162,14 +1233,15 @@ function App() {
       return;
     }
     setBanner("Packaging your whole show…");
-    const out = await buildStudioExport(playlists, true);
+    const out = await buildStudioExport(playlists, true, true);
     const stamp = new Date().toISOString().slice(0, 10);
     downloadJson(out, `Hot Live 95 Show ${stamp}.hl95playout`);
+    setDirty(false);
     const voiceCount = out.tracks.filter((t) => t.voice).length;
     setBanner(
       `Show packaged — ${out.playlists.length} playlist(s), ${out.tracks.length} tracks` +
         (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
-        `, ${out.jingles.length} jingles. Send the .hl95playout file to any DJ.`
+        `, ${out.jingles.length} jingles, ${out.vault.length} vault take(s). Send the .hl95playout file to any DJ.`
     );
   };
 
@@ -1182,11 +1254,12 @@ function App() {
       return;
     }
     setBanner(`Saving playlist "${pl.name}"…`);
-    const out = await buildStudioExport([pl], false);
+    const out = await buildStudioExport([pl], false, true);
     out.kind = "playlist";
     const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
     const stamp = new Date().toISOString().slice(0, 10);
     downloadJson(out, `${safe} ${stamp}.hl95playlist`);
+    setDirty(false);
     const voiceCount = out.tracks.filter((t) => t.voice).length;
     setBanner(
       `Saved "${pl.name}" — ${out.tracks.length} track${out.tracks.length === 1 ? "" : "s"} in order` +
@@ -1236,6 +1309,120 @@ function App() {
     return { id, name: jd.name, type: jd.type, volume: jd.volume ?? 1 };
   };
 
+  const materializeVaultEntry = async (vd) => {
+    const blob = b64ToBlob(vd.data, vd.type || "audio/wav");
+    const base = {
+      name: vd.name || "Voice Take",
+      duration: vd.duration || 0,
+      transcript: vd.transcript || "",
+      date: vd.date || new Date().toISOString(),
+      type: vd.type || "audio/wav",
+    };
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(`${base.name}.wav`, blob);
+      return { id: d.id, path: d.path, ...base };
+    }
+    const id = uid();
+    await putBlob(id, blob);
+    return { id, ...base };
+  };
+
+  // ---------------- Voice Take Vault ----------------
+  const saveVaultTake = useCallback(async (wavBlob, meta) => {
+    const id = uid();
+    let entry;
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(`${meta.name || "Voice Take"}.wav`, wavBlob);
+      entry = {
+        id: d.id,
+        path: d.path,
+        name: meta.name || "Voice Take",
+        type: "audio/wav",
+        duration: meta.duration || 0,
+        transcript: meta.transcript || "",
+        date: new Date().toISOString(),
+      };
+    } else {
+      await putBlob(id, wavBlob);
+      entry = {
+        id,
+        name: meta.name || "Voice Take",
+        type: "audio/wav",
+        duration: meta.duration || 0,
+        transcript: meta.transcript || "",
+        date: new Date().toISOString(),
+      };
+    }
+    setVault((prev) => [entry, ...prev]);
+    return entry.id;
+  }, []);
+
+  const updateVaultTake = useCallback((id, patch) => {
+    setVault((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+  }, []);
+
+  const insertVaultTake = async (id) => {
+    const v = vault.find((x) => x.id === id);
+    if (!v) return;
+    const url = await platform.getUrl(v);
+    if (!url) {
+      setBanner("That take's audio is missing.");
+      return;
+    }
+    const blob = await (await fetch(url)).blob();
+    let meta;
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(`${v.name}.wav`, blob);
+      meta = { id: d.id, path: d.path, name: `${v.name}.wav`, duration: v.duration, title: v.name, artist: "Voice", transcript: v.transcript || "" };
+    } else {
+      const nid = uid();
+      await putBlob(nid, blob);
+      meta = { id: nid, type: "audio/wav", name: `${v.name}.wav`, duration: v.duration, title: v.name, artist: "Voice", transcript: v.transcript || "" };
+    }
+    setTracks((prev) => ({ ...prev, [meta.id]: meta }));
+    setPlaylists((prev) =>
+      prev.map((p) => (p.id === currentPlaylistId ? { ...p, trackIds: [...p.trackIds, meta.id] } : p))
+    );
+    setBanner(`Inserted "${v.name}" into ${currentPlaylist?.name || "the playlist"}`);
+  };
+
+  const downloadVaultTake = async (id) => {
+    const v = vault.find((x) => x.id === id);
+    if (!v) return;
+    const url = await platform.getUrl(v);
+    if (!url) return;
+    const blob = await (await fetch(url)).blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${v.name}.wav`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+
+  const deleteVaultTake = async (id) => {
+    const v = vault.find((x) => x.id === id);
+    if (v) {
+      try {
+        await platform.deleteFile(v);
+      } catch {
+        /* ignore */
+      }
+    }
+    setVault((prev) => prev.filter((x) => x.id !== id));
+  };
+
+  // ---------------- Cloud Handoff ----------------
+  const uploadShow = async () => {
+    const out = await buildStudioExport(playlists, true, true);
+    const res = await api.uploadShow(out);
+    setDirty(false);
+    return res;
+  };
+  const receiveShow = async (code) => {
+    const { payload } = await api.fetchShow(code);
+    await applyImport(payload);
+  };
+
   const importPlaylist = async (file) => {
     setBanner("Importing shared show…");
     let data;
@@ -1245,12 +1432,30 @@ function App() {
       setBanner("That file isn't a valid Hot Live 95 show.");
       return;
     }
+    await applyImport(data);
+  };
+
+  // Restore vault takes from an import bundle (returns the new vault entries).
+  const materializeVault = async (list) => {
+    const out = [];
+    for (const vd of list || []) {
+      if (!vd?.data) continue;
+      try {
+        out.push(await materializeVaultEntry(vd));
+      } catch {
+        /* skip */
+      }
+    }
+    return out;
+  };
+
+  const applyImport = async (data) => {
     if (!data || data.app !== "hotlive95" || (!data.tracks && !data.playlists)) {
       setBanner("That file isn't a valid Hot Live 95 show.");
       return;
     }
 
-    // Full-studio format (v2): all playlists + jingles, with complete track settings.
+    // Full-studio format (v2): all playlists + jingles + vault, complete settings.
     if (data.kind === "studio" || Array.isArray(data.playlists)) {
       const refMap = {};
       const newTracks = {};
@@ -1269,8 +1474,39 @@ function App() {
       for (const jd of data.jingles || []) {
         importedJingles.push({ index: jd.index, j: await materializeJingle(jd) });
       }
+      const newVault = await materializeVault(data.vault);
+      const voiceCount = (data.tracks || []).filter((t) => t.voice).length;
 
-      // Ask each time whether to replace a same-named playlist or add a copy.
+      // Whole show (multi-playlist) → top-level Merge vs Replace All choice.
+      const wholeShow = data.kind === "studio" && playlists.length > 0;
+      const replaceAll =
+        wholeShow &&
+        window.confirm(
+          `Load "${(data.playlists || [])[0]?.name || "this show"}" and ${
+            (data.playlists || []).length
+          } playlist(s).\n\nOK = Replace All (wipe your current playlists & jingles, load only this show)\nCancel = Merge (keep yours and add this show)`
+        );
+
+      if (replaceAll) {
+        const freshJingles = new Array(6).fill(undefined);
+        importedJingles.forEach(({ index, j }) => {
+          const slot = index >= 0 && index < 6 && !freshJingles[index] ? index : freshJingles.findIndex((x) => !x);
+          if (slot >= 0 && slot < 6) freshJingles[slot] = j;
+        });
+        setTracks(newTracks);
+        setPlaylists(newPlaylists);
+        setJingles(freshJingles);
+        setVault(newVault);
+        if (newPlaylists[0]) setCurrentPlaylistId(newPlaylists[0].id);
+        setBanner(
+          `Replaced studio — loaded ${newPlaylists.length} playlist(s), ${Object.keys(newTracks).length} tracks` +
+            (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
+            (newVault.length ? `, ${newVault.length} vault take(s)` : "")
+        );
+        return;
+      }
+
+      // Merge: ask per same-named playlist whether to replace it or add a copy.
       const existingByName = new Map(
         playlists.map((p) => [(p.name || "").trim().toLowerCase(), p])
       );
@@ -1284,43 +1520,35 @@ function App() {
             `A playlist named "${match.name}" already exists.\n\nOK = Replace it with the loaded version\nCancel = Add it as a separate copy`
           )
         ) {
-          replacements[match.id] = {
-            ...match,
-            name: np.name,
-            schedule: np.schedule,
-            trackIds: np.trackIds,
-          };
+          replacements[match.id] = { ...match, name: np.name, schedule: np.schedule, trackIds: np.trackIds };
         } else {
           additions.push(np);
         }
       }
 
       setTracks((prev) => ({ ...prev, ...newTracks }));
-      setPlaylists((prev) => [
-        ...prev.map((p) => replacements[p.id] || p),
-        ...additions,
-      ]);
+      setPlaylists((prev) => [...prev.map((p) => replacements[p.id] || p), ...additions]);
       if (importedJingles.length) {
         setJingles((prev) => {
           const n = [...prev];
           while (n.length < 6) n.push(undefined);
           importedJingles.forEach(({ index, j }) => {
-            let slot =
-              index >= 0 && index < 6 && !n[index] ? index : n.findIndex((x, i) => i < 6 && !x);
+            let slot = index >= 0 && index < 6 && !n[index] ? index : n.findIndex((x, i) => i < 6 && !x);
             if (slot >= 0 && slot < 6) n[slot] = j;
           });
           return n;
         });
       }
+      if (newVault.length) setVault((prev) => [...newVault, ...prev]);
       const focusId = additions[0]?.id || Object.keys(replacements)[0];
       if (focusId) setCurrentPlaylistId(focusId);
       const replCount = Object.keys(replacements).length;
-      const voiceCount = (data.tracks || []).filter((t) => t.voice).length;
       setBanner(
         `Loaded ${newPlaylists.length} playlist(s) — ${Object.keys(newTracks).length} tracks` +
           (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
           (replCount ? `, ${replCount} replaced` : "") +
-          (importedJingles.length ? `, ${importedJingles.length} jingles` : "")
+          (importedJingles.length ? `, ${importedJingles.length} jingles` : "") +
+          (newVault.length ? `, ${newVault.length} vault take(s)` : "")
       );
       return;
     }
@@ -1787,7 +2015,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} />
 
       {banner && (
         <div
@@ -1795,6 +2023,30 @@ function App() {
           data-testid="app-banner"
         >
           {banner}
+        </div>
+      )}
+
+      {dirty && !backupDismissed && (
+        <div
+          className="px-4 py-2 flex items-center justify-center gap-3 text-sm bg-[rgba(255,171,0,0.12)] border-b border-[var(--hl-amber)] text-[var(--hl-amber)]"
+          data-testid="backup-reminder"
+        >
+          <span>Unsaved changes — back up your show to a file so you never lose it.</span>
+          <button
+            data-testid="backup-save-now"
+            onClick={shareStudio}
+            className="px-3 py-1 rounded-md bg-[var(--hl-amber)] text-black font-600 text-xs hover:brightness-110"
+          >
+            Save show file
+          </button>
+          <button
+            data-testid="backup-dismiss"
+            onClick={() => setBackupDismissed(true)}
+            className="h-6 w-6 grid place-items-center rounded hover:bg-white/10"
+            title="Dismiss"
+          >
+            <X size={15} />
+          </button>
         </div>
       )}
 
@@ -2042,6 +2294,29 @@ function App() {
           }
           onClose={() => setVoiceOpen(false)}
           onSave={saveVoiceTrack}
+          onVaultTake={saveVaultTake}
+          onUpdateVaultTake={updateVaultTake}
+        />
+      )}
+
+      {vaultOpen && (
+        <TakesVault
+          vault={vault}
+          currentPlaylistName={currentPlaylist?.name}
+          getUrl={getUrl}
+          onInsert={insertVaultTake}
+          onDownload={downloadVaultTake}
+          onDelete={deleteVaultTake}
+          onClose={() => setVaultOpen(false)}
+        />
+      )}
+
+      {cloudOpen && (
+        <CloudHandoffModal
+          initialCode={initialCloudCode}
+          onUpload={uploadShow}
+          onReceive={receiveShow}
+          onClose={() => setCloudOpen(false)}
         />
       )}
 

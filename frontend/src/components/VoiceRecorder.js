@@ -26,6 +26,8 @@ export default function VoiceRecorder({
   getUrl,
   onClose,
   onSave,
+  onVaultTake,
+  onUpdateVaultTake,
 }) {
   const [status, setStatus] = useState("idle"); // idle | recording | recorded | error
   const [elapsed, setElapsed] = useState(0);
@@ -58,6 +60,10 @@ export default function VoiceRecorder({
   const [bedPreviewing, setBedPreviewing] = useState(false);
   const [takes, setTakes] = useState([]);
   const [currentTakeId, setCurrentTakeId] = useState(null);
+  const takesRef = useRef([]);
+  useEffect(() => {
+    takesRef.current = takes;
+  }, [takes]);
   const [autoTranscribe, setAutoTranscribe] = useState(true);
   const [transcript, setTranscript] = useState("");
   const [transcribing, setTranscribing] = useState(false);
@@ -276,10 +282,21 @@ export default function VoiceRecorder({
     setCurrentTakeId(take.id);
     buildPreview(take.blob);
   };
-  const addTake = (blob, buffer) => {
+  const addTake = async (blob, buffer) => {
     const id = uid();
-    setTakes((prev) => [...prev, { id, blob, buffer, transcript: "", name: `Take ${prev.length + 1}` }]);
-    selectTake({ id, blob, buffer, transcript: "" });
+    const takeName = `Take ${takes.length + 1}`;
+    let vaultId = null;
+    try {
+      if (onVaultTake) {
+        const wav = bufferToWav(buffer);
+        vaultId = await onVaultTake(wav, { name: takeName, duration: buffer.duration, transcript: "" });
+      }
+    } catch {
+      /* vault save best-effort */
+    }
+    const take = { id, blob, buffer, transcript: "", name: takeName, vaultId };
+    setTakes((prev) => [...prev, take]);
+    selectTake(take);
     setStatus("recorded");
     if (autoTranscribe) runTranscribe(blob, id);
   };
@@ -302,6 +319,8 @@ export default function VoiceRecorder({
       const { text } = await api.transcribe(blob, "take.webm");
       setTranscript(text || "");
       setTakes((prev) => prev.map((t) => (t.id === takeId ? { ...t, transcript: text || "" } : t)));
+      const tk = takesRef.current.find((t) => t.id === takeId);
+      if (tk?.vaultId && onUpdateVaultTake) onUpdateVaultTake(tk.vaultId, { transcript: text || "" });
     } catch {
       /* offline / failed */
     }
@@ -1239,7 +1258,13 @@ export default function VoiceRecorder({
                 <textarea
                   data-testid="voice-transcript"
                   value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTranscript(val);
+                    setTakes((prev) => prev.map((t) => (t.id === currentTakeId ? { ...t, transcript: val } : t)));
+                    const tk = takesRef.current.find((t) => t.id === currentTakeId);
+                    if (tk?.vaultId && onUpdateVaultTake) onUpdateVaultTake(tk.vaultId, { transcript: val });
+                  }}
                   rows={2}
                   placeholder={transcribing ? "Transcribing…" : "Auto-transcribes on record — edit if needed"}
                   className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)] resize-none"
