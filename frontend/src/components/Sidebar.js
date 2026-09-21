@@ -13,6 +13,7 @@ import {
   Download,
   DownloadCloud,
   Save,
+  Upload,
 } from "lucide-react";
 import { formatTotal } from "../lib/format";
 
@@ -78,7 +79,7 @@ export default function Sidebar({
             className="h-7 w-7 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)] transition"
             title="Load a saved playlist (.hl95playlist) or shared show (.hl95playout)"
           >
-            <FolderDown size={15} />
+            <Upload size={15} />
           </button>
           <button
             data-testid="batch-export-button"
@@ -97,6 +98,17 @@ export default function Sidebar({
             <Plus size={16} />
           </button>
         </div>
+      </div>
+
+      <div className="px-3 pb-2">
+        <button
+          data-testid="load-playlist-file-button"
+          onClick={() => importRef.current?.click()}
+          className="w-full flex items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)] transition py-2 text-xs font-600"
+          title="Load a saved playlist (.hl95playlist) or shared show (.hl95playout)"
+        >
+          <Upload size={14} /> Load playlist file (.hl95playlist)
+        </button>
       </div>
 
       {creating && (
