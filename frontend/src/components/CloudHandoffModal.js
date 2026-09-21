@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Cloud, X, UploadCloud, DownloadCloud, Copy, Check, Loader2 } from "lucide-react";
 
 // Cloud Handoff: send the whole show to the server and get a short code + link
@@ -43,9 +43,14 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     setBusy(false);
   };
 
-  // Auto-fetch when arriving from a share link.
+  // Auto-fetch when arriving from a share link (guarded so it fires only once,
+  // even under React StrictMode's double-mount in dev).
+  const didAutoFetch = useRef(false);
   useEffect(() => {
-    if (initialCode) doReceive();
+    if (initialCode && !didAutoFetch.current) {
+      didAutoFetch.current = true;
+      doReceive();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

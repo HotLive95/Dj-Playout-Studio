@@ -1,0 +1,75 @@
+{
+  "summary": "End-to-end verification of iteration_18 features: Voice Take Vault (UI + persistence + badge), Cloud Handoff (SEND + RECEIVE by code + RECEIVE via ?code= link + bad code error), Load & Replace whole show (Replace-All vs Merge with per-playlist prompts), and Backup Reminder (appear/save/reappear/dismiss). Backend /api/shows CRUD verified via pytest (5/5 pass). Frontend E2E verified via Playwright with dialog + download handlers.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Cloud Handoff auto-load via ?code= link", "issue": "The auto-doReceive() useEffect appears to run twice on mount (likely React StrictMode double-invocation): the whole-show Replace-All confirm dialog is shown twice back-to-back on a single link open, causing a duplicate GET /api/shows/{code} call and a duplicate applyImport pass. cloud-received still resolves correctly but this is user-visible noise.", "affected_selectors": ["cloud-handoff-modal", "cloud-received"]}
+    ],
+    "design_issues": [
+      {"screen": "Global (all pages)", "issues": ["Persistent React hydration warning in console: '<span> cannot be a child of <option>' (pre-existing, carried over from iteration_17). Not blocking but should be cleaned up."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_shows.py",
+    "/app/test_reports/pytest/shows_results.xml"
+  ],
+  "action_items": [
+    "Gate the CloudHandoffModal auto-doReceive() effect with a ref/guard so it only fires once even under React StrictMode (e.g., a useRef 'didAutoFetch' flag), so users don't see the Replace-All confirm twice when opening a share link.",
+    "Optional (from prev iteration): clean the '<span> cannot be a child of <option>' hydration warning."
+  ],
+  "critical_code_review_comments": [
+    "CloudHandoffModal.js L47-50: useEffect(() => { if (initialCode) doReceive(); }, []) is not idempotent — under React 18 StrictMode dev double-invoke (and any parent re-mount), doReceive fires twice, producing a duplicate window.confirm and duplicate applyImport. Add a `useRef(false)` guard.",
+    "App.js applyImport uses window.confirm for Replace-All vs Merge — synchronous blocking dialogs are hard to test and inaccessible; consider a proper modal for the whole-show top-level choice (per-playlist same-name prompts can remain).",
+    "App.js is now ~2354 lines. Vault + Cloud + Import/Export + Backup logic could be extracted to /lib/showIO.js and a useVault hook for maintainability.",
+    "TakesVault delete uses window.confirm inline; consistent modal confirm would be nicer.",
+    "backend/server.py /api/shows uses a 6-char code with 32-char alphabet (~1B combinations) and 6 retries on collision — fine for MVP; consider adding an index on shared_shows.code for O(1) lookups as volume grows."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_shows.py (new)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (all 4 features verified)"},
+  "test_credentials": "Offline license key Q61VK-G819N-40K1B-H226T (from review_request)",
+  "seed_data_creation": "Backend: POST /api/shows was called by the frontend Cloud upload button; test also creates & GETs a TEST_Show payload via pytest. Frontend: injected one vault take (id='testvid1') into localStorage 'hotlive95_state' to verify persistence + badge + list rendering (audio blob not present so play/insert not exercised for that seeded take). Also generated /tmp/test_show.hl95playout with 2 playlists to exercise Replace-All vs Merge.",
+  "detailed_verifications": {
+    "voice_take_vault": {
+      "modal_opens": true,
+      "empty_state_present": true,
+      "vault_count_badge_after_reload": "1 (persistence OK)",
+      "vault_take_row_rendered": true,
+      "vault_survives_reload": true,
+      "note": "Actual recording via voice-record-toggle was NOT executed end-to-end because the count-in + MediaRecorder + autoTranscription pipeline is hard to drive headlessly; vault ROW was seeded via localStorage to exercise the drawer UI and persistence. Insert/Download/Delete buttons render with correct testids; deletion path uses window.confirm."
+    },
+    "cloud_handoff": {
+      "send_upload_button_returned_share_code": "PQD7F3",
+      "share_code_length": 6,
+      "share_link": "https://dj-playout-studio.preview.emergentagent.com/show?code=PQD7F3",
+      "copy_link_clicked": true,
+      "receive_bad_code_shows_cloud_error": true,
+      "receive_good_code_shows_cloud_received": true,
+      "auto_open_on_?code=_url": true,
+      "auto_fetch_fired": true,
+      "beforeunload_dialog_fired": true
+    },
+    "load_and_replace_whole_show": {
+      "replace_all_confirm_shown_on_multi_playlist_import_when_studio_nonempty": true,
+      "accept_replace_all_wiped_studio_to_only_files_playlists": "2 == expected 2",
+      "dismiss_merged_and_per_playlist_same_name_prompts_fired_for_both_conflicting_names": true,
+      "per_playlist_replace_kept_count": "3 remained after merge+replace for both dups"
+    },
+    "backup_reminder": {
+      "appears_after_edit": true,
+      "save_show_file_triggers_download_and_clears_reminder": true,
+      "reappears_after_re_edit": true,
+      "dismiss_X_hides_reminder": true,
+      "downloaded_file": "Hot Live 95 Show 2026-09-21.hl95playout"
+    }
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Activation: key Q61VK-G819N-40K1B-H226T; after Activate click, check legal-agree-checkbox then click legal-accept-button. Handle window.confirm via page.on('dialog') — accept=Replace/Replace-All, dismiss=Merge/Add-as-copy. beforeunload fires on navigation with dirty state — auto-accept. Cloud share codes are 6 uppercase chars (alphabet excludes 0/1/I/O). CloudHandoffModal auto-runs doReceive() on mount when initialCode is set; currently it fires TWICE under StrictMode — expect 2 confirm dialogs on ?code= link open (see action item). Vault takes persist inside localStorage 'hotlive95_state' under `.vault`; audio blobs live in IndexedDB via /app/frontend/src/lib/db.js.",
+  "rca of the issue": "Cloud auto-receive double-fire RCA: CloudHandoffModal.js `useEffect(() => { if (initialCode) doReceive(); }, [])` is not guarded and runs twice under React 18 StrictMode dev mount, causing (1) 2x GET /api/shows/{code}, (2) 2x applyImport → 2x window.confirm on non-empty studios. Fix: add a `const didFetch = useRef(false)` guard and early-return if `didFetch.current` is true before invoking doReceive."
+}

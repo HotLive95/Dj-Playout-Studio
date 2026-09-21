@@ -592,7 +592,33 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Save/Load single playlist (.hl95playlist) + voice metadata in shares (2026-06)
+## Voice Take Vault + Cloud Handoff + Whole-show Replace-All + Backup Reminder (2026-06)
+- **Voice Take Vault**: every Voice Booth take is auto-saved to a persistent vault the moment it's
+  recorded (VoiceRecorder `onVaultTake` encodes WAV → App `saveVaultTake` stores blob in IndexedDB/
+  Electron media + a `vault[]` entry {id,name,duration,transcript,date}). Header `open-takes-vault`
+  button (+`vault-count-badge`) opens `TakesVault.js` drawer: preview, Insert into current playlist
+  (copies audio to a new track), Download, Delete. Vault persists in saved state (survives reloads)
+  and is embedded in shared/saved show files (`buildStudioExport` includeVault). Transcript stays
+  synced to the vault entry (auto-transcribe + manual edits via `onUpdateVaultTake`).
+- **Cloud Handoff** (online): backend `POST /api/shows` (50 MB cap, GridFS 'shows' bucket, returns
+  6-char code from unambiguous alphabet + 30-day expiry) and `GET /api/shows/{code}` (case-insensitive,
+  404 unknown / 410 expired). `CloudHandoffModal.js` Send tab uploads the whole studio → shows code +
+  `…/show?code=ABC123` link + copy; Receive tab (or opening the link) loads it via `applyImport`.
+  A `?code=` on the URL auto-opens the receiver (guarded by a `didAutoFetch` ref so it fires once under
+  StrictMode). api.js: `uploadShow`/`fetchShow`.
+- **Whole-show Load & Replace**: `importPlaylist` refactored to `applyImport(data)` (reused by file
+  import + cloud receive). A multi-playlist `.hl95playout` opened into a non-empty studio prompts one
+  top choice — Replace All (wipe playlists/jingles/vault, load only the file's) vs Merge (per-playlist
+  same-name replace/add prompts). Single `.hl95playlist` keeps the per-playlist prompt. Vault is
+  replaced on Replace-All, merged otherwise.
+- **Backup Reminder**: `dirty` flag set on real edits after load (skips initial hydrate via
+  `dirtyReadyRef`); amber `backup-reminder` bar with `backup-save-now` (→ Share Show, clears dirty) and
+  `backup-dismiss`; `beforeunload` warns when closing with unsaved changes. Cleared on any file save/
+  share/cloud upload.
+- Verified E2E (testing agent iteration_18): backend /api/shows 5/5 pytest; all 4 features 100%.
+  Fixed the StrictMode double auto-receive with a ref guard post-test.
+
+
 - New per-playlist "Save Playlist" button on each Sidebar row (data-testid `save-playlist-{id}`, Save
   icon, disabled when empty) writes a `.hl95playlist` file: that playlist's exact song ORDER + embedded
   base64 audio (wave files) + all per-track settings (cueIn/cueOut, cuePoints, bpm, camelot, keyName,
