@@ -1,6 +1,7 @@
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useEffect } from "react";
 import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check, Search, Folder, FolderPlus, CheckSquare, Square, RotateCcw, GripVertical } from "lucide-react";
 import { formatTime } from "../lib/format";
+import { decodeToBuffer, computePeaks } from "../lib/audioProcessing";
 
 const PRESET_FOLDERS = ["Intros", "Promos", "Station IDs", "Bumpers"];
 
@@ -34,7 +35,32 @@ export default function TakesVault({
   const [newFolder, setNewFolder] = useState("");
   const [addingFolder, setAddingFolder] = useState(false);
   const [dragId, setDragId] = useState(null);
+  const [peaksMap, setPeaksMap] = useState({});
+  const requestedRef = useRef(new Set());
   const audioRef = useRef(null);
+
+  // Compute a mini waveform for each take lazily (once), cached by id.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const v of vault) {
+        if (requestedRef.current.has(v.id)) continue;
+        requestedRef.current.add(v.id);
+        try {
+          const url = await getUrl(v);
+          const buf = await decodeToBuffer(url);
+          const p = Array.from(computePeaks(buf, 44));
+          if (!cancelled) setPeaksMap((prev) => ({ ...prev, [v.id]: p }));
+        } catch {
+          if (!cancelled) setPeaksMap((prev) => ({ ...prev, [v.id]: null }));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vault]);
 
   const allFolders = useMemo(() => {
     const seen = new Set();
@@ -383,6 +409,21 @@ export default function TakesVault({
                   <span>·</span>
                   <span>{fmtDate(v.date)}</span>
                 </div>
+                {peaksMap[v.id] && peaksMap[v.id].length > 0 && (
+                  <div
+                    className="mt-1.5 flex items-end gap-[1.5px] h-6"
+                    data-testid={`vault-wave-${v.id}`}
+                    aria-hidden="true"
+                  >
+                    {peaksMap[v.id].map((p, i) => (
+                      <span
+                        key={i}
+                        className="flex-1 rounded-sm bg-[var(--hl-fire)]"
+                        style={{ height: `${Math.max(6, Math.min(100, p * 130))}%`, opacity: 0.55 }}
+                      />
+                    ))}
+                  </div>
+                )}
                 <div className="mt-1 flex items-center gap-1.5">
                   <Folder size={12} className="text-[var(--hl-muted)] shrink-0" />
                   <select

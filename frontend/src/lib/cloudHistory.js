@@ -45,28 +45,31 @@ export function dismissExpiry(code) {
 }
 
 const TPL_KEY = "hotlive95_note_templates";
+export const NOTE_TAGS = ["Drive-time", "Overnight", "Promo", "Weekend", "General"];
 
+// Templates are stored as {text, tag}. Legacy plain-string entries are normalized.
 export function loadNoteTemplates() {
   try {
     const list = JSON.parse(localStorage.getItem(TPL_KEY) || "[]");
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+    return list.map((t) => (typeof t === "string" ? { text: t, tag: "" } : { text: t.text, tag: t.tag || "" }));
   } catch {
     return [];
   }
 }
 
-export function saveNoteTemplate(text) {
+export function saveNoteTemplate(text, tag = "") {
   const t = (text || "").trim();
   if (!t) return loadNoteTemplates();
-  const list = loadNoteTemplates().filter((x) => x !== t);
-  list.unshift(t);
-  const capped = list.slice(0, 12);
+  const list = loadNoteTemplates().filter((x) => x.text !== t);
+  list.unshift({ text: t, tag: tag || "" });
+  const capped = list.slice(0, 20);
   localStorage.setItem(TPL_KEY, JSON.stringify(capped));
   return capped;
 }
 
 export function removeNoteTemplate(text) {
-  const list = loadNoteTemplates().filter((x) => x !== text);
+  const list = loadNoteTemplates().filter((x) => x.text !== text);
   localStorage.setItem(TPL_KEY, JSON.stringify(list));
   return list;
 }

@@ -16,7 +16,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
 } from "lucide-react";
-import { loadHistory, removeHistory, loadNoteTemplates, saveNoteTemplate, removeNoteTemplate } from "../lib/cloudHistory";
+import { loadHistory, removeHistory, loadNoteTemplates, saveNoteTemplate, removeNoteTemplate, NOTE_TAGS } from "../lib/cloudHistory";
 
 // Cloud Handoff: send the whole show to the server and get a short code + link
 // (with a scannable QR) a co-host can open to import — no file passing. Online
@@ -39,6 +39,8 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
   const [receivedNote, setReceivedNote] = useState("");
   const [templates, setTemplates] = useState(loadNoteTemplates);
   const [stats, setStats] = useState({});
+  const [tplTag, setTplTag] = useState("");
+  const [tplFilter, setTplFilter] = useState("All");
 
   const linkFor = (c) => `${window.location.origin}/show?code=${c}`;
   const link = result ? linkFor(result.code) : "";
@@ -123,9 +125,11 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
   const insertTemplate = (t) => setSendNote((prev) => (prev ? `${prev}\n${t}` : t));
   const saveCurrentTemplate = () => {
     if (!sendNote.trim()) return;
-    setTemplates(saveNoteTemplate(sendNote));
+    setTemplates(saveNoteTemplate(sendNote, tplTag));
   };
   const deleteTemplate = (t) => setTemplates(removeNoteTemplate(t));
+  const usedTplTags = [...new Set(templates.map((t) => t.tag).filter(Boolean))];
+  const visibleTemplates = templates.filter((t) => tplFilter === "All" || (t.tag || "") === tplFilter);
 
 
   const copyLink = async (l, key) => {
@@ -234,37 +238,73 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                       placeholder="e.g. Open with the promo, then run the drive-time set…"
                       className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-fire)] resize-none"
                     />
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="cloud-note-templates">
-                      {templates.map((t) => (
-                        <span
-                          key={t}
-                          className="group inline-flex items-center gap-1 text-[11px] rounded-full pl-2.5 pr-1 py-1 border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white hover:border-[var(--hl-fire)]"
+                    <div className="mt-1.5 space-y-1.5" data-testid="cloud-note-templates">
+                      {usedTplTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5" data-testid="cloud-note-tag-filters">
+                          {["All", ...usedTplTags].map((tg) => (
+                            <button
+                              key={tg}
+                              data-testid={`cloud-note-tag-filter-${tg}`}
+                              onClick={() => setTplFilter(tg)}
+                              className={`text-[10px] rounded-full px-2 py-0.5 border transition ${
+                                tplFilter === tg
+                                  ? "border-[var(--hl-cue)] text-[var(--hl-cue)] bg-[rgba(58,160,255,0.12)]"
+                                  : "border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white"
+                              }`}
+                            >
+                              {tg}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {visibleTemplates.map((t) => (
+                          <span
+                            key={t.text}
+                            className="group inline-flex items-center gap-1 text-[11px] rounded-full pl-2.5 pr-1 py-1 border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-white hover:border-[var(--hl-fire)]"
+                          >
+                            <button
+                              data-testid={`cloud-note-template-${t.text.slice(0, 16)}`}
+                              onClick={() => insertTemplate(t.text)}
+                              className="max-w-[170px] truncate"
+                              title={`Insert: ${t.text}`}
+                            >
+                              {t.tag ? <span className="text-[var(--hl-cue)] mr-1">[{t.tag}]</span> : null}
+                              {t.text}
+                            </button>
+                            <button
+                              onClick={() => deleteTemplate(t.text)}
+                              className="h-4 w-4 grid place-items-center rounded-full opacity-50 hover:opacity-100 hover:text-[var(--hl-onair)]"
+                              title="Remove template"
+                            >
+                              <X size={11} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          data-testid="cloud-note-template-tag"
+                          value={tplTag}
+                          onChange={(e) => setTplTag(e.target.value)}
+                          className="bg-black/40 border border-[var(--hl-line)] rounded px-2 py-1 text-[11px] outline-none focus:border-[var(--hl-fire)]"
                         >
-                          <button
-                            data-testid={`cloud-note-template-${t.slice(0, 16)}`}
-                            onClick={() => insertTemplate(t)}
-                            className="max-w-[160px] truncate"
-                            title={`Insert: ${t}`}
-                          >
-                            {t}
-                          </button>
-                          <button
-                            onClick={() => deleteTemplate(t)}
-                            className="h-4 w-4 grid place-items-center rounded-full opacity-50 hover:opacity-100 hover:text-[var(--hl-onair)]"
-                            title="Remove template"
-                          >
-                            <X size={11} />
-                          </button>
-                        </span>
-                      ))}
-                      <button
-                        data-testid="cloud-note-save-template"
-                        onClick={saveCurrentTemplate}
-                        disabled={!sendNote.trim()}
-                        className="text-[11px] rounded-full px-2.5 py-1 border border-dashed border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] disabled:opacity-40 inline-flex items-center gap-1"
-                      >
-                        <Plus size={11} /> Save as template
-                      </button>
+                          <option value="">No tag</option>
+                          {NOTE_TAGS.map((tg) => (
+                            <option key={tg} value={tg}>
+                              {tg}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          data-testid="cloud-note-save-template"
+                          onClick={saveCurrentTemplate}
+                          disabled={!sendNote.trim()}
+                          className="text-[11px] rounded-full px-2.5 py-1 border border-dashed border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] disabled:opacity-40 inline-flex items-center gap-1"
+                        >
+                          <Plus size={11} /> Save as template
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <div>

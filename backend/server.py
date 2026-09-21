@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+from pymongo import ReturnDocument
 import os
 import asyncio
 import logging
@@ -766,6 +767,32 @@ async def send_show_expiry_email(doc: dict) -> bool:
         return False
 
 
+async def send_show_open_email(doc: dict) -> bool:
+    email = doc.get("email")
+    if not RESEND_API_KEY or not email:
+        return False
+    code = doc.get("code")
+    html = f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0c;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
+      <tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#121216;border:1px solid #26262e;border-radius:16px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(90deg,#ff5a1f,#ff1744);padding:22px 28px;"><div style="color:#fff;font-size:22px;font-weight:800;letter-spacing:2px;">HOT LIVE 95</div><div style="color:#ffe;opacity:.85;font-size:11px;letter-spacing:3px;">HANDOFF OPENED</div></td></tr>
+        <tr><td style="padding:28px;"><p style="color:#f4f4f5;font-size:16px;margin:0 0 12px;">Good news — your cloud handoff <b style="color:#3aa0ff;">{code}</b> was just opened by a co-host for the first time. 🎧</p>
+        <p style="color:#c9ccd1;font-size:14px;line-height:1.6;margin:0;">They now have your full show loaded in their studio.</p></td></tr>
+        <tr><td style="background:#0a0a0c;padding:16px 28px;border-top:1px solid #26262e;"><div style="color:#6b7280;font-size:11px;">© Hot Live 95 Detroit · A.I. Radio</div></td></tr>
+      </table></td></tr></table>
+    """
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": SENDER_EMAIL, "to": [email],
+            "subject": f"🎧 Your Hot Live 95 handoff {code} was just opened",
+            "html": html,
+        })
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Show open email failed: {e}")
+        return False
+
+
 async def process_show_expiry() -> dict:
     """Daily pass: email the sender once when a cloud share link nears expiry."""
     sent = 0
@@ -834,10 +861,15 @@ async def get_show(code: str, request: Request, x_show_pin: Optional[str] = Head
     stream = await _shows_fs.open_download_stream(doc["file_id"])
     content = await stream.read()
     payload = json.loads(content.decode("utf-8"))
-    await db.shared_shows.update_one(
+    updated = await db.shared_shows.find_one_and_update(
         {"code": doc["code"]},
         {"$inc": {"opens": 1}, "$set": {"last_opened_at": datetime.now(timezone.utc).isoformat()}},
+        return_document=ReturnDocument.AFTER,
     )
+    # Ping the sender the first time their handoff is opened.
+    if updated and updated.get("email") and not updated.get("open_alert_sent") and int(updated.get("opens", 0)) == 1:
+        if await send_show_open_email(updated):
+            await db.shared_shows.update_one({"code": doc["code"]}, {"$set": {"open_alert_sent": True}})
     return {"payload": payload, "expires_at": doc.get("expires_at")}
 
 
