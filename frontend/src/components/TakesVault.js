@@ -1,21 +1,34 @@
 import React, { useRef, useState } from "react";
-import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic } from "lucide-react";
+import { Archive, X, Play, Pause, Plus, Download, Trash2, Mic, Scissors, Pencil, Check } from "lucide-react";
 import { formatTime } from "../lib/format";
 
 // A persistent drawer of every voice-booth take (auto-saved on record). DJs can
-// re-insert a take into the current playlist, download it, or delete it. Vault
-// takes also travel inside shared / saved show files.
+// re-insert a take into the current playlist, trim/rename it, download, or delete.
+// Vault takes also travel inside shared / saved show files.
 export default function TakesVault({
   vault = [],
   currentPlaylistName,
   getUrl,
   onInsert,
+  onEdit,
+  onRename,
   onDownload,
   onDelete,
   onClose,
 }) {
   const [playingId, setPlayingId] = useState(null);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameVal, setRenameVal] = useState("");
   const audioRef = useRef(null);
+
+  const startRename = (v) => {
+    setRenamingId(v.id);
+    setRenameVal(v.name);
+  };
+  const commitRename = (id) => {
+    onRename(id, renameVal);
+    setRenamingId(null);
+  };
 
   const togglePlay = async (v) => {
     if (playingId === v.id) {
@@ -108,7 +121,40 @@ export default function TakesVault({
                 {playingId === v.id ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
               </button>
               <div className="min-w-0 flex-1">
-                <div className="font-500 truncate">{v.name}</div>
+                {renamingId === v.id ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      autoFocus
+                      data-testid={`vault-rename-input-${v.id}`}
+                      value={renameVal}
+                      onChange={(e) => setRenameVal(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(v.id);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded px-2 py-1 text-sm outline-none focus:border-[var(--hl-fire)]"
+                    />
+                    <button
+                      data-testid={`vault-rename-save-${v.id}`}
+                      onClick={() => commitRename(v.id)}
+                      className="h-6 w-6 grid place-items-center rounded text-[var(--hl-cue)] hover:bg-white/10"
+                    >
+                      <Check size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-500 truncate">{v.name}</span>
+                    <button
+                      data-testid={`vault-rename-${v.id}`}
+                      onClick={() => startRename(v)}
+                      className="h-5 w-5 shrink-0 grid place-items-center rounded text-[var(--hl-muted)] hover:text-white"
+                      title="Rename take"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  </div>
+                )}
                 <div className="text-[11px] text-[var(--hl-muted)] mt-0.5 flex items-center gap-2">
                   <span className="tabular-nums">{formatTime(v.duration || 0)}</span>
                   <span>·</span>
@@ -131,6 +177,14 @@ export default function TakesVault({
                   title={`Insert into ${currentPlaylistName || "current playlist"}`}
                 >
                   <Plus size={13} /> Insert
+                </button>
+                <button
+                  data-testid={`vault-edit-${v.id}`}
+                  onClick={() => onEdit(v.id)}
+                  className="h-8 w-8 grid place-items-center rounded-lg text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:bg-white/10"
+                  title="Trim / edit before inserting"
+                >
+                  <Scissors size={14} />
                 </button>
                 <button
                   data-testid={`vault-download-${v.id}`}

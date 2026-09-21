@@ -29,6 +29,7 @@ import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessi
 import { camelotCompatible } from "@/lib/key";
 import { formatTime } from "@/lib/format";
 import { deriveNames, parseFilename } from "@/lib/id3";
+import { addHistory, loadHistory, loadDismissed, dismissExpiry as dismissExpiryCode } from "@/lib/cloudHistory";
 
 const uid = () =>
   (crypto.randomUUID && crypto.randomUUID()) ||
@@ -687,6 +688,33 @@ function App() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
+
+  // ---- Cloud share expiry nudge: warn a few days before a sent link expires ----
+  const [expiryNudge, setExpiryNudge] = useState(null);
+  const refreshExpiryNudge = useCallback(() => {
+    try {
+      const dismissed = loadDismissed();
+      const now = Date.now();
+      const soon = loadHistory()
+        .filter((h) => h.dir === "sent" && h.expires_at && !dismissed.includes(h.code))
+        .map((h) => ({ ...h, ms: new Date(h.expires_at).getTime() - now }))
+        .filter((h) => h.ms > 0 && h.ms < 5 * 24 * 3600 * 1000)
+        .sort((a, b) => a.ms - b.ms);
+      setExpiryNudge(soon[0] || null);
+    } catch {
+      setExpiryNudge(null);
+    }
+  }, []);
+  useEffect(() => {
+    refreshExpiryNudge();
+  }, [refreshExpiryNudge]);
+  useEffect(() => {
+    if (!cloudOpen) refreshExpiryNudge();
+  }, [cloudOpen, refreshExpiryNudge]);
+  const dismissExpiryNudge = (code) => {
+    dismissExpiryCode(code);
+    setExpiryNudge(null);
+  };
 
   // ---- Background BPM detection for the current playlist (one track at a time) ----
   const bpmBusyRef = useRef(false);
@@ -1411,15 +1439,34 @@ function App() {
     setVault((prev) => prev.filter((x) => x.id !== id));
   };
 
+  // Open a vault take in the Track Editor to trim before inserting into the playlist.
+  const editVaultTake = (id) => {
+    const v = vault.find((x) => x.id === id);
+    if (!v) return;
+    setVaultOpen(false);
+    setEditorTrack({ ...v, title: v.name });
+  };
+  const renameVaultTake = (id, name) => updateVaultTake(id, { name: (name || "").trim() || "Voice Take" });
+
   // ---------------- Cloud Handoff ----------------
   const uploadShow = async () => {
     const out = await buildStudioExport(playlists, true, true);
     const res = await api.uploadShow(out);
     setDirty(false);
+    try {
+      addHistory({ code: res.code, dir: "sent", expires_at: res.expires_at, size: res.size });
+    } catch {
+      /* ignore */
+    }
     return res;
   };
   const receiveShow = async (code) => {
-    const { payload } = await api.fetchShow(code);
+    const { payload, expires_at } = await api.fetchShow(code);
+    try {
+      addHistory({ code: (code || "").toUpperCase(), dir: "received", expires_at: expires_at || null });
+    } catch {
+      /* ignore */
+    }
     await applyImport(payload);
   };
 
@@ -2050,6 +2097,38 @@ function App() {
         </div>
       )}
 
+      {expiryNudge && (
+        <div
+          className="px-4 py-2 flex items-center justify-center gap-3 text-sm bg-[rgba(58,160,255,0.12)] border-b border-[var(--hl-cue)] text-[var(--hl-cue)]"
+          data-testid="expiry-nudge"
+        >
+          <span>
+            Your cloud share link{" "}
+            <span className="font-700 tracking-wider">{expiryNudge.code}</span> expires in{" "}
+            {Math.max(1, Math.ceil(expiryNudge.ms / (24 * 3600 * 1000)))} day
+            {Math.ceil(expiryNudge.ms / (24 * 3600 * 1000)) === 1 ? "" : "s"}.
+          </span>
+          <button
+            data-testid="expiry-reshare"
+            onClick={() => {
+              setInitialCloudCode(null);
+              setCloudOpen(true);
+            }}
+            className="px-3 py-1 rounded-md bg-[var(--hl-cue)] text-black font-600 text-xs hover:brightness-110"
+          >
+            Re-share
+          </button>
+          <button
+            data-testid="expiry-dismiss"
+            onClick={() => dismissExpiryNudge(expiryNudge.code)}
+            className="h-6 w-6 grid place-items-center rounded hover:bg-white/10"
+            title="Dismiss"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col md:flex-row min-h-0">
         <Sidebar
           playlists={playlists}
@@ -2305,6 +2384,8 @@ function App() {
           currentPlaylistName={currentPlaylist?.name}
           getUrl={getUrl}
           onInsert={insertVaultTake}
+          onEdit={editVaultTake}
+          onRename={renameVaultTake}
           onDownload={downloadVaultTake}
           onDelete={deleteVaultTake}
           onClose={() => setVaultOpen(false)}
