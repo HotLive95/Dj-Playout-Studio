@@ -267,7 +267,10 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                   <input
                     data-testid="cloud-code-input"
                     value={code}
-                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      setCode(e.target.value.toUpperCase());
+                      setPinNeeded(false);
+                    }}
                     onKeyDown={(e) => e.key === "Enter" && doReceive()}
                     placeholder="ABC123"
                     maxLength={8}

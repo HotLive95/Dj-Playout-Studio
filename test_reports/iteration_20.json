@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 20 full backend+frontend regression for the four new features (Vault Search, Vault Folders, Handoff PIN, Auto-Refresh Link). Backend: added /app/backend/tests/test_shows_pin_extend.py — 9/9 pytest passed (create-with-pin returns protected=true; invalid PIN → 422; GET no-header → 401; GET wrong PIN → 403; GET right PIN → 200; no-pin flow still 200; extend updates expires_at & 404 on unknown). Frontend Playwright (17/17 passed): activated with offline key; Vault seed → search filters by name ('morning'→seedA only) and by transcript ('traffic update'→seedB only); non-matching query shows vault-no-results; folder chips render All+Unfiled+Promos; vault-folder-seedA select→Promos filters correctly and PERSISTS through reload; PIN send yields cloud-share-code with 'PIN-protected' badge; receive without PIN shows cloud-receive-pin + 401 error 'PIN-protected'; wrong PIN → 403 'incorrect'; correct PIN → cloud-received; No-PIN send/receive regression works; expiry-nudge shows correct code + 'expires in 2 days' + 'Extend 30 days' label; clicking expiry-reshare calls backend, hides nudge and shows app-banner 'Extended link {code} — now expires …'. No blocking console errors (only a pre-existing benign <span>-in-<option> React hydration warning carried over from iteration_19, plus the intentional 401/403 during the PIN sad-path test).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TakesVault per-take folder <select>", "issues": ["React hydration warning: <span> cannot be a child of <option>. lucide Folder icon or similar is being rendered inside a <select> option somewhere. Pre-existing (also seen in iteration_19). Non-blocking but should be cleaned up — options may render inconsistently across browsers."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_shows_pin_extend.py",
+    "/app/backend/tests/test_shows.py",
+    "/app/test_reports/pytest/iteration_20.xml"
+  ],
+  "action_items": [
+    "(Optional) Investigate the '<span> cannot be a child of <option>' React hydration warning — likely a lucide icon or wrapper span placed inside a <select>/<option> in one of the modals. Non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "server.py POST /api/shows/{code}/extend has NO auth or PIN check — anyone who guesses/knows a 6-char code can extend it by 30 days indefinitely. If PIN-protected, extend should also require X-Show-PIN (or at least rate-limit). Currently un-authenticated codes can be griefed. Consider requiring the same X-Show-PIN header on /extend when doc.pin_hash is set.",
+    "TakesVault.js filter chips: 'Unfiled' chip is always shown after 'All' when any unfiled take exists — ordering matches spec. usedFolders memo correctly preserves preset order; good.",
+    "CloudHandoffModal.js pinNeeded state is set on 401/403 but never cleared when the user changes the code — if user enters wrong code + pin, then fixes the code, pin field stays visible. Minor UX polish.",
+    "extendCloudLink in App.js does not surface backend errors to the UI (only console) — if /extend returns 404 (expired/deleted), user only sees the nudge disappear with no feedback. Consider surfacing an error banner on failure."
+  ],
+  "updated_files": ["/app/backend/tests/test_shows_pin_extend.py"],
+  "success_rate": {"backend": "100% (9/9 pytest)", "frontend": "100% (17/17 playwright assertions)"},
+  "test_credentials": "Offline activation key: Q61VK-G819N-40K1B-H226T",
+  "seed_data_creation": "localStorage 'hotlive95_state'.vault seeded with 3 takes (Morning Intro/Traffic Bumper/Promo Slot); localStorage 'hotlive95_cloud_history' seeded with a real uploaded no-PIN code at expires_at = now+2 days for the extend flow.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All four new features (Vault Search, Vault Folders, Handoff PIN send/receive, Auto-Refresh Link) work end-to-end. Backend PIN endpoints (create/get with X-Show-PIN, 401/403/422) verified via pytest at /app/backend/tests/test_shows_pin_extend.py. POST /api/shows/{code}/extend works but has no auth/PIN check — flagged for main agent. Note: cloud-error test-id is a single element that reflects both 401 ('PIN-protected') and 403 ('incorrect') copy; pinNeeded controls whether cloud-receive-pin is visible.",
+  "rca of the issue": "n/a — no blocking bugs found."
+}

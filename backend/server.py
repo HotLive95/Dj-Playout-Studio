@@ -789,10 +789,14 @@ async def get_show(code: str, request: Request, x_show_pin: Optional[str] = Head
 
 
 @api_router.post("/shows/{code}/extend")
-async def extend_show(code: str):
+async def extend_show(code: str, request: Request):
     doc = await db.shared_shows.find_one({"code": (code or "").upper()})
     if not doc:
         raise HTTPException(status_code=404, detail="That show code was not found.")
+    # Rate-limit extends per code+ip so a known code can't be griefed indefinitely.
+    ip = request.client.host if request.client else "unknown"
+    if not await _pin_attempt_ok(f"extend:{doc['code']}", ip):
+        raise HTTPException(status_code=429, detail="Too many extend attempts — wait a few minutes.", headers={"Retry-After": "600"})
     expires = datetime.now(timezone.utc) + timedelta(days=SHOW_TTL_DAYS)
     await db.shared_shows.update_one({"code": doc["code"]}, {"$set": {"expires_at": expires.isoformat()}})
     return {"code": doc["code"], "expires_at": expires.isoformat()}

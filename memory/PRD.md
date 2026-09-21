@@ -592,7 +592,26 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Vault Trim/Rename + Cloud QR + Show Library + Expiry Nudge (2026-06)
+## Vault Search/Folders + Handoff PIN + Auto-Refresh Link (2026-06)
+- **Vault Search**: `TakesVault` has a `vault-search` box filtering takes by name or transcript;
+  `vault-no-results` empty state.
+- **Vault Folders**: takes carry a `folder` field (presets Intros/Promos/Station IDs/Bumpers +
+  Unfiled). Folder-filter chips (`vault-folder-filter-{name}`) + per-take `vault-folder-{id}` selector
+  (`moveVaultToFolder`). Folder is embedded in exports (buildStudioExport vault + materializeVaultEntry).
+- **Handoff PIN** (integration_expert playbook): optional 4-6 digit PIN on a cloud share. Backend
+  `POST /api/shows` accepts `pin` → scrypt (n=2^15) + server-side pepper `SHOW_PIN_PEPPER` (backend/.env),
+  stores pin_hash/pin_salt, returns `protected`. `GET /api/shows/{code}` reads `X-Show-PIN` header:
+  401 needs PIN, 403 wrong, 429 rate-limited (per code+ip, `pin_attempts` collection, 6/10min),
+  constant-time compare, scrypt in threadpool. Frontend: `cloud-send-pin` on Send, `cloud-receive-pin`
+  prompt appears on 401/403 (`pinNeeded`), result shows a 🔒 badge.
+- **Auto-Refresh Link**: `POST /api/shows/{code}/extend` (rate-limited per code+ip) sets expires_at =
+  now+30d. Expiry-nudge bar's button is now "Extend 30 days" → App `extendCloudLink` → updates local
+  history + banner. (Extend intentionally does NOT require the PIN since the owner doesn't retain it;
+  rate-limiting mitigates code-guessing grief.)
+- Verified: backend 9/9 pytest (test_shows_pin_extend.py), frontend 17/17 (iteration_20). Post-test:
+  added extend rate-limiting + clear pinNeeded when the code changes.
+
+
 - **Vault Trim/Rename**: `TakesVault` rows now have a Scissors `vault-edit-{id}` (opens the take in the
   Track Editor via App `editVaultTake` → trimmed result saves into the current playlist through the
   existing `saveEditedTrack`) and inline rename (`vault-rename-{id}` → `vault-rename-input-{id}` →
