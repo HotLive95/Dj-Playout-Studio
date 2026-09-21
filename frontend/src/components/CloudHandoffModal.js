@@ -212,7 +212,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                 <>
                   <p className="text-sm text-[var(--hl-muted)]">
                     Upload your whole show (all playlists, jingles, and voice takes) and get a short
-                    code + link to send a co-host. Online only · 50 MB max · link expires in 30 days.
+                    code + link to send a co-host. Online only · 200 MB max · link expires in 30 days.
                   </p>
                   <div>
                     <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">

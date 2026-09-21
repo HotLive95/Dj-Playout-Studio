@@ -666,7 +666,7 @@ async def admin_run_expiry_check(x_admin_token: Optional[str] = Header(None)):
 
 
 # ---------- Cloud Handoff: share a whole show via a short code/link ----------
-SHOW_MAX_BYTES = 50 * 1024 * 1024  # 50 MB cap
+SHOW_MAX_BYTES = int(os.environ.get('SHOW_MAX_MB', '200')) * 1024 * 1024  # default 200 MB cap
 SHOW_TTL_DAYS = 30
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars
 _shows_fs = AsyncIOMotorGridFSBucket(db, bucket_name="shows")
@@ -813,7 +813,8 @@ async def create_show(body: ShareShowBody):
     raw = json.dumps(body.payload).encode("utf-8")
     if len(raw) > SHOW_MAX_BYTES:
         mb = len(raw) / (1024 * 1024)
-        raise HTTPException(status_code=413, detail=f"Show is too large ({mb:.0f} MB). The cloud link limit is 50 MB — use Save Show to a file instead.")
+        cap = SHOW_MAX_BYTES // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Show is too large ({mb:.0f} MB). The cloud link limit is {cap} MB — use Save Playlist to a file instead.")
     pin_rec = None
     if body.pin:
         if not _valid_pin(body.pin):

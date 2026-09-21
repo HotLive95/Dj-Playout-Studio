@@ -101,35 +101,60 @@ export async function exportPlaylistToBlob({
   onProgress(60);
 
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const frames = Math.max(1, Math.ceil(totalSec * targetSR));
-  let oac;
-  try {
-    oac = new OAC(2, frames, targetSR);
-  } catch (e) {
+
+  // Render into an OfflineAudioContext. A very long mix can exhaust memory and
+  // make startRendering() throw "failed to create AudioBuffer(...)". We retry at
+  // progressively lighter settings (fewer channels / lower sample-rate) so long
+  // playlists still export instead of hard-crashing.
+  const renderAt = async (channels, sr) => {
+    const fr = Math.max(1, Math.ceil(totalSec * sr));
+    const ctx = new OAC(channels, fr, sr);
+    for (let i = 0; i < n; i++) {
+      const d = decoded[i];
+      const startAt = starts[i];
+      const endAt = startAt + d.dur;
+      const fadeIn = i > 0 ? starts[i - 1] + durs[i - 1] - startAt : 0;
+      const fadeOut = i < n - 1 ? endAt - starts[i + 1] : 0;
+      const src = ctx.createBufferSource();
+      src.buffer = d.buf;
+      const g = ctx.createGain();
+      src.connect(g);
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(fadeIn > 0 ? 0.0001 : 1, startAt);
+      if (fadeIn > 0) g.gain.linearRampToValueAtTime(1, startAt + fadeIn);
+      if (fadeOut > 0) {
+        g.gain.setValueAtTime(1, Math.max(startAt, endAt - fadeOut));
+        g.gain.linearRampToValueAtTime(0.0001, endAt);
+      }
+      src.start(startAt, d.offset, d.dur);
+    }
+    return ctx.startRendering();
+  };
+
+  const attempts = [
+    [2, targetSR],
+    [2, 32000],
+    [1, 32000],
+    [1, 22050],
+  ];
+  let rendered = null;
+  let lastErr = null;
+  for (let a = 0; a < attempts.length; a++) {
+    try {
+      if (a > 0) onStatus(`Large mix — retrying at a lighter quality (${a}/${attempts.length - 1})…`);
+      // eslint-disable-next-line no-await-in-loop
+      rendered = await renderAt(attempts[a][0], attempts[a][1]);
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!rendered) {
     throw new Error(
-      "This mix is too large to render in the browser. Try exporting fewer tracks at a time."
+      `This mix (${Math.round(totalSec / 60)} min) is too large for your device to render into one audio file. ` +
+        "Use \u201CSave Playlist\u201D (.hl95playlist) to transfer it to another device instead, or export the playlist in smaller parts."
     );
   }
-  for (let i = 0; i < n; i++) {
-    const d = decoded[i];
-    const startAt = starts[i];
-    const endAt = startAt + d.dur;
-    const fadeIn = i > 0 ? starts[i - 1] + durs[i - 1] - startAt : 0;
-    const fadeOut = i < n - 1 ? endAt - starts[i + 1] : 0;
-    const src = oac.createBufferSource();
-    src.buffer = d.buf;
-    const g = oac.createGain();
-    src.connect(g);
-    g.connect(oac.destination);
-    g.gain.setValueAtTime(fadeIn > 0 ? 0.0001 : 1, startAt);
-    if (fadeIn > 0) g.gain.linearRampToValueAtTime(1, startAt + fadeIn);
-    if (fadeOut > 0) {
-      g.gain.setValueAtTime(1, Math.max(startAt, endAt - fadeOut));
-      g.gain.linearRampToValueAtTime(0.0001, endAt);
-    }
-    src.start(startAt, d.offset, d.dur);
-  }
-  const rendered = await oac.startRendering();
 
   onStatus(`Encoding ${format.toUpperCase()}…`);
   onProgress(70);

@@ -1250,12 +1250,24 @@ function App() {
   };
 
   const downloadJson = (obj, filename) => {
-    const jsonBlob = new Blob([JSON.stringify(obj)], { type: "application/json" });
+    let jsonBlob;
+    try {
+      jsonBlob = new Blob([JSON.stringify(obj)], { type: "application/json" });
+    } catch (e) {
+      throw new Error("This playlist is too large to package into a single file. Try splitting it into smaller playlists.");
+    }
     const a = document.createElement("a");
     a.href = URL.createObjectURL(jsonBlob);
     a.download = filename;
+    // Anchor MUST be in the DOM for the click to trigger a download in
+    // Firefox / Electron / some webviews (Chrome tolerates detached, others don't).
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 6000);
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 6000);
   };
 
   // Share the WHOLE studio → .hl95playout
@@ -1265,16 +1277,20 @@ function App() {
       return;
     }
     setBanner("Packaging your whole show…");
-    const out = await buildStudioExport(playlists, true, true);
-    const stamp = new Date().toISOString().slice(0, 10);
-    downloadJson(out, `Hot Live 95 Show ${stamp}.hl95playout`);
-    setDirty(false);
-    const voiceCount = out.tracks.filter((t) => t.voice).length;
-    setBanner(
-      `Show packaged — ${out.playlists.length} playlist(s), ${out.tracks.length} tracks` +
-        (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
-        `, ${out.jingles.length} jingles, ${out.vault.length} vault take(s). Send the .hl95playout file to any DJ.`
-    );
+    try {
+      const out = await buildStudioExport(playlists, true, true);
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadJson(out, `Hot Live 95 Show ${stamp}.hl95playout`);
+      setDirty(false);
+      const voiceCount = out.tracks.filter((t) => t.voice).length;
+      setBanner(
+        `Show packaged — ${out.playlists.length} playlist(s), ${out.tracks.length} tracks` +
+          (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
+          `, ${out.jingles.length} jingles, ${out.vault.length} vault take(s). Send the .hl95playout file to any DJ.`
+      );
+    } catch (e) {
+      setBanner(e.message || "Couldn't package the show. Please try again.");
+    }
   };
 
   // Save a SINGLE playlist → .hl95playlist (song order + embedded wave files)
@@ -1286,18 +1302,22 @@ function App() {
       return;
     }
     setBanner(`Saving playlist "${pl.name}"…`);
-    const out = await buildStudioExport([pl], false, true);
-    out.kind = "playlist";
-    const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
-    const stamp = new Date().toISOString().slice(0, 10);
-    downloadJson(out, `${safe} ${stamp}.hl95playlist`);
-    setDirty(false);
-    const voiceCount = out.tracks.filter((t) => t.voice).length;
-    setBanner(
-      `Saved "${pl.name}" — ${out.tracks.length} track${out.tracks.length === 1 ? "" : "s"} in order` +
-        (voiceCount ? ` (${voiceCount} voice take${voiceCount === 1 ? "" : "s"})` : "") +
-        ". Reload this file anytime to restore it exactly."
-    );
+    try {
+      const out = await buildStudioExport([pl], false, true);
+      out.kind = "playlist";
+      const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadJson(out, `${safe} ${stamp}.hl95playlist`);
+      setDirty(false);
+      const voiceCount = out.tracks.filter((t) => t.voice).length;
+      setBanner(
+        `Saved "${pl.name}" — ${out.tracks.length} track${out.tracks.length === 1 ? "" : "s"} in order` +
+          (voiceCount ? ` (${voiceCount} voice take${voiceCount === 1 ? "" : "s"})` : "") +
+          ". Reload this file anytime to restore it exactly."
+      );
+    } catch (e) {
+      setBanner(e.message || "Couldn't save that playlist. Please try again.");
+    }
   };
 
   // Rebuild a shared track (with all its settings) into local storage.
