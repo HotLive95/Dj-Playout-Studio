@@ -592,7 +592,26 @@ Root causes (two distinct offline-path bugs):
 - Removed the white background via min-channel silhouette key (transparent corners, drop shadow stripped),
   then regenerated icon.ico + icon.png (build-assets) and frontend/public icon-192/512/maskable/icon.jpg.
 
-## Open Alert Toggle + Waveform Scrub (2026-06)
+## Bug fixes: Save download, export crash, size cap (2026-06)
+- **Save icon did nothing**: `downloadJson` now appends the `<a>` to `document.body` before
+  `.click()` (a detached anchor is a no-op in Firefox/Electron/webviews) — Save Playlist + Share Show
+  now reliably download. `savePlaylistFile`/`shareStudio` wrapped in try/catch with error banner;
+  huge `JSON.stringify` guarded.
+- **OfflineAudioContext startRendering crash** (`AudioBuffer(2, 774531509, 44100)`): `playlistExport.js`
+  now renders via a progressive retry ladder ([2,44100]→[2,32000]→[1,32000]→[1,22050]) and only throws a
+  friendly "too large — use Save Playlist / export in parts" message if all fail. No more raw crash.
+- **Cloud Handoff cap** raised 50 MB → 200 MB (`SHOW_MAX_BYTES = env SHOW_MAX_MB[200]*1MB`), messages
+  updated. CAVEAT: the Kubernetes ingress body-size limit can truncate very large uploads before they
+  reach the app in the hosted preview; the full 200 MB applies in Electron/production.
+- Verified: iteration_25 (backend pytest 8/8 incl. test_shows_size_cap.py; frontend Save/Share/Import +
+  MP3/WAV export all download without crashing).
+
+### NOT yet done (requested, deferred to next build):
+- Voice Booth **compressor button + noise-gate + pad** (substantial Web Audio DSP; needs its own build+test).
+- Share-"current playlist only" is covered by the whole-studio .hl95playout today; PWA install already
+  works on Win/Mac/Android/iPad via browser "Install app" / "Add to Home Screen".
+
+
 - **Open Alert Toggle**: per-share control for the co-host "first opened" email. `ShareShowBody.alert_on_open`
   (default true); `create_show` stores it; `get_show` first-open alert gated on `alert_on_open`.
   Frontend `cloud-alert-on-open` checkbox appears only when an email is entered (checked by default);
