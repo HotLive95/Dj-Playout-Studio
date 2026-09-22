@@ -1145,6 +1145,77 @@ export default class AudioEngine {
     if (this._bcOnState && !silent) this._bcOnState("stopped");
   }
 
+  // ---- Input level meter (for the "Test connection" check; no streaming) ----
+  async startInputMeter(mic = true) {
+    const ctx = this._ensureProgramGraph();
+    if (!ctx) return false;
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.stopInputMeter();
+    const an = ctx.createAnalyser();
+    an.fftSize = 1024;
+    this._meterData = new Float32Array(an.fftSize);
+    try {
+      this._recMaster.connect(an);
+    } catch {
+      /* ignore */
+    }
+    this._meterAnalyser = an;
+    this._meterMic = null;
+    this._meterMicStream = null;
+    if (mic) {
+      try {
+        this._meterMicStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        });
+        this._meterMic = ctx.createMediaStreamSource(this._meterMicStream);
+        this._meterMic.connect(an);
+      } catch {
+        this._meterMicStream = null;
+      }
+    }
+    return true;
+  }
+
+  getInputMeterLevel() {
+    const an = this._meterAnalyser;
+    if (!an || !this._meterData) return 0;
+    an.getFloatTimeDomainData(this._meterData);
+    let sum = 0;
+    for (let i = 0; i < this._meterData.length; i++) {
+      const v = this._meterData[i];
+      sum += v * v;
+    }
+    return Math.sqrt(sum / this._meterData.length);
+  }
+
+  stopInputMeter() {
+    try {
+      if (this._meterMic) this._meterMic.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (this._meterAnalyser) this._meterAnalyser.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (this._meterMicStream) this._meterMicStream.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* ignore */
+    }
+    this._meterMic = null;
+    this._meterMicStream = null;
+    this._meterAnalyser = null;
+    this._meterData = null;
+  }
+
 
   _emitStandby() {
     if (!this.onStandby) return;

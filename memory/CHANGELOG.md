@@ -133,3 +133,10 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Retry on refusal: App auto-retries a refused/unreachable login up to 3 times, 8s apart, with a "Retrying login… (n/3)" banner + Stop trying; clears on success/live.
 - PlayerBar: crossfade-seconds <select> now uses static <option> children (removed the dynamic {s}s map) to eliminate the "<span> cannot be a child of <option>" hydration warning. Verified NONE in console.
 - All verified in preview via screenshot flow.
+
+##  — Broadcast: presets, meter, slot auto-wait, now-playing
+- Connection Presets: save/load/delete named radio.co stations (localStorage hotlive95_radioco_presets); one-tap chip loads all fields.
+- Level Meter On Test: engine startInputMeter/getInputMeterLevel/stopInputMeter (AnalyserNode on program master + optional mic); Test connection now shows a live input-level bar for ~10s with a "no signal" hint.
+- Slot Auto-Wait: "Keep trying until my slot opens" toggle -> unlimited login retries every 15s (vs 3x/8s normal) until radio.co accepts, then auto go-live; banner + button reflect autoWait mode.
+- Now-Playing Push: already wired (meta sent on every track change while live via WS -> backend admin.cgi updinfo); added "sent to radio.co" confirmation under the on-air now-playing line.
+- Verified in preview desktop + mobile (390px, no overflow).

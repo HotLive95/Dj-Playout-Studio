@@ -1840,14 +1840,15 @@ function App() {
     });
     return await r.json();
   };
-  // Auto-retry a refused/unreachable login a few times — the live slot may be starting.
+  // Auto-retry a refused/unreachable login — the live slot may be starting.
   const scheduleLoginRetry = (msg) => {
     bcRetryRef.current.count += 1;
     const attempt = bcRetryRef.current.count;
-    let left = 8;
+    const autoWait = bcRetryRef.current.autoWait;
+    let left = autoWait ? 15 : 8;
     setBcError("");
     setBcState("connecting");
-    setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg });
+    setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg, autoWait });
     if (bcRetryRef.current.timer) clearInterval(bcRetryRef.current.timer);
     bcRetryRef.current.timer = setInterval(() => {
       if (bcRetryRef.current.cancelled) {
@@ -1862,7 +1863,7 @@ function App() {
         const args = bcRetryRef.current.lastArgs || {};
         startBroadcast(args.config, args.mic, { isRetry: true });
       } else {
-        setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg });
+        setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg, autoWait });
       }
     }, 1000);
   };
@@ -1881,6 +1882,7 @@ function App() {
     if (!opts.isRetry) {
       bcRetryRef.current.count = 0;
       bcRetryRef.current.cancelled = false;
+      bcRetryRef.current.autoWait = !!opts.autoWait;
     }
     bcRetryRef.current.lastArgs = { config, mic };
     const base = process.env.REACT_APP_BACKEND_URL || "";
@@ -1890,7 +1892,8 @@ function App() {
     setBcLoginRetry(null);
     setBcState("connecting");
     const handleStartError = (msg) => {
-      if (!bcRetryRef.current.cancelled && bcRetryRef.current.count < MAX_LOGIN_RETRY) {
+      const canRetry = !bcRetryRef.current.cancelled && (bcRetryRef.current.autoWait || bcRetryRef.current.count < MAX_LOGIN_RETRY);
+      if (canRetry) {
         scheduleLoginRetry(msg);
       } else {
         setBcLoginRetry(null);
@@ -2803,6 +2806,9 @@ function App() {
           loginRetry={bcLoginRetry}
           onCancelRetry={cancelLoginRetry}
           onTest={testBroadcast}
+          onStartMeter={(mic) => engineRef.current?.startInputMeter?.(mic)}
+          onStopMeter={() => engineRef.current?.stopInputMeter?.()}
+          getMeterLevel={() => engineRef.current?.getInputMeterLevel?.() || 0}
           scheduledAt={scheduleAt}
           scheduledEndAt={scheduleEndAt}
           scheduledPlaylistId={schedulePlaylistId}

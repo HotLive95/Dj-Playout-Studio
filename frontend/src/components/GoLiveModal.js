@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks, Bookmark, Save, Gauge, Timer } from "lucide-react";
 
 const CFG_KEY = "hotlive95_radioco";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
@@ -14,7 +14,7 @@ const loadCfg = () => {
 // Broadcast the studio's live program mix to a radio.co station (SHOUTcast v1),
 // relayed through the app backend. Online-only; the DJ's own credentials stay
 // on this device and are sent over the encrypted (wss) connection to start.
-export default function GoLiveModal({ state, error, reconnect, loginRetry, onCancelRetry, onTest, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
+export default function GoLiveModal({ state, error, reconnect, loginRetry, onCancelRetry, onTest, onStartMeter, onStopMeter, getMeterLevel, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
   const saved = loadCfg();
   const [host, setHost] = useState(saved.host || "denim.radio.co");
   const [port, setPort] = useState(saved.port || 5189);
@@ -36,6 +36,19 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const [playUrl, setPlayUrl] = useState(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [autoWait, setAutoWait] = useState(saved.autoWait || false);
+  const [meterOn, setMeterOn] = useState(false);
+  const [meterLevel, setMeterLevel] = useState(0);
+  const meterRaf = useRef(0);
+  const meterTimer = useRef(null);
+  const [presets, setPresets] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("hotlive95_radioco_presets") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [presetName, setPresetName] = useState("");
   const raf = useRef(0);
   const prevStatus = useRef("good");
   const beepCtx = useRef(null);
@@ -126,16 +139,49 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     if (!live) setListenerHist([]);
   }, [live]);
 
+  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait });
+
+  const startMeter = async () => {
+    if (!onStartMeter) return;
+    try {
+      const ok = await onStartMeter(includeMic);
+      if (ok === false) return;
+    } catch {
+      return;
+    }
+    setMeterOn(true);
+    const tick = () => {
+      setMeterLevel(getMeterLevel ? getMeterLevel() : 0);
+      meterRaf.current = requestAnimationFrame(tick);
+    };
+    meterRaf.current = requestAnimationFrame(tick);
+    if (meterTimer.current) clearTimeout(meterTimer.current);
+    meterTimer.current = setTimeout(() => stopMeter(), 10000);
+  };
+  const stopMeter = () => {
+    cancelAnimationFrame(meterRaf.current);
+    if (meterTimer.current) {
+      clearTimeout(meterTimer.current);
+      meterTimer.current = null;
+    }
+    setMeterOn(false);
+    setMeterLevel(0);
+    if (onStopMeter) onStopMeter();
+  };
+  useEffect(() => () => stopMeter(), []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const go = () => {
-    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound };
+    const cfg = cfgObj();
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
-    onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, includeMic);
+    stopMeter();
+    onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, includeMic, { autoWait });
   };
 
   const runTest = async () => {
     setTestResult(null);
     setTesting(true);
-    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound };
+    startMeter();
+    const cfg = cfgObj();
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     try {
       const res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password });
@@ -145,6 +191,36 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     } finally {
       setTesting(false);
     }
+  };
+
+  const savePreset = () => {
+    const label = (presetName.trim() || host.trim()).slice(0, 40);
+    if (!label) return;
+    const p = { id: Date.now().toString(36), label, host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), includeMic, stationId: stationId.trim(), alertSound };
+    setPresets((prev) => {
+      const next = [p, ...prev.filter((x) => x.label.toLowerCase() !== label.toLowerCase())].slice(0, 12);
+      localStorage.setItem("hotlive95_radioco_presets", JSON.stringify(next));
+      return next;
+    });
+    setPresetName("");
+  };
+  const loadPreset = (p) => {
+    setHost(p.host || "denim.radio.co");
+    setPort(p.port || 5189);
+    setPassword(p.password || "");
+    setName(p.name || "Hot Live 95");
+    setBitrate(p.bitrate || 128);
+    setIncludeMic(p.includeMic !== false);
+    setStationId(p.stationId || "");
+    if (typeof p.alertSound === "boolean") setAlertSound(p.alertSound);
+    setTestResult(null);
+  };
+  const deletePreset = (id) => {
+    setPresets((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      localStorage.setItem("hotlive95_radioco_presets", JSON.stringify(next));
+      return next;
+    });
   };
 
   const armSchedule = () => {
@@ -257,7 +333,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
               )}
               {nowPlaying && (
                 <p className="text-center text-xs text-[var(--hl-muted)]" data-testid="go-live-nowplaying">
-                  Now playing: <span className="text-[var(--hl-cue)]">{nowPlaying}</span>
+                  Now playing: <span className="text-[var(--hl-cue)]">{nowPlaying}</span> <span className="text-[10px]">· sent to radio.co</span>
                 </p>
               )}
               <div>
@@ -316,6 +392,40 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                 Enter the details from your radio.co dashboard → <b>Live / DJ</b>. Your password stays on this device.
                 radio.co only accepts a connection when <b>Live Anytime</b> is on or you're in a scheduled slot.
               </div>
+
+              {presets.length > 0 && (
+                <div className="rounded-lg border border-[var(--hl-line)] p-2.5 space-y-2" data-testid="go-live-presets">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-[var(--hl-muted)]">
+                    <Bookmark size={13} className="text-[var(--hl-cue)]" /> Saved stations — tap to load
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {presets.map((p) => (
+                      <div
+                        key={p.id}
+                        data-testid={`go-live-preset-${p.id}`}
+                        className="flex items-center gap-1 rounded-full bg-black/40 border border-[var(--hl-line)] pl-2.5 pr-1 py-1"
+                      >
+                        <button
+                          data-testid={`go-live-preset-load-${p.id}`}
+                          onClick={() => loadPreset(p)}
+                          className="text-xs text-[var(--hl-text)] hover:text-[var(--hl-cue)] max-w-[160px] truncate"
+                          title="Load this station"
+                        >
+                          {p.label}
+                        </button>
+                        <button
+                          data-testid={`go-live-preset-delete-${p.id}`}
+                          onClick={() => deletePreset(p.id)}
+                          className="h-5 w-5 grid place-items-center rounded-full text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
+                          title="Remove"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2.5">
                 <label className="block">
@@ -392,6 +502,16 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                     className="h-4 w-4 accent-[var(--hl-amber)]"
                   />
                   <AlertTriangle size={14} className="text-[var(--hl-amber)]" /> Sound an alert if the stream drops out
+                </label>
+                <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="go-live-auto-wait"
+                    checked={autoWait}
+                    onChange={(e) => setAutoWait(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--hl-cue)]"
+                  />
+                  <Timer size={14} className="text-[var(--hl-cue)]" /> Keep trying until my slot opens (go live the moment radio.co accepts)
                 </label>
                 <label className="block">
                   <span className="text-xs text-[var(--hl-muted)]">Station ID (optional — for live listener count)</span>
@@ -479,7 +599,9 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                   <div className="flex items-center gap-2 min-w-0">
                     <RotateCw size={15} className="text-[var(--hl-amber)] animate-spin shrink-0" />
                     <span className="text-sm text-[var(--hl-amber)] truncate">
-                      Login not accepted yet — retrying in {loginRetry.seconds}s (attempt {loginRetry.attempt} of {loginRetry.max})
+                      {loginRetry.autoWait
+                        ? `Waiting for your slot to open — retrying in ${loginRetry.seconds}s (attempt ${loginRetry.attempt})`
+                        : `Login not accepted yet — retrying in ${loginRetry.seconds}s (attempt ${loginRetry.attempt} of ${loginRetry.max})`}
                     </span>
                   </div>
                   <button
@@ -527,6 +649,40 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                 </div>
               )}
 
+              {meterOn && (
+                <div data-testid="go-live-meter">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-[var(--hl-muted)] mb-1">
+                    <Gauge size={13} className="text-[var(--hl-cue)]" /> Input level {includeMic ? "(music + mic)" : "(music)"} — play a track or speak to check
+                  </div>
+                  <div className="h-3 w-full rounded-full bg-[#2a2a31] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-75"
+                      style={{ width: `${Math.min(100, Math.round(meterLevel * 140))}%`, background: "linear-gradient(90deg,#2ee5c4,#ffab00)" }}
+                    />
+                  </div>
+                  {meterLevel < 0.01 && <div className="text-[10px] text-[var(--hl-amber)] mt-1">No signal yet — start a track or talk into the mic.</div>}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  data-testid="go-live-preset-name"
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  placeholder="Name this station to save it…"
+                  className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
+                />
+                <button
+                  data-testid="go-live-save-preset"
+                  onClick={savePreset}
+                  disabled={!canGo}
+                  className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] text-xs font-700 hover:bg-[rgba(46,229,196,0.1)] disabled:opacity-40 flex items-center gap-1.5"
+                  title="Save these settings as a station preset"
+                >
+                  <Save size={14} /> Save
+                </button>
+              </div>
+
               <div className="flex gap-2">
                 <button
                   data-testid="go-live-test"
@@ -547,7 +703,13 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                 className="w-full h-12 rounded-lg bg-[var(--hl-onair)] text-white font-700 flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {busy || retrying ? <Loader2 size={18} className="animate-spin" /> : <Radio size={18} />}
-                {retrying ? `Retrying login… (${loginRetry.attempt}/${loginRetry.max})` : busy ? "Connecting to radio.co…" : "Go live now"}
+                {retrying
+                  ? loginRetry.autoWait
+                    ? `Waiting for your slot… (try ${loginRetry.attempt})`
+                    : `Retrying login… (${loginRetry.attempt}/${loginRetry.max})`
+                  : busy
+                  ? "Connecting to radio.co…"
+                  : "Go live now"}
               </button>
               <p className="text-[11px] text-[var(--hl-muted)] text-center">
                 Broadcasting needs an internet connection. Your offline DJing is unaffected.
