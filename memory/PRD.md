@@ -770,3 +770,8 @@ Root causes (two distinct offline-path bugs):
 - Sidebar import input accepts .hl95playout/.hlp.json/.json.
 - Verified E2E (testing agent iteration_17): Share→Import round-trip + legacy import pass 100%; tracks arrive
   with bpm/key/art/cuePoints/audio intact. (Jingle-in-file is a state-settle timing note in automation, not a bug.)
+
+
+---
+## 2026-06 Update pointer
+Latest shipped work (Voice DSP chain, Install button, 500MB chunked uploads, Export-in-parts, Stem Isolator + live Stem Record + send-to-pad, Voice FX presets, 12-pad/2-page jingle bar) is logged in CHANGELOG.md. All verified 100% (test_reports iteration_26 & 27). Deploy dispatched.

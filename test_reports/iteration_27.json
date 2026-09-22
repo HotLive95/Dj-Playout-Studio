@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 27 — Frontend-only verification of the 3 new follow-up features on top of iter 26. All 3 PASS end-to-end in headless Chromium via Playwright against REACT_APP_BACKEND_URL. (A) PAD BANK PAGES: [data-testid=pad-page-switcher] renders in the jingle bar with [data-testid=pad-page-label] showing '1/2'. Only [data-testid=jingle-pad-0..5] are in the DOM on page 1; jingle-pad-6..11 are NOT rendered. Clicking [data-testid=pad-page-next] flips label to '2/2', renders jingle-pad-6..11 whose unassigned button text reads 'Pad 7'..'Pad 12'. [data-testid=pad-page-prev] returns to '1/2'. Assigned a synthesized WAV to [data-testid=jingle-pad-6] via [data-testid=jingle-file-input] (opened by clicking the empty pad); pad label became 'testwav.wav' and PERSISTED across a prev→next page flip. No console errors during any of this. (B) FX PRESETS in Voice Booth: opened [data-testid=voice-recorder-modal] via [data-testid=record-voice-button] (required a selected playlist per iter 26). [data-testid=voice-fx-chain] contains a [data-testid=voice-fx-presets] block with [data-testid=voice-fx-preset-name] input and [data-testid=voice-fx-preset-save] button. Set [data-testid=voice-pad-db]=6, enabled [data-testid=voice-comp-toggle] & [data-testid=voice-gate-toggle] (verified [data-testid=voice-comp-threshold] and [data-testid=voice-gate-threshold] appeared). Saved as 'Warm' → [data-testid=voice-fx-preset-Warm] chip appeared under [data-testid=voice-fx-preset-chips]. Reset pad to 0 and turned comp+gate OFF (verified sub-sliders disappeared). Clicked the Warm chip → pad snapped back to 6, comp/gate re-enabled, sub-sliders reappeared. Clicked chip trash button → chip removed. (C) STEM RECORD: opened [data-testid=stem-isolator-modal] via [data-testid=open-stem-isolator]; selected the seeded 'testwav' via [data-testid=stem-source-select] (loads buffer, transport renders). Clicked [data-testid=stem-record-mix] — [data-testid=stem-source-select] became disabled, the button label showed '0:00' (running timer with mm:ss + Square icon). Rode [data-testid=stem-mute-vocals] on/off during ~1.8s of recording, then clicked stem-record-mix again to stop. A WAV file 'testwav - Stem Mix.wav' downloaded (verified via Playwright download event) and [data-testid=stem-flash] showed 'Stem mix saved'. Confirmed the recorder is wired to the Web Audio graph output (recDestRef connects to graph.master in startAt), so it works headless without mic access.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PlayerBar <select> options", "issues": ["Carry-over from iter 20-26: visual-editor injects <span> into <option>, producing a React hydration warning. Non-blocking."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Carry-over, low) Remove visual-editor <span>-in-<option> injection in PlayerBar to clear the hydration warning."
+  ],
+  "critical_code_review_comments": [
+    "JingleBar.js: PAGE_COUNT=2 and pad indexing i = padPage*PAD_COUNT + idx is clean; only the current page's pads are rendered which keeps the DOM small. Consider adding data-testid on the input for programmatic drag-drop tests, but jingle-file-input is enough today.",
+    "VoiceRecorder.js: FX presets store under localStorage key 'hotlive95_fx_presets'; saveFxPreset dedupes by name and persists. applyFxPreset restores all 7 fields with safe defaults. Chip data-testid uses name.replace(/\\s/g,'-') which is fine for single-word names but will collide/mis-testid if two preset names differ only in whitespace or contain special chars — consider slugifying/encoding.",
+    "StemIsolator.js: recDestRef connects to graph.master and startAt re-hooks it on every buffer restart, so loop/seek during recording keep capturing — good. onstop decodes webm → WAV via bufferToWav and downloads. downloadBlob usage is correct. Nit: recording flow does not gracefully handle a user closing the modal mid-record (teardown() stops recorder but recBusy/onstop still fires after context is closing) — the try/catch guards it but the flash won't be shown. Low priority.",
+    "StemIsolator.js: source select is correctly disabled while recording (verified) — prevents user from swapping the buffer mid-take.",
+    "No regressions on iter-26 features (license gate, jingle bar layout, voice booth DSP chain, stem isolator core)."
+  ],
+  "updated_files": ["/app/test_reports/iteration_27.json"],
+  "success_rate": {"backend": "n/a (skipped per E1)", "frontend": "100% on all 3 new features (Pad Bank Pages, FX Presets, Stem Record)."},
+  "test_credentials": "Offline activation key Q61VK-G819N-40K1B-H226T (typed raw as 'Q61VKG819N40K1BH226T').",
+  "seed_data_creation": "Playlist 'TEST_PL' created via sidebar Playlist name input + Enter; one 2s 22.05kHz mono 440Hz sine WAV ('testwav.wav') added via [data-testid=add-files-input]. Also assigned the same WAV to jingle-pad-6 to prove page-2 persistence.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 3 iter-27 features work. Reproduction notes: (1) The playlist create flow uses the inline 'Playlist name' input on the sidebar — type + Enter (there is no separate submit testid). (2) [data-testid=record-voice-button] and [data-testid=add-files-input] only appear once a playlist is selected. (3) StemIsolator source select is disabled during recording — a strong signal of the record state along with the mm:ss timer text on [data-testid=stem-record-mix]. (4) FX preset chip testid is voice-fx-preset-<name-with-spaces-as-dashes>. (5) The Stem Record uses the AudioContext MediaStreamDestination (not the mic) — verified working headless.",
+  "rca of the issue": "N/A — no bugs found in the 3 targeted features. First script iteration failed at record-voice-button because playlist name form needed Enter to submit — resolved by pressing Enter on the name input, after which the playlist becomes selectable and unlocks add-files-input + record-voice-button."
+}

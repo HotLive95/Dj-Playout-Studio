@@ -1,6 +1,18 @@
 # Changelog — Hot Live 95 DJ Playout Studio
 
-## 2026-06 (this session) — Voice DSP, Stem Isolator, Install, 500MB uploads, Export-in-parts
+## 2026-06 (follow-up) — Stem Record, FX Presets, Pad Bank Pages
+Tested end-to-end (iteration_27.json): 100% pass, no bugs.
+- **Stem Record** (`StemIsolator.js`): "REC MIX" captures the live isolated mix
+  (with fader/mute/solo automation) via a MediaStreamDestination on the graph
+  master; recording persists across loop/seek/restart; on stop the webm is
+  decoded → WAV and downloaded (`<track> - Stem Mix.wav`). Source select locked
+  while recording.
+- **FX Presets** (`VoiceRecorder.js`): one-tap save/load/delete of Pad +
+  Compressor + Gate settings (`hotlive95_fx_presets`), UI in `voice-fx-presets`.
+- **Pad Bank Pages** (`JingleBar.js` + App): jingle bar now holds 12 pads across
+  2 pages with a page switcher; keyboard 1-6 maps to the active page.
+
+## 2026-06 — Voice DSP, Stem Isolator, Install, 500MB uploads, Export-in-parts
 Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 
 - **Voice Booth DSP chain** (`VoiceRecorder.js`): added an always-on processing
