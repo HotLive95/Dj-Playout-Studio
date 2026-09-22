@@ -1090,11 +1090,24 @@ async def broadcast_ws(ws: WebSocket):
         writer.write(pwd.encode("utf-8", "ignore") + b"\r\n")
         await writer.drain()
         try:
-            resp = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 12)
+            resp = await asyncio.wait_for(reader.read(1024), 12)
         except Exception:
             resp = b""
-        if not resp.startswith(b"OK2"):
-            await ws.send_json({"type": "error", "error": "radio.co refused the source connection. Check the broadcast password and that you're within a live slot / Live Anytime is on."})
+        ok = (
+            resp.startswith(b"OK2")
+            or resp.startswith(b"OK")
+            or resp.startswith(b"HTTP/1.0 200")
+            or resp.startswith(b"HTTP/1.1 200")
+            or b" 200 " in resp
+        )
+        if not ok:
+            snippet = resp.decode("latin-1", "ignore").strip()[:120]
+            detail = (
+                f" (server replied: {snippet})"
+                if snippet
+                else " (no reply — usually a wrong source port, or you're not in a live slot yet)"
+            )
+            await ws.send_json({"type": "error", "error": "radio.co refused the source connection. Check the broadcast password, the source port, and that you're within a live slot / Live Anytime is on." + detail})
             await ws.close()
             return
         headers = (

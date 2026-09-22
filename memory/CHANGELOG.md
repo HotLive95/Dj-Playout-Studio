@@ -120,3 +120,9 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   (completes before first repaint). Not user-facing.
 - Carry-over React hydration warning `<span> cannot be a child of <option>`
   from the visual-editor injection in PlayerBar (pre-existing since iter 20-25).
+
+##  — Broadcast button "does nothing" fix
+- Root cause: on a radio.co source rejection, audioEngine emitted "error" then immediately called stopBroadcast() which emitted "stopped" -> App reset bcState to "idle", overwriting "error". Modal only renders the error when state==="error", so the message was swallowed and the click looked like it did nothing.
+- Fix (frontend lib/audioEngine.js): stopBroadcast(silent) no longer emits "stopped" when called from an error path; error branch and reconnect-give-up now call stopBroadcast(true) first, then emit the error so it persists.
+- Fix (backend server.py /broadcast/ws): handshake reads available bytes (read(1024)) instead of strict readuntil("\r\n\r\n"); accepts OK2/OK/HTTP 200; on failure surfaces the actual server reply (e.g. "Invalid password") in the error.
+- Verified in preview: wrong password now shows "radio.co refused the source connection ... (server replied: Invalid password)".

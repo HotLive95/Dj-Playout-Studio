@@ -1027,8 +1027,8 @@ export default class AudioEngine {
         this._bcReady = true;
         this._bcOnState("live");
       } else if (m.type === "error") {
+        this.stopBroadcast(true);
         this._bcOnState("error", m.error || "Broadcast failed.");
-        this.stopBroadcast();
       }
     };
     ws.onclose = () => {
@@ -1044,8 +1044,8 @@ export default class AudioEngine {
     this._bcReady = false;
     this._bcAttempt = (this._bcAttempt || 0) + 1;
     if (this._bcAttempt > 10) {
+      this.stopBroadcast(true);
       this._bcOnState("error", "Lost the radio.co connection and couldn't reconnect. Check your internet / slot.");
-      this.stopBroadcast();
       return;
     }
     // Fresh encoder each attempt to avoid stale partial frames.
@@ -1084,7 +1084,7 @@ export default class AudioEngine {
     }
   }
 
-  stopBroadcast() {
+  stopBroadcast(silent = false) {
     this._bcStop = true;
     this._bcReady = false;
     this._bcLevel = 0;
@@ -1142,7 +1142,7 @@ export default class AudioEngine {
     this._bcMicStream = null;
     this._bcArchiveDest = null;
     this._bcWs = null;
-    if (this._bcOnState) this._bcOnState("stopped");
+    if (this._bcOnState && !silent) this._bcOnState("stopped");
   }
 
 
