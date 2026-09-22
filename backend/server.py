@@ -1065,6 +1065,57 @@ async def broadcast_station_status(station_id: str):
     return {"ok": True, "status": data.get("status"), "listeners": listeners, "track": track}
 
 
+@api_router.post("/broadcast/test")
+async def broadcast_test(request: Request):
+    """Verify a radio.co source login (SHOUTcast v1) without streaming any audio."""
+    try:
+        cfg = await request.json()
+    except Exception:
+        cfg = {}
+    host = str(cfg.get("host") or "").strip()
+    pwd = str(cfg.get("password") or "")
+    try:
+        port = int(cfg.get("port"))
+    except Exception:
+        return {"ok": False, "message": "Enter a valid source port."}
+    if not host or not port or not pwd:
+        return {"ok": False, "message": "Fill in the host, source port and password first."}
+    writer = None
+    try:
+        try:
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
+        except Exception:
+            return {"ok": False, "message": f"Couldn't reach {host}:{port}. Check the host and source port."}
+        writer.write(pwd.encode("utf-8", "ignore") + b"\r\n")
+        await writer.drain()
+        try:
+            resp = await asyncio.wait_for(reader.read(1024), 12)
+        except Exception:
+            resp = b""
+        ok = (
+            resp.startswith(b"OK2")
+            or resp.startswith(b"OK")
+            or resp.startswith(b"HTTP/1.0 200")
+            or resp.startswith(b"HTTP/1.1 200")
+            or b" 200 " in resp
+        )
+        if ok:
+            return {"ok": True, "message": "radio.co accepted your login — you're clear to go live."}
+        snippet = resp.decode("latin-1", "ignore").strip()[:120]
+        detail = (
+            f" (server replied: {snippet})"
+            if snippet
+            else " (no reply — usually a wrong source port, or you're not in a live slot yet)"
+        )
+        return {"ok": False, "message": "radio.co refused the login. Check the password, source port, and that Live Anytime is on / you're in a live slot." + detail}
+    finally:
+        if writer:
+            try:
+                writer.close()
+            except Exception:
+                pass
+
+
 @api_router.websocket("/broadcast/ws")
 async def broadcast_ws(ws: WebSocket):
     await ws.accept()

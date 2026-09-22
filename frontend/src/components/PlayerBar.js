@@ -392,11 +392,14 @@ export default function PlayerBar({
                 onChange={(e) => onCrossfadeSeconds(Number(e.target.value))}
                 className="bg-black/50 border border-[var(--hl-line)] rounded-md text-xs px-1.5 py-1.5 outline-none focus:border-[var(--hl-amber)]"
               >
-                {[1, 2, 3, 4, 5, 6, 8, 10].map((s) => (
-                  <option key={s} value={s}>
-                    {s}s
-                  </option>
-                ))}
+                <option value={1}>1s</option>
+                <option value={2}>2s</option>
+                <option value={3}>3s</option>
+                <option value={4}>4s</option>
+                <option value={5}>5s</option>
+                <option value={6}>6s</option>
+                <option value={8}>8s</option>
+                <option value={10}>10s</option>
               </select>
             )}
           </div>

@@ -126,3 +126,10 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Fix (frontend lib/audioEngine.js): stopBroadcast(silent) no longer emits "stopped" when called from an error path; error branch and reconnect-give-up now call stopBroadcast(true) first, then emit the error so it persists.
 - Fix (backend server.py /broadcast/ws): handshake reads available bytes (read(1024)) instead of strict readuntil("\r\n\r\n"); accepts OK2/OK/HTTP 200; on failure surfaces the actual server reply (e.g. "Invalid password") in the error.
 - Verified in preview: wrong password now shows "radio.co refused the source connection ... (server replied: Invalid password)".
+
+##  — Broadcast reliability upgrades
+- Test connection: new backend POST /api/broadcast/test verifies the radio.co SHOUTcast v1 login (no audio) and returns the real server reply; new "Test connection" button in GoLiveModal.
+- Guided setup: checklist (Live Anytime on, station powered, source port = base+1, Live/DJ password) shown in the Go Live panel whenever a login/test is refused.
+- Retry on refusal: App auto-retries a refused/unreachable login up to 3 times, 8s apart, with a "Retrying login… (n/3)" banner + Stop trying; clears on success/live.
+- PlayerBar: crossfade-seconds <select> now uses static <option> children (removed the dynamic {s}s map) to eliminate the "<span> cannot be a child of <option>" hydration warning. Verified NONE in console.
+- All verified in preview via screenshot flow.

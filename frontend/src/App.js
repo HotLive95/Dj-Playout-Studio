@@ -282,6 +282,9 @@ function App() {
   const [scheduleAt, setScheduleAt] = useState(null);
   const [scheduleEndAt, setScheduleEndAt] = useState(null);
   const [schedulePlaylistId, setSchedulePlaylistId] = useState(null);
+  const [bcLoginRetry, setBcLoginRetry] = useState(null);
+  const bcRetryRef = useRef({ count: 0, timer: null, lastArgs: null, cancelled: false });
+  const MAX_LOGIN_RETRY = 3;
   const [broadcasts, setBroadcasts] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("hotlive95_broadcasts") || "[]");
@@ -1827,12 +1830,74 @@ function App() {
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scheduleEndAt, bcState]);
-  const startBroadcast = async (config, mic) => {
+  // Verify the radio.co login without going on air (one-tap credential check).
+  const testBroadcast = async (config) => {
+    const base = process.env.REACT_APP_BACKEND_URL || "";
+    const r = await fetch(`${base}/api/broadcast/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    return await r.json();
+  };
+  // Auto-retry a refused/unreachable login a few times — the live slot may be starting.
+  const scheduleLoginRetry = (msg) => {
+    bcRetryRef.current.count += 1;
+    const attempt = bcRetryRef.current.count;
+    let left = 8;
+    setBcError("");
+    setBcState("connecting");
+    setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg });
+    if (bcRetryRef.current.timer) clearInterval(bcRetryRef.current.timer);
+    bcRetryRef.current.timer = setInterval(() => {
+      if (bcRetryRef.current.cancelled) {
+        clearInterval(bcRetryRef.current.timer);
+        bcRetryRef.current.timer = null;
+        return;
+      }
+      left -= 1;
+      if (left <= 0) {
+        clearInterval(bcRetryRef.current.timer);
+        bcRetryRef.current.timer = null;
+        const args = bcRetryRef.current.lastArgs || {};
+        startBroadcast(args.config, args.mic, { isRetry: true });
+      } else {
+        setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg });
+      }
+    }, 1000);
+  };
+  const cancelLoginRetry = () => {
+    bcRetryRef.current.cancelled = true;
+    if (bcRetryRef.current.timer) {
+      clearInterval(bcRetryRef.current.timer);
+      bcRetryRef.current.timer = null;
+    }
+    bcRetryRef.current.count = 0;
+    setBcLoginRetry(null);
+    engineRef.current?.stopBroadcast();
+    setBcState("idle");
+  };
+  const startBroadcast = async (config, mic, opts = {}) => {
+    if (!opts.isRetry) {
+      bcRetryRef.current.count = 0;
+      bcRetryRef.current.cancelled = false;
+    }
+    bcRetryRef.current.lastArgs = { config, mic };
     const base = process.env.REACT_APP_BACKEND_URL || "";
     const wsUrl = base.replace(/^http/, "ws") + "/api/broadcast/ws";
     setBcError("");
     setBcReconnect(null);
+    setBcLoginRetry(null);
     setBcState("connecting");
+    const handleStartError = (msg) => {
+      if (!bcRetryRef.current.cancelled && bcRetryRef.current.count < MAX_LOGIN_RETRY) {
+        scheduleLoginRetry(msg);
+      } else {
+        setBcLoginRetry(null);
+        setBcState("error");
+        setBcError(msg);
+      }
+    };
     try {
       await engineRef.current.startBroadcast({
         wsUrl,
@@ -1846,19 +1911,32 @@ function App() {
             setBcReconnect(info || null);
             return;
           }
+          if (s === "error") {
+            handleStartError(typeof info === "string" ? info : "Broadcast error.");
+            return;
+          }
+          if (s === "live") {
+            bcRetryRef.current.count = 0;
+            setBcReconnect(null);
+            setBcLoginRetry(null);
+          }
           setBcState(s === "stopped" ? "idle" : s);
-          if (s === "live") setBcReconnect(null);
-          if (s === "error") setBcError(typeof info === "string" ? info : "Broadcast error.");
         },
       });
       const t = currentTrackId ? tracks[currentTrackId] : null;
       if (t) engineRef.current.sendBroadcastMeta(`${t.artist ? t.artist + " - " : ""}${t.title || t.name}`);
     } catch (e) {
-      setBcState("error");
-      setBcError(e.message || "Couldn't start the broadcast.");
+      handleStartError(e.message || "Couldn't start the broadcast.");
     }
   };
   const stopBroadcast = () => {
+    bcRetryRef.current.cancelled = true;
+    if (bcRetryRef.current.timer) {
+      clearInterval(bcRetryRef.current.timer);
+      bcRetryRef.current.timer = null;
+    }
+    bcRetryRef.current.count = 0;
+    setBcLoginRetry(null);
     engineRef.current?.stopBroadcast();
     setBcState("idle");
     setBcReconnect(null);
@@ -2722,6 +2800,9 @@ function App() {
           state={bcState}
           error={bcError}
           reconnect={bcReconnect}
+          loginRetry={bcLoginRetry}
+          onCancelRetry={cancelLoginRetry}
+          onTest={testBroadcast}
           scheduledAt={scheduleAt}
           scheduledEndAt={scheduleEndAt}
           scheduledPlaylistId={schedulePlaylistId}

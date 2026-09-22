@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks } from "lucide-react";
 
 const CFG_KEY = "hotlive95_radioco";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
@@ -14,7 +14,7 @@ const loadCfg = () => {
 // Broadcast the studio's live program mix to a radio.co station (SHOUTcast v1),
 // relayed through the app backend. Online-only; the DJ's own credentials stay
 // on this device and are sent over the encrypted (wss) connection to start.
-export default function GoLiveModal({ state, error, reconnect, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
+export default function GoLiveModal({ state, error, reconnect, loginRetry, onCancelRetry, onTest, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
   const saved = loadCfg();
   const [host, setHost] = useState(saved.host || "denim.radio.co");
   const [port, setPort] = useState(saved.port || 5189);
@@ -34,6 +34,8 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
   const [dropAlert, setDropAlert] = useState(false);
   const [playId, setPlayId] = useState(null);
   const [playUrl, setPlayUrl] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
   const raf = useRef(0);
   const prevStatus = useRef("good");
   const beepCtx = useRef(null);
@@ -41,6 +43,7 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
   const live = state === "live";
   const busy = state === "connecting";
   const reconnecting = state === "reconnecting";
+  const retrying = !!loginRetry;
 
   const beep = () => {
     if (!alertSound) return;
@@ -127,6 +130,21 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
     const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, includeMic);
+  };
+
+  const runTest = async () => {
+    setTestResult(null);
+    setTesting(true);
+    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound };
+    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    try {
+      const res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password });
+      setTestResult(res || { ok: false, message: "No response from the test service." });
+    } catch {
+      setTestResult({ ok: false, message: "Couldn't reach the test service. Check your internet connection." });
+    } finally {
+      setTesting(false);
+    }
   };
 
   const armSchedule = () => {
@@ -456,6 +474,38 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
                 </div>
               </div>
 
+              {loginRetry && (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--hl-amber)] bg-[rgba(255,171,0,0.12)] px-3 py-2" data-testid="go-live-login-retry">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <RotateCw size={15} className="text-[var(--hl-amber)] animate-spin shrink-0" />
+                    <span className="text-sm text-[var(--hl-amber)] truncate">
+                      Login not accepted yet — retrying in {loginRetry.seconds}s (attempt {loginRetry.attempt} of {loginRetry.max})
+                    </span>
+                  </div>
+                  <button
+                    data-testid="go-live-cancel-retry"
+                    onClick={onCancelRetry}
+                    className="shrink-0 text-xs px-2 py-1 rounded border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:border-[var(--hl-onair)]"
+                  >
+                    Stop trying
+                  </button>
+                </div>
+              )}
+
+              {testResult && (
+                <div
+                  data-testid="go-live-test-result"
+                  className={`flex items-start gap-2 text-sm rounded-lg border px-3 py-2 ${
+                    testResult.ok
+                      ? "border-[#2ee5c4] text-[#2ee5c4] bg-[rgba(46,229,196,0.1)]"
+                      : "border-[var(--hl-onair)] text-[var(--hl-onair)] bg-[rgba(255,23,68,0.1)]"
+                  }`}
+                >
+                  {testResult.ok ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" /> : <AlertTriangle size={15} className="mt-0.5 shrink-0" />}
+                  <span>{testResult.message}</span>
+                </div>
+              )}
+
               {state === "error" && error && (
                 <div className="flex items-start gap-2 text-sm text-[var(--hl-onair)]" data-testid="go-live-error">
                   <AlertTriangle size={15} className="mt-0.5 shrink-0" />
@@ -463,14 +513,41 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
                 </div>
               )}
 
+              {((state === "error" && error) || (testResult && !testResult.ok)) && (
+                <div className="rounded-lg border border-[var(--hl-line)] bg-black/30 p-3 space-y-1.5" data-testid="go-live-checklist">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                    <ListChecks size={14} className="text-[var(--hl-cue)]" /> Before radio.co will accept you
+                  </div>
+                  <ul className="text-xs text-[var(--hl-muted)] space-y-1 leading-relaxed list-disc pl-4">
+                    <li>Turn on <b className="text-[var(--hl-text)]">Live Anytime</b> in your radio.co dashboard, or be inside a scheduled live slot.</li>
+                    <li>Make sure your station is <b className="text-[var(--hl-text)]">powered on</b> in the dashboard.</li>
+                    <li>Use the <b className="text-[var(--hl-text)]">source port</b> from your dashboard — SHOUTcast v1 is usually the base port <b className="text-[var(--hl-text)]">+ 1</b>.</li>
+                    <li>Use your <b className="text-[var(--hl-text)]">Live / DJ broadcast password</b>, not your account login password.</li>
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  data-testid="go-live-test"
+                  onClick={runTest}
+                  disabled={!canGo || testing || busy || retrying}
+                  className="flex-1 h-11 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] font-700 flex items-center justify-center gap-2 hover:bg-[rgba(46,229,196,0.1)] disabled:opacity-50"
+                  title="Check your radio.co login without going on air"
+                >
+                  {testing ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />}
+                  {testing ? "Testing…" : "Test connection"}
+                </button>
+              </div>
+
               <button
                 data-testid="go-live-start"
                 onClick={go}
-                disabled={!canGo || busy}
+                disabled={!canGo || busy || retrying}
                 className="w-full h-12 rounded-lg bg-[var(--hl-onair)] text-white font-700 flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {busy ? <Loader2 size={18} className="animate-spin" /> : <Radio size={18} />}
-                {busy ? "Connecting to radio.co…" : "Go live now"}
+                {busy || retrying ? <Loader2 size={18} className="animate-spin" /> : <Radio size={18} />}
+                {retrying ? `Retrying login… (${loginRetry.attempt}/${loginRetry.max})` : busy ? "Connecting to radio.co…" : "Go live now"}
               </button>
               <p className="text-[11px] text-[var(--hl-muted)] text-center">
                 Broadcasting needs an internet connection. Your offline DJing is unaffected.
