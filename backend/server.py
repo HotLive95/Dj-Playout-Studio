@@ -666,7 +666,8 @@ async def admin_run_expiry_check(x_admin_token: Optional[str] = Header(None)):
 
 
 # ---------- Cloud Handoff: share a whole show via a short code/link ----------
-SHOW_MAX_BYTES = int(os.environ.get('SHOW_MAX_MB', '200')) * 1024 * 1024  # default 200 MB cap
+SHOW_MAX_BYTES = int(os.environ.get('SHOW_MAX_MB', '500')) * 1024 * 1024  # default 500 MB cap
+SHOW_UPLOAD_CHUNK = 5 * 1024 * 1024  # 5 MB chunks for the resumable browser upload
 SHOW_TTL_DAYS = 30
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars
 _shows_fs = AsyncIOMotorGridFSBucket(db, bucket_name="shows")
@@ -843,6 +844,104 @@ async def create_show(body: ShareShowBody):
         doc.update(pin_rec)
     await db.shared_shows.insert_one(doc)
     return {"code": code, "expires_at": expires.isoformat(), "size": len(raw), "protected": bool(pin_rec)}
+
+
+# ---------- Chunked (resumable) upload so large 500 MB shares go through the browser ----------
+class ShowUploadInit(BaseModel):
+    total_size: int
+    total_chunks: int
+
+
+class ShowUploadComplete(BaseModel):
+    pin: Optional[str] = None
+    email: Optional[str] = None
+    alert_on_open: Optional[bool] = True
+
+
+async def _finalize_show(raw: bytes, pin, email, alert_on_open):
+    if len(raw) > SHOW_MAX_BYTES:
+        mb = len(raw) / (1024 * 1024)
+        cap = SHOW_MAX_BYTES // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Show is too large ({mb:.0f} MB). The cloud link limit is {cap} MB — use Save Playlist to a file instead.")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="The uploaded show was corrupt or incomplete. Please try again.")
+    pin_rec = None
+    if pin:
+        if not _valid_pin(pin):
+            raise HTTPException(status_code=422, detail="PIN must be 4-6 digits.")
+        pin_rec = await run_in_threadpool(make_pin_record, pin)
+    code = _gen_code()
+    for _ in range(6):
+        if not await db.shared_shows.find_one({"code": code}):
+            break
+        code = _gen_code()
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=SHOW_TTL_DAYS)
+    file_id = await _shows_fs.upload_from_stream(code, raw)
+    doc = {
+        "code": code,
+        "file_id": file_id,
+        "size": len(raw),
+        "created_at": now.isoformat(),
+        "expires_at": expires.isoformat(),
+        "protected": bool(pin_rec),
+        "email": (email or "").strip() or None,
+        "alert_on_open": bool(alert_on_open),
+        "expiry_reminded": False,
+    }
+    if pin_rec:
+        doc.update(pin_rec)
+    await db.shared_shows.insert_one(doc)
+    return {"code": code, "expires_at": expires.isoformat(), "size": len(raw), "protected": bool(pin_rec)}
+
+
+@api_router.post("/shows/upload/init")
+async def show_upload_init(body: ShowUploadInit):
+    if body.total_size <= 0 or body.total_size > SHOW_MAX_BYTES:
+        cap = SHOW_MAX_BYTES // (1024 * 1024)
+        mb = max(0, body.total_size) / (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Show is too large ({mb:.0f} MB). The cloud link limit is {cap} MB — use Save Playlist to a file instead.")
+    upload_id = secrets.token_hex(16)
+    await db.show_uploads.insert_one({
+        "_id": upload_id,
+        "total_size": body.total_size,
+        "total_chunks": body.total_chunks,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"upload_id": upload_id, "chunk_size": SHOW_UPLOAD_CHUNK}
+
+
+@api_router.post("/shows/upload/{upload_id}/chunk")
+async def show_upload_chunk(upload_id: str, request: Request, x_chunk_index: int = Header(...)):
+    sess = await db.show_uploads.find_one({"_id": upload_id})
+    if not sess:
+        raise HTTPException(status_code=404, detail="Upload session not found or expired — start the upload again.")
+    data = await request.body()
+    if len(data) > SHOW_UPLOAD_CHUNK + 1024:
+        raise HTTPException(status_code=413, detail="Chunk too large.")
+    from bson.binary import Binary
+    await db.show_upload_chunks.update_one(
+        {"upload_id": upload_id, "index": x_chunk_index},
+        {"$set": {"data": Binary(data)}},
+        upsert=True,
+    )
+    return {"ok": True, "index": x_chunk_index}
+
+
+@api_router.post("/shows/upload/{upload_id}/complete")
+async def show_upload_complete(upload_id: str, body: ShowUploadComplete):
+    sess = await db.show_uploads.find_one({"_id": upload_id})
+    if not sess:
+        raise HTTPException(status_code=404, detail="Upload session not found or expired — start the upload again.")
+    chunks = await db.show_upload_chunks.find({"upload_id": upload_id}).sort("index", 1).to_list(length=200000)
+    raw = b"".join(bytes(c["data"]) for c in chunks)
+    try:
+        return await _finalize_show(raw, body.pin, body.email, body.alert_on_open)
+    finally:
+        await db.show_upload_chunks.delete_many({"upload_id": upload_id})
+        await db.show_uploads.delete_one({"_id": upload_id})
 
 
 @api_router.get("/shows/{code}")

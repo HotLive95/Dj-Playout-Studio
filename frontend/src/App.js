@@ -20,6 +20,7 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import { LicenseStatus } from "@/components/LicenseStatus";
 import TakesVault from "@/components/TakesVault";
 import CloudHandoffModal from "@/components/CloudHandoffModal";
+import StemIsolator from "@/components/StemIsolator";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
@@ -271,6 +272,7 @@ function App() {
   const [vaultFolders, setVaultFolders] = useState([]);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [stemsOpen, setStemsOpen] = useState(false);
   const [initialCloudCode, setInitialCloudCode] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [backupDismissed, setBackupDismissed] = useState(false);
@@ -1513,10 +1515,10 @@ function App() {
   };
 
   // ---------------- Cloud Handoff ----------------
-  const uploadShow = async ({ pin, email, note, alertOnOpen } = {}) => {
+  const uploadShow = async ({ pin, email, note, alertOnOpen, onProgress } = {}) => {
     const out = await buildStudioExport(playlists, true, true);
     if (note) out.note = note;
-    const res = await api.uploadShow(out, pin, email, alertOnOpen);
+    const res = await api.uploadShowChunked(out, pin, email, alertOnOpen, onProgress);
     setDirty(false);
     try {
       addHistory({ code: res.code, dir: "sent", expires_at: res.expires_at, size: res.size, protected: !!res.protected });
@@ -1883,6 +1885,24 @@ function App() {
       return n;
     });
   };
+  // Load an isolated stem (rendered by the Stem Isolator) onto a jingle pad.
+  const assignStemToPad = async (index, blob, name) => {
+    const id = uid();
+    let j;
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(`${(name || "Stem").replace(/[\\/:*?"<>|]+/g, "_")}.wav`, blob);
+      j = { id: d.id, name: name || "Stem", path: d.path, volume: 1 };
+    } else {
+      await putBlob(id, blob);
+      j = { id, name: name || "Stem", type: "audio/wav", volume: 1 };
+    }
+    setJingles((prev) => {
+      const n = [...prev];
+      n[Math.max(0, Math.min(index, 5))] = j;
+      return n;
+    });
+    setBanner(`Loaded stem "${name}" to Pad ${index + 1}`);
+  };
   // Load a jingle pad by dragging a playlist track onto it.
   const assignJingleFromTrack = async (index, trackId) => {
     const t = tracks[trackId];
@@ -2139,7 +2159,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} />
 
       {banner && (
         <div
@@ -2484,6 +2504,17 @@ function App() {
           onReceive={receiveShow}
           onStats={api.showStats}
           onClose={() => setCloudOpen(false)}
+        />
+      )}
+
+      {stemsOpen && (
+        <StemIsolator
+          playlists={playlists}
+          tracks={tracks}
+          jingles={jingles}
+          getUrl={getUrl}
+          onAssignStemToPad={assignStemToPad}
+          onClose={() => setStemsOpen(false)}
         />
       )}
 

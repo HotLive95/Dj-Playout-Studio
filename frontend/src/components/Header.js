@@ -1,7 +1,8 @@
 import React from "react";
-import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud } from "lucide-react";
+import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud, Layers } from "lucide-react";
+import InstallButton from "./InstallButton";
 
-export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud }) {
+export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems }) {
   const fmtRec = (s) => {
     const t = Math.floor(s || 0);
     return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
@@ -56,6 +57,7 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
+        <InstallButton variant="header" />
         <button
           data-testid="record-session-button"
           onClick={onToggleRecord}
@@ -95,6 +97,14 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
               {vaultCount}
             </span>
           )}
+        </button>
+        <button
+          data-testid="open-stem-isolator"
+          onClick={onOpenStems}
+          className="h-9 w-9 grid place-items-center rounded-md border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)] transition"
+          title="Stem Isolator — split a track into vocals, music, bass & drums"
+        >
+          <Layers size={16} />
         </button>
         <button
           data-testid="open-cloud-handoff"

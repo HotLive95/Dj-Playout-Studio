@@ -27,6 +27,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null); // {code, expires_at, size}
+  const [uploadPct, setUploadPct] = useState(0);
   const [copied, setCopied] = useState(false);
   const [code, setCode] = useState(initialCode || "");
   const [received, setReceived] = useState(false);
@@ -53,8 +54,9 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
     }
     setBusy(true);
     setError("");
+    setUploadPct(0);
     try {
-      const res = await onUpload({ pin: sendPin || null, email: sendEmail || null, note: sendNote || "", alertOnOpen: sendAlertOnOpen });
+      const res = await onUpload({ pin: sendPin || null, email: sendEmail || null, note: sendNote || "", alertOnOpen: sendAlertOnOpen, onProgress: setUploadPct });
       setResult(res);
       setHistory(loadHistory());
     } catch (e) {
@@ -212,7 +214,7 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                 <>
                   <p className="text-sm text-[var(--hl-muted)]">
                     Upload your whole show (all playlists, jingles, and voice takes) and get a short
-                    code + link to send a co-host. Online only · 200 MB max · link expires in 30 days.
+                    code + link to send a co-host. Online only · 500 MB max · link expires in 30 days.
                   </p>
                   <div>
                     <label className="text-xs uppercase tracking-wider text-[var(--hl-muted)]">
@@ -343,8 +345,16 @@ export default function CloudHandoffModal({ initialCode, onUpload, onReceive, on
                     className="w-full h-11 rounded-lg hl-fire-gradient text-white font-600 flex items-center justify-center gap-2 disabled:opacity-60"
                   >
                     {busy ? <Loader2 size={17} className="animate-spin" /> : <UploadCloud size={17} />}
-                    {busy ? "Uploading show…" : "Upload & get share link"}
+                    {busy ? `Uploading show… ${uploadPct}%` : "Upload & get share link"}
                   </button>
+                  {busy && (
+                    <div className="h-2 w-full rounded-full bg-[#2a2a31] overflow-hidden" data-testid="cloud-upload-progress">
+                      <div
+                        className="h-full hl-fire-gradient transition-[width] duration-200"
+                        style={{ width: `${uploadPct}%` }}
+                      />
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="space-y-3" data-testid="cloud-upload-result">

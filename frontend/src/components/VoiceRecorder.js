@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Mic, Square, Play, Pause, Save, X, Circle, Music2, Headphones, AlertTriangle, Timer, Waves, Star, Trash2 } from "lucide-react";
+import { Mic, Square, Play, Pause, Save, X, Circle, Music2, Headphones, AlertTriangle, Timer, Waves, Star, Trash2, SlidersHorizontal } from "lucide-react";
 import { formatTime } from "../lib/format";
 import { audioCtx, bufferToWav, computePeaks } from "../lib/audioProcessing";
 import { api } from "../lib/api";
@@ -57,6 +57,26 @@ export default function VoiceRecorder({
   const [duckDepth, setDuckDepth] = useState(0.6);
   const [loudnessMatch, setLoudnessMatch] = useState(true);
   const [bedFades, setBedFades] = useState(true);
+
+  // --- Live DSP chain (input pad → compressor → noise gate) ---
+  const [padDb, setPadDb] = useState(0);
+  const [compOn, setCompOn] = useState(false);
+  const [compThreshDb, setCompThreshDb] = useState(-24);
+  const [compRatio, setCompRatio] = useState(3);
+  const [compMakeupDb, setCompMakeupDb] = useState(3);
+  const [gateOn, setGateOn] = useState(false);
+  const [gateThreshDb, setGateThreshDb] = useState(-45);
+  const padGainRef = useRef(null);
+  const compRef = useRef(null);
+  const makeupGainRef = useRef(null);
+  const gateGainRef = useRef(null);
+  const padDbRef = useRef(0);
+  const compOnRef = useRef(false);
+  const compThreshRef = useRef(-24);
+  const compRatioRef = useRef(3);
+  const compMakeupRef = useRef(3);
+  const gateOnRef = useRef(false);
+  const gateThreshLinRef = useRef(Math.pow(10, -45 / 20));
   const [micLevel, setMicLevel] = useState(0);
   const [micClip, setMicClip] = useState(false);
   const [bedPreviewing, setBedPreviewing] = useState(false);
@@ -137,6 +157,67 @@ export default function VoiceRecorder({
   useEffect(() => {
     bedFadesRef.current = bedFades;
   }, [bedFades]);
+
+  // --- DSP chain param sync (live, while recording) ---
+  const applyCompParams = (comp) => {
+    if (!comp) return;
+    try {
+      if (compOnRef.current) {
+        comp.threshold.value = compThreshRef.current;
+        comp.ratio.value = compRatioRef.current;
+        comp.knee.value = 6;
+        comp.attack.value = 0.003;
+        comp.release.value = 0.25;
+      } else {
+        comp.threshold.value = 0;
+        comp.ratio.value = 1;
+        comp.knee.value = 0;
+      }
+    } catch {
+      /* ignore */
+    }
+    if (makeupGainRef.current)
+      makeupGainRef.current.gain.value = compOnRef.current ? Math.pow(10, compMakeupRef.current / 20) : 1;
+  };
+  useEffect(() => {
+    padDbRef.current = padDb;
+    if (padGainRef.current) padGainRef.current.gain.value = Math.pow(10, padDb / 20);
+  }, [padDb]);
+  useEffect(() => {
+    compOnRef.current = compOn;
+    compThreshRef.current = compThreshDb;
+    compRatioRef.current = compRatio;
+    compMakeupRef.current = compMakeupDb;
+    applyCompParams(compRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compOn, compThreshDb, compRatio, compMakeupDb]);
+  useEffect(() => {
+    gateOnRef.current = gateOn;
+    gateThreshLinRef.current = Math.pow(10, gateThreshDb / 20);
+  }, [gateOn, gateThreshDb]);
+
+  // Build the always-on processing chain: source → pad → comp → makeup → gate.
+  // Toggles only change params (never reconnect), so on/off is glitch-free live.
+  // The chain feeds BOTH the headphone monitor and the recorder, so takes are
+  // captured already processed.
+  const buildMicChain = (ctx, micSrc) => {
+    const pad = ctx.createGain();
+    pad.gain.value = Math.pow(10, padDbRef.current / 20);
+    padGainRef.current = pad;
+    const comp = ctx.createDynamicsCompressor();
+    compRef.current = comp;
+    const makeup = ctx.createGain();
+    makeupGainRef.current = makeup;
+    const gate = ctx.createGain();
+    gate.gain.value = 1;
+    gateGainRef.current = gate;
+    applyCompParams(comp);
+    micSrc.connect(pad);
+    pad.connect(comp);
+    comp.connect(makeup);
+    makeup.connect(gate);
+    return gate;
+  };
 
   // Redraw the trim/punch waveform.
   useEffect(() => {
@@ -365,6 +446,11 @@ export default function VoiceRecorder({
         setMicLevel(rms);
         setMicClip(peak > 0.98);
       }
+      // Noise gate: open fast when the voice is above threshold, close gently.
+      if (gateGainRef.current) {
+        const open = !gateOnRef.current || peak >= gateThreshLinRef.current;
+        gateGainRef.current.gain.setTargetAtTime(open ? 1 : 0.0001, ctx.currentTime, open ? 0.005 : 0.06);
+      }
       if (bedGainRef.current) {
         // Bed fade in at open / out at close (only relevant when the bed is
         // mixed into the recording).
@@ -427,14 +513,15 @@ export default function VoiceRecorder({
       if (ctx.state === "suspended") await ctx.resume();
 
       const micSrc = ctx.createMediaStreamSource(stream);
+      const chainOut = buildMicChain(ctx, micSrc);
       const micMon = ctx.createGain();
       micMon.gain.value = micMonitor ? micMonitorVol : 0;
-      micSrc.connect(micMon);
+      chainOut.connect(micMon);
       micMon.connect(ctx.destination);
       micMonRef.current = micMon;
 
       const mixDest = ctx.createMediaStreamDestination();
-      micSrc.connect(mixDest);
+      chainOut.connect(mixDest);
       mixDestRef.current = mixDest;
 
       const analyser = ctx.createAnalyser();
@@ -560,13 +647,18 @@ export default function VoiceRecorder({
       ctxRef.current = ctx;
       if (ctx.state === "suspended") await ctx.resume();
       const micSrc = ctx.createMediaStreamSource(stream);
+      const chainOut = buildMicChain(ctx, micSrc);
       const micMon = ctx.createGain();
       micMon.gain.value = micMonitor ? micMonitorVol : 0;
-      micSrc.connect(micMon);
+      chainOut.connect(micMon);
       micMon.connect(ctx.destination);
       micMonRef.current = micMon;
       const mixDest = ctx.createMediaStreamDestination();
-      micSrc.connect(mixDest);
+      chainOut.connect(mixDest);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      micSrc.connect(analyser);
+      startDuckLoop(ctx, analyser);
       if (countIn) {
         for (let c = 3; c >= 1; c--) {
           setCountdown(c);
@@ -1110,6 +1202,134 @@ export default function VoiceRecorder({
                     )}
                   </>
                 )}
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-[var(--hl-line)] p-3.5" data-testid="voice-fx-chain">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                  <SlidersHorizontal size={14} className="text-[var(--hl-cue)]" /> Voice processing
+                  <span className="ml-auto text-[10px] normal-case tracking-normal text-[var(--hl-muted)]">
+                    live on monitor &amp; recording
+                  </span>
+                </div>
+
+                {/* Input pad (gain trim) */}
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-[var(--hl-muted)] w-20 shrink-0">Input pad</span>
+                  <input
+                    data-testid="voice-pad-db"
+                    type="range"
+                    min="-24"
+                    max="24"
+                    step="1"
+                    value={padDb}
+                    onChange={(e) => setPadDb(Number(e.target.value))}
+                    className="hl-range flex-1"
+                  />
+                  <span className="text-xs tabular-nums w-12 text-right" data-testid="voice-pad-db-label">
+                    {padDb > 0 ? "+" : ""}
+                    {padDb} dB
+                  </span>
+                </div>
+
+                {/* Compressor */}
+                <div className="rounded-lg border border-[var(--hl-line)] p-2.5 space-y-2">
+                  <label className="flex items-center justify-between text-sm cursor-pointer select-none">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`h-2 w-2 rounded-full ${compOn ? "bg-[var(--hl-cue)]" : "bg-[#555]"}`}
+                      />
+                      Compressor
+                    </span>
+                    <input
+                      type="checkbox"
+                      data-testid="voice-comp-toggle"
+                      checked={compOn}
+                      onChange={(e) => setCompOn(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--hl-cue)]"
+                    />
+                  </label>
+                  {compOn && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] text-[var(--hl-muted)] w-20 shrink-0">Threshold</span>
+                        <input
+                          data-testid="voice-comp-threshold"
+                          type="range"
+                          min="-60"
+                          max="0"
+                          step="1"
+                          value={compThreshDb}
+                          onChange={(e) => setCompThreshDb(Number(e.target.value))}
+                          className="hl-range flex-1"
+                        />
+                        <span className="text-[11px] tabular-nums w-12 text-right">{compThreshDb} dB</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] text-[var(--hl-muted)] w-20 shrink-0">Ratio</span>
+                        <input
+                          data-testid="voice-comp-ratio"
+                          type="range"
+                          min="1"
+                          max="12"
+                          step="0.5"
+                          value={compRatio}
+                          onChange={(e) => setCompRatio(Number(e.target.value))}
+                          className="hl-range flex-1"
+                        />
+                        <span className="text-[11px] tabular-nums w-12 text-right">{compRatio}:1</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] text-[var(--hl-muted)] w-20 shrink-0">Makeup</span>
+                        <input
+                          data-testid="voice-comp-makeup"
+                          type="range"
+                          min="0"
+                          max="18"
+                          step="1"
+                          value={compMakeupDb}
+                          onChange={(e) => setCompMakeupDb(Number(e.target.value))}
+                          className="hl-range flex-1"
+                        />
+                        <span className="text-[11px] tabular-nums w-12 text-right">+{compMakeupDb} dB</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Noise gate */}
+                <div className="rounded-lg border border-[var(--hl-line)] p-2.5 space-y-2">
+                  <label className="flex items-center justify-between text-sm cursor-pointer select-none">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`h-2 w-2 rounded-full ${gateOn ? "bg-[var(--hl-cue)]" : "bg-[#555]"}`}
+                      />
+                      Noise gate
+                    </span>
+                    <input
+                      type="checkbox"
+                      data-testid="voice-gate-toggle"
+                      checked={gateOn}
+                      onChange={(e) => setGateOn(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--hl-cue)]"
+                    />
+                  </label>
+                  {gateOn && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-[var(--hl-muted)] w-20 shrink-0">Threshold</span>
+                      <input
+                        data-testid="voice-gate-threshold"
+                        type="range"
+                        min="-70"
+                        max="-20"
+                        step="1"
+                        value={gateThreshDb}
+                        onChange={(e) => setGateThreshDb(Number(e.target.value))}
+                        className="hl-range flex-1"
+                      />
+                      <span className="text-[11px] tabular-nums w-12 text-right">{gateThreshDb} dB</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2.5 rounded-xl border border-[var(--hl-line)] p-3.5">

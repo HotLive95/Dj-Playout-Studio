@@ -16,6 +16,7 @@ import {
   Upload,
 } from "lucide-react";
 import { formatTotal } from "../lib/format";
+import InstallButton from "./InstallButton";
 
 export default function Sidebar({
   playlists,
@@ -295,6 +296,9 @@ export default function Sidebar({
           <Shuffle size={15} />
           {shuffleAll ? "Shuffling All Playlists" : "Shuffle All Playlists"}
         </button>
+        <div className="mt-2">
+          <InstallButton variant="sidebar" />
+        </div>
         <div className="mt-2 text-center text-[10px] text-[var(--hl-muted)] tracking-wide">
           HOT LIVE 95 · A.I. RADIO · DETROIT
         </div>

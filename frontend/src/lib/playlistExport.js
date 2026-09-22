@@ -166,3 +166,61 @@ export async function exportPlaylistToBlob({
   onProgress(100);
   return { blob, skipped, decodedCount: n, totalCount: items.length };
 }
+
+// Split a long playlist into device-friendly parts (each <= maxMinutes) and
+// render each part to its own file. Fully offline. Returns { parts, skipped }.
+export async function exportPlaylistInParts({
+  items,
+  format = "mp3",
+  crossfade = false,
+  crossfadeSeconds = 3,
+  maxMinutes = 30,
+  onProgress = noop,
+  onStatus = noop,
+  onPart = noop,
+}) {
+  const secOf = (t) => {
+    const inP = t.cueIn != null ? Math.max(0, t.cueIn) : 0;
+    const outP = t.cueOut != null ? t.cueOut : t.duration || 0;
+    const d = (outP || 0) - inP;
+    return Number.isFinite(d) && d > 0 ? d : t.duration || 180;
+  };
+  const cap = Math.max(1, maxMinutes) * 60;
+  // Greedily bin tracks into groups that stay under the cap (a single track
+  // longer than the cap becomes its own part).
+  const groups = [];
+  let cur = [];
+  let acc = 0;
+  for (const t of items) {
+    const s = secOf(t);
+    if (cur.length && acc + s > cap) {
+      groups.push(cur);
+      cur = [];
+      acc = 0;
+    }
+    cur.push(t);
+    acc += s;
+  }
+  if (cur.length) groups.push(cur);
+
+  const parts = [];
+  const skippedAll = [];
+  for (let g = 0; g < groups.length; g++) {
+    onStatus(`Rendering part ${g + 1}/${groups.length}…`);
+    const base = g / groups.length;
+    // eslint-disable-next-line no-await-in-loop
+    const { blob, skipped } = await exportPlaylistToBlob({
+      items: groups[g],
+      format,
+      crossfade,
+      crossfadeSeconds,
+      onProgress: (p) => onProgress(Math.round((base + p / 100 / groups.length) * 100)),
+    });
+    skippedAll.push(...skipped);
+    const part = { blob, index: g + 1, total: groups.length, trackCount: groups[g].length };
+    parts.push(part);
+    onPart(part);
+  }
+  onProgress(100);
+  return { parts, skipped: skippedAll, groupCount: groups.length };
+}

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { X, Download, Loader2, Music2 } from "lucide-react";
-import { exportPlaylistToBlob, downloadBlob, datedFilename } from "../lib/playlistExport";
+import { X, Download, Loader2, Music2, Scissors } from "lucide-react";
+import JSZip from "jszip";
+import { exportPlaylistToBlob, exportPlaylistInParts, downloadBlob, datedFilename } from "../lib/playlistExport";
 
 // Renders every track in a playlist (in order, honouring each track's In/Out cues)
 // into one continuous file and downloads it. Optional crossfade blends adjacent
@@ -14,6 +15,8 @@ export default function ExportPlaylistModal({
 }) {
   const [format, setFormat] = useState("mp3");
   const [xfade, setXfade] = useState(!!defaultCrossfade);
+  const [split, setSplit] = useState(false);
+  const [partMinutes, setPartMinutes] = useState(30);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState(0);
@@ -29,21 +32,49 @@ export default function ExportPlaylistModal({
     setSkipped([]);
     setProgress(0);
     try {
-      const { blob, skipped: skippedNames, decodedCount } = await exportPlaylistToBlob({
-        items,
-        format,
-        crossfade: xfade,
-        crossfadeSeconds,
-        onProgress: setProgress,
-        onStatus: setStatus,
-      });
-      downloadBlob(blob, datedFilename(playlist.name, format));
-      if (skippedNames.length) {
-        setSkipped(skippedNames);
-        setStatus(`Saved ${decodedCount} of ${items.length} tracks`);
+      if (split) {
+        const { parts, skipped: skippedNames } = await exportPlaylistInParts({
+          items,
+          format,
+          crossfade: xfade,
+          crossfadeSeconds,
+          maxMinutes: partMinutes,
+          onProgress: setProgress,
+          onStatus: setStatus,
+        });
+        setStatus("Zipping parts…");
+        const zip = new JSZip();
+        const safe = (playlist.name || "playlist").replace(/[^a-z0-9\-_ ]/gi, "").trim() || "playlist";
+        parts.forEach((p) => {
+          const pn = String(p.index).padStart(2, "0");
+          zip.file(datedFilename(`${safe} Part ${pn} of ${p.total}`, format), p.blob);
+        });
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        downloadBlob(zipBlob, datedFilename(`${safe} (${parts.length} parts)`, "zip"));
+        if (skippedNames.length) {
+          setSkipped(skippedNames);
+          setStatus(`Saved ${parts.length} parts`);
+        } else {
+          setStatus(`Saved ${parts.length} parts!`);
+          setTimeout(() => onClose(), 900);
+        }
       } else {
-        setStatus("Saved!");
-        setTimeout(() => onClose(), 800);
+        const { blob, skipped: skippedNames, decodedCount } = await exportPlaylistToBlob({
+          items,
+          format,
+          crossfade: xfade,
+          crossfadeSeconds,
+          onProgress: setProgress,
+          onStatus: setStatus,
+        });
+        downloadBlob(blob, datedFilename(playlist.name, format));
+        if (skippedNames.length) {
+          setSkipped(skippedNames);
+          setStatus(`Saved ${decodedCount} of ${items.length} tracks`);
+        } else {
+          setStatus("Saved!");
+          setTimeout(() => onClose(), 800);
+        }
       }
     } catch (e) {
       setError(e.message || "Export failed. A track file may be missing.");
@@ -115,6 +146,42 @@ export default function ExportPlaylistModal({
             Crossfade tracks ({crossfadeSeconds}s blend) for a seamless mix
           </label>
 
+          <div className="rounded-lg border border-[var(--hl-line)] p-3 space-y-2.5">
+            <label
+              className="flex items-center gap-2.5 text-sm cursor-pointer select-none"
+              data-testid="export-split-label"
+            >
+              <input
+                type="checkbox"
+                data-testid="export-split"
+                checked={split}
+                onChange={(e) => setSplit(e.target.checked)}
+                disabled={busy}
+                className="h-4 w-4 accent-[var(--hl-fire)]"
+              />
+              <Scissors size={15} className="text-[var(--hl-amber)]" />
+              Split into device-friendly parts (one .zip)
+            </label>
+            {split && (
+              <div className="flex items-center gap-2 pl-7">
+                <span className="text-xs text-[var(--hl-muted)]">Max length per part</span>
+                <select
+                  data-testid="export-part-minutes"
+                  value={partMinutes}
+                  onChange={(e) => setPartMinutes(Number(e.target.value))}
+                  disabled={busy}
+                  className="h-9 px-2 rounded-lg bg-black/50 border border-[var(--hl-line)] text-sm outline-none focus:border-[var(--hl-fire)]"
+                >
+                  {[15, 20, 30, 45, 60].map((m) => (
+                    <option key={m} value={m}>
+                      {m} min
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
           {(busy || progress > 0) && (
             <div>
               <div className="h-2 w-full rounded-full bg-[#2a2a31] overflow-hidden">
@@ -160,7 +227,7 @@ export default function ExportPlaylistModal({
             className="w-full h-11 rounded-xl hl-fire-gradient text-white font-700 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {busy ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-            {busy ? "Working…" : `Save as ${format.toUpperCase()}`}
+            {busy ? "Working…" : split ? "Save in parts (.zip)" : `Save as ${format.toUpperCase()}`}
           </button>
           <p className="text-[11px] text-[var(--hl-muted)] leading-relaxed">
             Big playlists take a moment to render — keep this window open until the download starts.
