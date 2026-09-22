@@ -1,5 +1,25 @@
 # Changelog — Hot Live 95 DJ Playout Studio
 
+## 2026-06 — Live broadcast to radio.co (Go Live)
+Backend relay proven end-to-end (real radio.co SHOUTcast v1 handshake returned
+live; 32KB MP3 forwarded byte-for-byte to a fake SHOUTcast server). UI +
+regression 100% (iteration_29). In-browser capture is standard ScriptProcessor;
+final on-air check is the operator's to run on their own station.
+- **Backend** (`server.py`): `WS /api/broadcast/ws` — receives a config JSON then
+  MP3 bytes over WSS, opens a raw asyncio TCP SHOUTcast v1 source to radio.co
+  (password → OK2 → icy headers → stream), forwards audio, and best-effort
+  now-playing metadata via `admin.cgi?mode=updinfo`. Verified port = base+1
+  (5189 for denim.radio.co). No secrets stored server-side; the DJ's creds come
+  from the client per-session.
+- **Engine** (`audioEngine.js`): taps the program master (`_recMaster`) into a
+  broadcast sub-mix (+ optional mic), encodes to MP3 in real time
+  (`@breezystack/lamejs`, ScriptProcessor) and streams over the WS.
+  `startBroadcast`/`stopBroadcast`/`sendBroadcastMeta`/`getBroadcastLevel`.
+- **UI**: header "Go Live" button (pulsing ON AIR when live) + `GoLiveModal`
+  (host/port/password/bitrate/station-name/mic, live level meter, now-playing).
+  Works on iPad too, because the browser relays through the backend rather than
+  connecting to radio.co directly (a browser can't be a SHOUTcast source).
+
 ## 2026-06 (follow-up 2) — Pad Labels, Stem-to-Deck, Preset Sharing, Full-screen Install
 Tested end-to-end (iteration_28.json): 100% pass, no bugs.
 - **Pad Labels + Colour** (`JingleBar.js`): per-pad custom name + colour swatch
