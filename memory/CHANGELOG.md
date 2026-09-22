@@ -1,5 +1,17 @@
 # Changelog — Hot Live 95 DJ Playout Studio
 
+## 2026-06 (follow-up 2) — Pad Labels, Stem-to-Deck, Preset Sharing, Full-screen Install
+Tested end-to-end (iteration_28.json): 100% pass, no bugs.
+- **Pad Labels + Colour** (`JingleBar.js`): per-pad custom name + colour swatch
+  (8 colours), persists across pages; `renameJingle`/`colorJingle` in App.
+- **Stem To Deck** (`StemIsolator.js` + App `sendMixToDeck`): after recording a
+  stem mix, "Send mix to standby deck" arms it on the standby deck for a live
+  acappella/instrumental drop (TAKE to fire).
+- **Preset Sharing** (`VoiceRecorder.js`): export/import Voice FX presets as a
+  JSON file so a crew shares one booth sound.
+- **Full-screen Install welcome** (`InstallPrompt.js`): first-run centered
+  overlay with one-tap install (Chrome/Edge) or per-OS steps; shows once.
+
 ## 2026-06 (follow-up) — Stem Record, FX Presets, Pad Bank Pages
 Tested end-to-end (iteration_27.json): 100% pass, no bugs.
 - **Stem Record** (`StemIsolator.js`): "REC MIX" captures the live isolated mix
