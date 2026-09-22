@@ -1,5 +1,21 @@
 # Changelog — Hot Live 95 DJ Playout Studio
 
+## 2026-06 — Broadcast: Auto-DJ handoff, health, archive library, metadata
+UI + regression 100% (iteration_31).
+- **Now-Playing metadata**: the live "Artist - Title" is already pushed to
+  radio.co; radio.co auto-matches cover art from that title. NOTE: custom album
+  art cannot be pushed from a live SHOUTcast v1 source (protocol carries only the
+  title string) — this is a radio.co/protocol limit, not an app gap.
+- **Auto DJ Handoff** (`GoLiveModal` + App schedule): a scheduled go-live can pick
+  a playlist that auto-loads and starts playback (`playIndex(0)`) the moment it
+  goes on air.
+- **Broadcast Health** (`audioEngine.getBroadcastHealth`): live indicator showing
+  measured kbps, buffered backpressure and drop count → Stable / Buffering /
+  Dropouts / Reconnecting.
+- **Archive Library**: broadcasts are now stored in-app (IndexedDB + a dated list
+  in localStorage `hotlive95_broadcasts`) with in-panel preview / download /
+  delete, instead of only auto-downloading.
+
 ## 2026-06 — Broadcast enhancements (reconnect, listeners, archive, schedule)
 UI + regression 100% (iteration_30); relay/station endpoints verified.
 - **Auto Reconnect** (`audioEngine.js`): on an unexpected drop the engine keeps
