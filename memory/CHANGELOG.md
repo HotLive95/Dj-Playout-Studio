@@ -140,3 +140,10 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Slot Auto-Wait: "Keep trying until my slot opens" toggle -> unlimited login retries every 15s (vs 3x/8s normal) until radio.co accepts, then auto go-live; banner + button reflect autoWait mode.
 - Now-Playing Push: already wired (meta sent on every track change while live via WS -> backend admin.cgi updinfo); added "sent to radio.co" confirmation under the on-air now-playing line.
 - Verified in preview desktop + mobile (390px, no overflow).
+
+##  — Broadcast: quick-launch, metadata format, go-live chime, pre-flight test
+- Preset Quick-Launch: each saved station chip has a Radio button that loads it and goes live in one tap (goPreset -> onStart with the preset config).
+- Metadata Format: "How the song shows to listeners" select (Artist — Title / Title — Artist / Title only), stored in cfg.metaFormat; App formatTrackMeta() applies it to now-playing display + the meta pushed to radio.co.
+- Auto-Wait Notify: GoLiveModal plays a two-tone go-live chime and flashes the on-air panel (hl-golive-flash CSS) the moment state transitions to live.
+- Test Before Schedule: Arm now runs an async pre-flight connection test; a bad login is shown immediately (red result + checklist) and the schedule is NOT armed until the test passes. Arm shows a "Checking…" spinner.
+- Verified in preview: meta-format switch, quick-launch button, and Arm-blocks-on-bad-login all confirmed.

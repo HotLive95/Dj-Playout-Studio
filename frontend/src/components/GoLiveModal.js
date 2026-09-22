@@ -14,7 +14,7 @@ const loadCfg = () => {
 // Broadcast the studio's live program mix to a radio.co station (SHOUTcast v1),
 // relayed through the app backend. Online-only; the DJ's own credentials stay
 // on this device and are sent over the encrypted (wss) connection to start.
-export default function GoLiveModal({ state, error, reconnect, loginRetry, onCancelRetry, onTest, onStartMeter, onStopMeter, getMeterLevel, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
+export default function GoLiveModal({ state, error, reconnect, loginRetry, onCancelRetry, onTest, onStartMeter, onStopMeter, getMeterLevel, metaFormat = "artist-title", onMetaFormat, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
   const saved = loadCfg();
   const [host, setHost] = useState(saved.host || "denim.radio.co");
   const [port, setPort] = useState(saved.port || 5189);
@@ -49,6 +49,9 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     }
   });
   const [presetName, setPresetName] = useState("");
+  const [armTesting, setArmTesting] = useState(false);
+  const [flash, setFlash] = useState(false);
+  const prevLive = useRef(false);
   const raf = useRef(0);
   const prevStatus = useRef("good");
   const beepCtx = useRef(null);
@@ -79,6 +82,44 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       /* ignore */
     }
   };
+
+  const goLiveChime = () => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!beepCtx.current) beepCtx.current = new AC();
+      const ctx = beepCtx.current;
+      const t0 = ctx.currentTime;
+      [660, 990].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = freq;
+        g.gain.value = 0.0001;
+        o.connect(g);
+        g.connect(ctx.destination);
+        const start = t0 + i * 0.16;
+        g.gain.exponentialRampToValueAtTime(0.3, start + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+        o.start(start);
+        o.stop(start + 0.3);
+      });
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // The moment the stream actually connects: chime + flash the panel.
+  useEffect(() => {
+    if (live && !prevLive.current) {
+      goLiveChime();
+      setFlash(true);
+      const id = setTimeout(() => setFlash(false), 3000);
+      prevLive.current = true;
+      return () => clearTimeout(id);
+    }
+    if (!live) prevLive.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live]);
 
   useEffect(() => {
     if (!live && !reconnecting) {
@@ -139,7 +180,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     if (!live) setListenerHist([]);
   }, [live]);
 
-  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait });
+  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait, metaFormat });
 
   const startMeter = async () => {
     if (!onStartMeter) return;
@@ -222,14 +263,51 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       return next;
     });
   };
+  // One-tap: load a saved station and go live immediately.
+  const goPreset = (p) => {
+    loadPreset(p);
+    const cfg = {
+      host: p.host,
+      port: Number(p.port),
+      password: p.password,
+      name: p.name,
+      bitrate: Number(p.bitrate),
+      genre: "Various",
+      includeMic: p.includeMic !== false,
+      stationId: p.stationId || "",
+      alertSound: typeof p.alertSound === "boolean" ? p.alertSound : alertSound,
+      autoWait,
+      metaFormat,
+    };
+    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    stopMeter();
+    onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, cfg.includeMic, { autoWait });
+  };
 
-  const armSchedule = () => {
+  // Arm a scheduled go-live, but first run a quick login test so a bad
+  // password / port is caught now rather than at air time.
+  const armSchedule = async () => {
     if (!scheduleInput) return;
     const ts = new Date(scheduleInput).getTime();
     if (!ts || ts <= Date.now()) return;
     const endTs = scheduleEndInput ? new Date(scheduleEndInput).getTime() : null;
-    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound };
+    const cfg = cfgObj();
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    setArmTesting(true);
+    setTestResult(null);
+    try {
+      const res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password });
+      setTestResult(res || { ok: false, message: "No response from the test service." });
+      if (!res || !res.ok) {
+        setArmTesting(false);
+        return; // caught a bad login early — don't arm yet
+      }
+    } catch {
+      setTestResult({ ok: false, message: "Couldn't reach the test service. Check your internet connection." });
+      setArmTesting(false);
+      return;
+    }
+    setArmTesting(false);
     onSchedule({ at: ts, endAt: endTs && endTs > ts ? endTs : null, playlistId: schedulePlaylist || null });
   };
 
@@ -285,7 +363,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
 
         <div className="p-5 space-y-4 overflow-y-auto">
           {live || reconnecting ? (
-            <div className="space-y-4" data-testid="go-live-onair">
+            <div className={`space-y-4 ${flash ? "hl-golive-flash" : ""}`} data-testid="go-live-onair">
               {dropAlert && (
                 <div
                   className="flex items-center gap-2 rounded-lg border border-[var(--hl-onair)] bg-[rgba(255,23,68,0.15)] px-3 py-2 hl-onair-pulse"
@@ -408,10 +486,19 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                         <button
                           data-testid={`go-live-preset-load-${p.id}`}
                           onClick={() => loadPreset(p)}
-                          className="text-xs text-[var(--hl-text)] hover:text-[var(--hl-cue)] max-w-[160px] truncate"
+                          className="text-xs text-[var(--hl-text)] hover:text-[var(--hl-cue)] max-w-[150px] truncate"
                           title="Load this station"
                         >
                           {p.label}
+                        </button>
+                        <button
+                          data-testid={`go-live-preset-golive-${p.id}`}
+                          onClick={() => goPreset(p)}
+                          disabled={busy || retrying}
+                          className="h-6 w-6 grid place-items-center rounded-full text-[var(--hl-onair)] hover:bg-[rgba(255,23,68,0.15)] disabled:opacity-40"
+                          title="Load this station and go live now"
+                        >
+                          <Radio size={13} />
                         </button>
                         <button
                           data-testid={`go-live-preset-delete-${p.id}`}
@@ -482,6 +569,19 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                     onChange={(e) => setName(e.target.value)}
                     className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-onair)]"
                   />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-[var(--hl-muted)]">How the song shows to listeners</span>
+                  <select
+                    data-testid="go-live-meta-format"
+                    value={metaFormat}
+                    onChange={(e) => onMetaFormat && onMetaFormat(e.target.value)}
+                    className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-onair)]"
+                  >
+                    <option value="artist-title">Artist — Title</option>
+                    <option value="title-artist">Title — Artist</option>
+                    <option value="title-only">Title only</option>
+                  </select>
                 </label>
                 <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none pt-1">
                   <input
@@ -570,11 +670,12 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                         <button
                           data-testid="go-live-arm-schedule"
                           onClick={armSchedule}
-                          disabled={!canGo || !scheduleInput}
-                          className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-xs font-700 hover:bg-[rgba(255,171,0,0.12)] disabled:opacity-40"
-                          title="Auto-start the broadcast at this time (needs the password saved)"
+                          disabled={!canGo || !scheduleInput || armTesting}
+                          className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-xs font-700 hover:bg-[rgba(255,171,0,0.12)] disabled:opacity-40 flex items-center gap-1.5"
+                          title="Checks your login first, then auto-starts at this time"
                         >
-                          Arm
+                          {armTesting ? <Loader2 size={13} className="animate-spin" /> : null}
+                          {armTesting ? "Checking…" : "Arm"}
                         </button>
                       </div>
                       <div className="flex items-center gap-2">

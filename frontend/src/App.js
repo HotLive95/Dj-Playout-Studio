@@ -285,6 +285,31 @@ function App() {
   const [bcLoginRetry, setBcLoginRetry] = useState(null);
   const bcRetryRef = useRef({ count: 0, timer: null, lastArgs: null, cancelled: false });
   const MAX_LOGIN_RETRY = 3;
+  const [metaFormat, setMetaFormat] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("hotlive95_radioco") || "{}").metaFormat || "artist-title";
+    } catch {
+      return "artist-title";
+    }
+  });
+  const changeMetaFormat = (v) => {
+    setMetaFormat(v);
+    try {
+      const c = JSON.parse(localStorage.getItem("hotlive95_radioco") || "{}");
+      c.metaFormat = v;
+      localStorage.setItem("hotlive95_radioco", JSON.stringify(c));
+    } catch {
+      /* ignore */
+    }
+  };
+  const formatTrackMeta = (t, fmt = metaFormat) => {
+    if (!t) return "";
+    const artist = t.artist || "";
+    const title = t.title || t.name || "";
+    if (fmt === "title-only") return title;
+    if (fmt === "title-artist") return artist ? `${title} — ${artist}` : title;
+    return artist ? `${artist} — ${title}` : title;
+  };
   const [broadcasts, setBroadcasts] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("hotlive95_broadcasts") || "[]");
@@ -1927,7 +1952,7 @@ function App() {
         },
       });
       const t = currentTrackId ? tracks[currentTrackId] : null;
-      if (t) engineRef.current.sendBroadcastMeta(`${t.artist ? t.artist + " - " : ""}${t.title || t.name}`);
+      if (t) engineRef.current.sendBroadcastMeta(formatTrackMeta(t));
     } catch (e) {
       handleStartError(e.message || "Couldn't start the broadcast.");
     }
@@ -1947,10 +1972,10 @@ function App() {
   useEffect(() => {
     if (bcState === "live" && currentTrackId) {
       const t = tracks[currentTrackId];
-      if (t) engineRef.current?.sendBroadcastMeta(`${t.artist ? t.artist + " - " : ""}${t.title || t.name}`);
+      if (t) engineRef.current?.sendBroadcastMeta(formatTrackMeta(t));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrackId, bcState]);
+  }, [currentTrackId, bcState, metaFormat]);
   // Scheduled go-live: auto-start at the booked time using the saved config.
   useEffect(() => {
     if (!scheduleAt) return;
@@ -2809,12 +2834,14 @@ function App() {
           onStartMeter={(mic) => engineRef.current?.startInputMeter?.(mic)}
           onStopMeter={() => engineRef.current?.stopInputMeter?.()}
           getMeterLevel={() => engineRef.current?.getInputMeterLevel?.() || 0}
+          metaFormat={metaFormat}
+          onMetaFormat={changeMetaFormat}
           scheduledAt={scheduleAt}
           scheduledEndAt={scheduleEndAt}
           scheduledPlaylistId={schedulePlaylistId}
           playlists={playlists}
           broadcasts={broadcasts}
-          nowPlaying={currentTrack ? `${currentTrack.artist ? currentTrack.artist + " - " : ""}${currentTrack.title || currentTrack.name}` : ""}
+          nowPlaying={currentTrack ? formatTrackMeta(currentTrack) : ""}
           getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
           getHealth={() => engineRef.current?.getBroadcastHealth?.() || null}
           onStart={startBroadcast}
