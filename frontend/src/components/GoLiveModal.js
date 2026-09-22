@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw } from "lucide-react";
 
 const CFG_KEY = "hotlive95_radioco";
+const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
 const loadCfg = () => {
   try {
     return JSON.parse(localStorage.getItem(CFG_KEY) || "{}");
@@ -13,7 +14,7 @@ const loadCfg = () => {
 // Broadcast the studio's live program mix to a radio.co station (SHOUTcast v1),
 // relayed through the app backend. Online-only; the DJ's own credentials stay
 // on this device and are sent over the encrypted (wss) connection to start.
-export default function GoLiveModal({ state, error, nowPlaying, getLevel, onStart, onStop, onClose }) {
+export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowPlaying, getLevel, onStart, onStop, onSchedule, onCancelSchedule, onClose }) {
   const saved = loadCfg();
   const [host, setHost] = useState(saved.host || "denim.radio.co");
   const [port, setPort] = useState(saved.port || 5189);
@@ -21,11 +22,15 @@ export default function GoLiveModal({ state, error, nowPlaying, getLevel, onStar
   const [name, setName] = useState(saved.name || "Hot Live 95");
   const [bitrate, setBitrate] = useState(saved.bitrate || 128);
   const [includeMic, setIncludeMic] = useState(saved.includeMic !== false);
+  const [stationId, setStationId] = useState(saved.stationId || "");
+  const [scheduleInput, setScheduleInput] = useState("");
+  const [listeners, setListeners] = useState(null);
   const [level, setLevel] = useState(0);
   const raf = useRef(0);
 
   const live = state === "live";
   const busy = state === "connecting";
+  const reconnecting = state === "reconnecting";
 
   useEffect(() => {
     if (!live) {
@@ -40,14 +45,49 @@ export default function GoLiveModal({ state, error, nowPlaying, getLevel, onStar
     return () => cancelAnimationFrame(raf.current);
   }, [live, getLevel]);
 
+  // Poll radio.co public status for the live listener count while on air.
+  useEffect(() => {
+    if (!live || !stationId.trim()) {
+      setListeners(null);
+      return;
+    }
+    let alive = true;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${BACKEND}/api/broadcast/station-status?station_id=${encodeURIComponent(stationId.trim())}`);
+        const d = await r.json();
+        if (alive && d.ok) setListeners(typeof d.listeners === "number" ? d.listeners : null);
+      } catch {
+        /* ignore */
+      }
+    };
+    poll();
+    const iv = setInterval(poll, 15000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, [live, stationId]);
+
   const go = () => {
-    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic };
+    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim() };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, includeMic);
   };
 
+  const armSchedule = () => {
+    if (!scheduleInput) return;
+    const ts = new Date(scheduleInput).getTime();
+    if (!ts || ts <= Date.now()) return;
+    // Persist config so the scheduled auto-start has the credentials it needs.
+    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim() };
+    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    onSchedule(ts);
+  };
+
   const canGo = host.trim() && Number(port) > 0 && password.trim();
   const pct = Math.min(100, Math.round(level * 140));
+  const schedRemain = scheduledAt ? Math.max(0, Math.round((scheduledAt - Date.now()) / 60000)) : 0;
 
   return (
     <div
@@ -67,15 +107,33 @@ export default function GoLiveModal({ state, error, nowPlaying, getLevel, onStar
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto">
-          {live ? (
+          {live || reconnecting ? (
             <div className="space-y-4" data-testid="go-live-onair">
-              <div className="flex items-center gap-2 justify-center">
-                <span className="h-3 w-3 rounded-full bg-[var(--hl-onair)] hl-onair-pulse" />
-                <span className="font-display text-2xl tracking-wide text-[var(--hl-onair)]">ON AIR</span>
-              </div>
+              {reconnecting ? (
+                <div className="flex flex-col items-center gap-1.5" data-testid="go-live-reconnecting">
+                  <RotateCw size={26} className="text-[var(--hl-amber)] animate-spin" />
+                  <span className="font-display text-xl text-[var(--hl-amber)]">Reconnecting…</span>
+                  <span className="text-sm text-[var(--hl-muted)]">
+                    Link dropped — retrying in {reconnect?.seconds ?? 0}s (attempt {reconnect?.attempt ?? 1})
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 justify-center">
+                  <span className="h-3 w-3 rounded-full bg-[var(--hl-onair)] hl-onair-pulse" />
+                  <span className="font-display text-2xl tracking-wide text-[var(--hl-onair)]">ON AIR</span>
+                </div>
+              )}
               <p className="text-center text-sm text-[var(--hl-muted)]">
                 Broadcasting to <span className="text-[var(--hl-text)]">{host}</span>
               </p>
+              {stationId.trim() && (
+                <div className="flex items-center justify-center gap-2 text-sm" data-testid="go-live-listeners">
+                  <Users size={15} className="text-[var(--hl-cue)]" />
+                  <span className="text-[var(--hl-text)]">
+                    {listeners == null ? "—" : listeners} {listeners === 1 ? "listener" : "listeners"}
+                  </span>
+                </div>
+              )}
               {nowPlaying && (
                 <p className="text-center text-xs text-[var(--hl-muted)]" data-testid="go-live-nowplaying">
                   Now playing: <span className="text-[var(--hl-cue)]">{nowPlaying}</span>
@@ -175,6 +233,55 @@ export default function GoLiveModal({ state, error, nowPlaying, getLevel, onStar
                   />
                   <Mic size={14} className="text-[var(--hl-onair)]" /> Put my mic on air (talk over the music)
                 </label>
+                <label className="block">
+                  <span className="text-xs text-[var(--hl-muted)]">Station ID (optional — for live listener count)</span>
+                  <input
+                    data-testid="go-live-station-id"
+                    value={stationId}
+                    onChange={(e) => setStationId(e.target.value)}
+                    placeholder="e.g. s1a2b3c4d5 (from your radio.co stream URL)"
+                    className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-onair)]"
+                  />
+                </label>
+                <div className="rounded-lg border border-[var(--hl-line)] p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                    <CalendarClock size={14} className="text-[var(--hl-amber)]" /> Scheduled go-live (optional)
+                  </div>
+                  {scheduledAt ? (
+                    <div className="flex items-center justify-between gap-2" data-testid="go-live-scheduled">
+                      <span className="text-sm text-[var(--hl-text)]">
+                        Armed for {new Date(scheduledAt).toLocaleString()} · in {schedRemain} min
+                      </span>
+                      <button
+                        data-testid="go-live-cancel-schedule"
+                        onClick={onCancelSchedule}
+                        className="text-xs px-2 py-1 rounded border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:border-[var(--hl-onair)]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        data-testid="go-live-schedule-input"
+                        type="datetime-local"
+                        value={scheduleInput}
+                        onChange={(e) => setScheduleInput(e.target.value)}
+                        className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
+                      />
+                      <button
+                        data-testid="go-live-arm-schedule"
+                        onClick={armSchedule}
+                        disabled={!canGo || !scheduleInput}
+                        className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-xs font-700 hover:bg-[rgba(255,171,0,0.12)] disabled:opacity-40"
+                        title="Auto-start the broadcast at this time (needs the password saved)"
+                      >
+                        Arm
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-[var(--hl-muted)]">Keep the app open on this device; it goes on air hands-free at the set time.</p>
+                </div>
               </div>
 
               {state === "error" && error && (

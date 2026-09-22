@@ -883,7 +883,7 @@ export default class AudioEngine {
     return this._bcLevel || 0;
   }
 
-  async startBroadcast({ wsUrl, config, mic = true, onState }) {
+  async startBroadcast({ wsUrl, config, mic = true, archive = true, onState, onArchive }) {
     const ctx = this._ensureProgramGraph();
     if (!ctx) throw new Error("Live audio is not supported here.");
     if (ctx.state === "suspended") {
@@ -894,9 +894,15 @@ export default class AudioEngine {
       }
     }
     this._bcOnState = onState || (() => {});
+    this._bcOnArchive = onArchive || (() => {});
+    this._bcParams = { wsUrl, config, mic, archive };
+    this._bcSampleRate = Math.round(ctx.sampleRate);
+    this._bcBitrate = Number(config.bitrate) || 128;
     this._bcReady = false;
     this._bcStop = false;
+    this._bcAttempt = 0;
     this._bcLevel = 0;
+    if (this._bcReconnectTimer) clearInterval(this._bcReconnectTimer);
 
     // Broadcast sub-mix: program master (+ optional mic) -> encoder tap.
     const mix = ctx.createGain();
@@ -916,8 +922,7 @@ export default class AudioEngine {
       }
     }
 
-    const bitrate = Number(config.bitrate) || 128;
-    const enc = new Mp3Encoder(2, Math.round(ctx.sampleRate), bitrate);
+    this._bcEnc = new Mp3Encoder(2, this._bcSampleRate, this._bcBitrate);
     const proc = ctx.createScriptProcessor(4096, 2, 2);
     const silent = ctx.createGain();
     silent.gain.value = 0;
@@ -926,10 +931,6 @@ export default class AudioEngine {
     silent.connect(ctx.destination); // pulls the processor without adding audible output
     this._bcProc = proc;
     this._bcSilent = silent;
-
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = "arraybuffer";
-    this._bcWs = ws;
 
     proc.onaudioprocess = (ev) => {
       const inb = ev.inputBuffer;
@@ -947,11 +948,42 @@ export default class AudioEngine {
         sum += lv * lv;
       }
       this._bcLevel = Math.sqrt(sum / n);
-      if (!this._bcReady || ws.readyState !== WebSocket.OPEN) return;
-      const mp3 = enc.encodeBuffer(li, ri);
+      const ws = this._bcWs;
+      if (!this._bcReady || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const mp3 = this._bcEnc.encodeBuffer(li, ri);
       if (mp3.length && ws.bufferedAmount < 512000) ws.send(mp3.buffer);
     };
 
+    // Archive: record the whole broadcast to a file for reposting later.
+    this._bcArchiveChunks = [];
+    this._bcArchiveDest = null;
+    this._bcArchiveRec = null;
+    if (archive) {
+      try {
+        const dest = ctx.createMediaStreamDestination();
+        mix.connect(dest);
+        this._bcArchiveDest = dest;
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+        const rec = new MediaRecorder(dest.stream, { mimeType: mime });
+        rec.ondataavailable = (e) => e.data && e.data.size && this._bcArchiveChunks.push(e.data);
+        rec.start(2000);
+        this._bcArchiveRec = rec;
+      } catch {
+        this._bcArchiveDest = null;
+      }
+    }
+
+    this._connectWs();
+  }
+
+  _connectWs() {
+    const { wsUrl, config } = this._bcParams;
+    this._bcReady = false;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
+    this._bcWs = ws;
     ws.onopen = () => {
       this._bcOnState("connecting");
       ws.send(JSON.stringify(config));
@@ -964,6 +996,7 @@ export default class AudioEngine {
         return;
       }
       if (m.type === "live") {
+        this._bcAttempt = 0;
         this._bcReady = true;
         this._bcOnState("live");
       } else if (m.type === "error") {
@@ -971,18 +1004,47 @@ export default class AudioEngine {
         this.stopBroadcast();
       }
     };
-    ws.onerror = () => {
-      if (!this._bcStop) this._bcOnState("error", "Connection to the broadcast relay failed.");
-    };
     ws.onclose = () => {
-      try {
-        const rest = enc.flush();
-        if (rest && rest.length && ws.readyState === WebSocket.OPEN) ws.send(rest.buffer);
-      } catch {
-        /* ignore */
-      }
-      if (!this._bcStop) this._bcOnState("stopped");
+      if (this._bcStop) return;
+      this._scheduleReconnect();
     };
+    ws.onerror = () => {
+      /* onclose will follow and trigger reconnect */
+    };
+  }
+
+  _scheduleReconnect() {
+    this._bcReady = false;
+    this._bcAttempt = (this._bcAttempt || 0) + 1;
+    if (this._bcAttempt > 10) {
+      this._bcOnState("error", "Lost the radio.co connection and couldn't reconnect. Check your internet / slot.");
+      this.stopBroadcast();
+      return;
+    }
+    // Fresh encoder each attempt to avoid stale partial frames.
+    try {
+      this._bcEnc = new Mp3Encoder(2, this._bcSampleRate, this._bcBitrate);
+    } catch {
+      /* ignore */
+    }
+    const delay = Math.min(30, 2 ** Math.min(this._bcAttempt, 5));
+    let left = delay;
+    this._bcOnState("reconnecting", { seconds: left, attempt: this._bcAttempt });
+    if (this._bcReconnectTimer) clearInterval(this._bcReconnectTimer);
+    this._bcReconnectTimer = setInterval(() => {
+      if (this._bcStop) {
+        clearInterval(this._bcReconnectTimer);
+        return;
+      }
+      left -= 1;
+      if (left <= 0) {
+        clearInterval(this._bcReconnectTimer);
+        this._bcReconnectTimer = null;
+        this._connectWs();
+      } else {
+        this._bcOnState("reconnecting", { seconds: left, attempt: this._bcAttempt });
+      }
+    }, 1000);
   }
 
   sendBroadcastMeta(title) {
@@ -999,12 +1061,37 @@ export default class AudioEngine {
     this._bcStop = true;
     this._bcReady = false;
     this._bcLevel = 0;
+    if (this._bcReconnectTimer) {
+      clearInterval(this._bcReconnectTimer);
+      this._bcReconnectTimer = null;
+    }
     try {
       if (this._bcProc) this._bcProc.onaudioprocess = null;
     } catch {
       /* ignore */
     }
-    [this._bcProc, this._bcSilent, this._bcMix, this._bcMic].forEach((node) => {
+    // Finalize the archive recording, then hand the file back.
+    const rec = this._bcArchiveRec;
+    if (rec && rec.state !== "inactive") {
+      rec.onstop = () => {
+        const blob = new Blob(this._bcArchiveChunks, {
+          type: (this._bcArchiveChunks[0] && this._bcArchiveChunks[0].type) || "audio/webm",
+        });
+        try {
+          if (blob.size > 0) this._bcOnArchive(blob);
+        } catch {
+          /* ignore */
+        }
+        this._bcArchiveChunks = [];
+      };
+      try {
+        rec.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    this._bcArchiveRec = null;
+    [this._bcProc, this._bcSilent, this._bcMix, this._bcMic, this._bcArchiveDest].forEach((node) => {
       try {
         node && node.disconnect();
       } catch {
@@ -1026,6 +1113,7 @@ export default class AudioEngine {
     this._bcMix = null;
     this._bcMic = null;
     this._bcMicStream = null;
+    this._bcArchiveDest = null;
     this._bcWs = null;
     if (this._bcOnState) this._bcOnState("stopped");
   }

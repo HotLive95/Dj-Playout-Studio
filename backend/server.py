@@ -1036,6 +1036,35 @@ async def _update_shoutcast_meta(host: str, base_port: int, pwd: str, song: str)
         pass
 
 
+@api_router.get("/broadcast/station-status")
+async def broadcast_station_status(station_id: str):
+    sid = (station_id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="station_id required")
+    url = f"https://public.radio.co/stations/{urllib.parse.quote(sid)}/status"
+
+    def _fetch():
+        req = urllib.request.Request(url, headers={"User-Agent": "HotLive95"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+    try:
+        data = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+    except Exception:
+        return {"ok": False}
+    listeners = None
+    lv = data.get("listeners")
+    if isinstance(lv, dict):
+        listeners = lv.get("total")
+    elif isinstance(lv, (int, float)):
+        listeners = int(lv)
+    ct = data.get("current_track") or {}
+    track = None
+    if isinstance(ct, dict):
+        track = ct.get("title") or (ct.get("artist") and ct.get("artist"))
+    return {"ok": True, "status": data.get("status"), "listeners": listeners, "track": track}
+
+
 @api_router.websocket("/broadcast/ws")
 async def broadcast_ws(ws: WebSocket):
     await ws.accept()

@@ -278,6 +278,8 @@ function App() {
   const [goLiveOpen, setGoLiveOpen] = useState(false);
   const [bcState, setBcState] = useState("idle");
   const [bcError, setBcError] = useState("");
+  const [bcReconnect, setBcReconnect] = useState(null);
+  const [scheduleAt, setScheduleAt] = useState(null);
   const [initialCloudCode, setInitialCloudCode] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [backupDismissed, setBackupDismissed] = useState(false);
@@ -1741,19 +1743,41 @@ function App() {
   const nudgeStandby = (dir) => engineRef.current?.nudgeStandby(dir);
 
   // ---- Live broadcast to radio.co ----
+  const onBroadcastArchive = (blob) => {
+    const ts = new Date();
+    const pad = (x) => String(x).padStart(2, "0");
+    const name = `HotLive95 Broadcast ${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())} ${pad(ts.getHours())}-${pad(ts.getMinutes())}.webm`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 6000);
+    setBanner(`Broadcast archived: ${name}`);
+  };
   const startBroadcast = async (config, mic) => {
     const base = process.env.REACT_APP_BACKEND_URL || "";
     const wsUrl = base.replace(/^http/, "ws") + "/api/broadcast/ws";
     setBcError("");
+    setBcReconnect(null);
     setBcState("connecting");
     try {
       await engineRef.current.startBroadcast({
         wsUrl,
         config,
         mic,
-        onState: (s, msg) => {
+        archive: true,
+        onArchive: onBroadcastArchive,
+        onState: (s, info) => {
+          if (s === "reconnecting") {
+            setBcState("reconnecting");
+            setBcReconnect(info || null);
+            return;
+          }
           setBcState(s === "stopped" ? "idle" : s);
-          if (s === "error") setBcError(msg || "Broadcast error.");
+          if (s === "live") setBcReconnect(null);
+          if (s === "error") setBcError(typeof info === "string" ? info : "Broadcast error.");
         },
       });
       const t = currentTrackId ? tracks[currentTrackId] : null;
@@ -1766,6 +1790,7 @@ function App() {
   const stopBroadcast = () => {
     engineRef.current?.stopBroadcast();
     setBcState("idle");
+    setBcReconnect(null);
   };
   useEffect(() => {
     if (bcState === "live" && currentTrackId) {
@@ -1774,6 +1799,30 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrackId, bcState]);
+  // Scheduled go-live: auto-start at the booked time using the saved config.
+  useEffect(() => {
+    if (!scheduleAt) return;
+    const iv = setInterval(() => {
+      if (Date.now() >= scheduleAt && bcState === "idle") {
+        let cfg = {};
+        try {
+          cfg = JSON.parse(localStorage.getItem("hotlive95_radioco") || "{}");
+        } catch {
+          cfg = {};
+        }
+        if (cfg.password) {
+          setScheduleAt(null);
+          if (!goLiveOpen) setGoLiveOpen(true);
+          startBroadcast(
+            { host: cfg.host, port: Number(cfg.port), password: cfg.password, name: cfg.name, bitrate: Number(cfg.bitrate), genre: "Various" },
+            cfg.includeMic !== false
+          );
+        }
+      }
+    }, 4000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleAt, bcState]);
   const setFaderCurve = (c) => setSettings((s) => ({ ...s, faderCurve: c }));
   const toggleSyncLock = () => setSettings((s) => ({ ...s, syncLock: !s.syncLock }));
   const getBeat = useCallback(() => engineRef.current?.beatInfo(), []);
@@ -2597,10 +2646,14 @@ function App() {
         <GoLiveModal
           state={bcState}
           error={bcError}
+          reconnect={bcReconnect}
+          scheduledAt={scheduleAt}
           nowPlaying={currentTrack ? `${currentTrack.artist ? currentTrack.artist + " - " : ""}${currentTrack.title || currentTrack.name}` : ""}
           getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
           onStart={startBroadcast}
           onStop={stopBroadcast}
+          onSchedule={(ts) => setScheduleAt(ts)}
+          onCancelSchedule={() => setScheduleAt(null)}
           onClose={() => setGoLiveOpen(false)}
         />
       )}
