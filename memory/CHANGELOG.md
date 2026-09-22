@@ -1,5 +1,16 @@
 # Changelog — Hot Live 95 DJ Playout Studio
 
+## 2026-06 — Broadcast: auto-stop, archive→playlist, health alerts, listener graph
+UI + regression 100% (iteration_32).
+- **Auto-stop at end time**: the schedule now takes an optional end time; the app
+  auto-stops the broadcast when it's reached (unattended shows wrap cleanly).
+- **Archive → Playlist**: any saved broadcast can be added back into the current
+  playlist as a re-airable track (blob copied to a new track id).
+- **Health Alerts**: a flashing banner + optional beep the moment dropouts/buffering
+  start while live (toggle `Sound an alert if the stream drops out`).
+- **Listener Graph**: an in-panel sparkline of the radio.co listener count over the
+  show, with the peak labelled.
+
 ## 2026-06 — Broadcast: Auto-DJ handoff, health, archive library, metadata
 UI + regression 100% (iteration_31).
 - **Now-Playing metadata**: the live "Artist - Title" is already pushed to
