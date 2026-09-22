@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2 } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus } from "lucide-react";
 
 const CFG_KEY = "hotlive95_radioco";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
@@ -14,7 +14,7 @@ const loadCfg = () => {
 // Broadcast the studio's live program mix to a radio.co station (SHOUTcast v1),
 // relayed through the app backend. Online-only; the DJ's own credentials stay
 // on this device and are sent over the encrypted (wss) connection to start.
-export default function GoLiveModal({ state, error, reconnect, scheduledAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onClose }) {
+export default function GoLiveModal({ state, error, reconnect, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
   const saved = loadCfg();
   const [host, setHost] = useState(saved.host || "denim.radio.co");
   const [port, setPort] = useState(saved.port || 5189);
@@ -23,18 +23,46 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
   const [bitrate, setBitrate] = useState(saved.bitrate || 128);
   const [includeMic, setIncludeMic] = useState(saved.includeMic !== false);
   const [stationId, setStationId] = useState(saved.stationId || "");
+  const [alertSound, setAlertSound] = useState(saved.alertSound !== false);
   const [scheduleInput, setScheduleInput] = useState("");
+  const [scheduleEndInput, setScheduleEndInput] = useState("");
   const [schedulePlaylist, setSchedulePlaylist] = useState(scheduledPlaylistId || "");
   const [listeners, setListeners] = useState(null);
+  const [listenerHist, setListenerHist] = useState([]);
   const [level, setLevel] = useState(0);
   const [health, setHealth] = useState(null);
+  const [dropAlert, setDropAlert] = useState(false);
   const [playId, setPlayId] = useState(null);
   const [playUrl, setPlayUrl] = useState(null);
   const raf = useRef(0);
+  const prevStatus = useRef("good");
+  const beepCtx = useRef(null);
 
   const live = state === "live";
   const busy = state === "connecting";
   const reconnecting = state === "reconnecting";
+
+  const beep = () => {
+    if (!alertSound) return;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!beepCtx.current) beepCtx.current = new AC();
+      const ctx = beepCtx.current;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = 880;
+      g.gain.value = 0.0001;
+      o.connect(g);
+      g.connect(ctx.destination);
+      const t = ctx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.start(t);
+      o.stop(t + 0.36);
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     if (!live && !reconnecting) {
@@ -44,12 +72,26 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
     }
     const tick = () => {
       setLevel(getLevel());
-      if (getHealth) setHealth(getHealth());
+      if (getHealth) {
+        const h = getHealth();
+        setHealth(h);
+        if (h) {
+          const bad = h.status === "unstable" || h.status === "buffering" || h.status === "reconnecting";
+          const wasBad = prevStatus.current === "unstable" || prevStatus.current === "buffering" || prevStatus.current === "reconnecting";
+          if (bad && !wasBad) {
+            setDropAlert(true);
+            beep();
+          }
+          if (!bad) setDropAlert(false);
+          prevStatus.current = h.status;
+        }
+      }
       raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf.current);
-  }, [live, reconnecting, getLevel, getHealth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, reconnecting, getLevel, getHealth, alertSound]);
 
   // Poll radio.co public status for the live listener count while on air.
   useEffect(() => {
@@ -62,7 +104,10 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
       try {
         const r = await fetch(`${BACKEND}/api/broadcast/station-status?station_id=${encodeURIComponent(stationId.trim())}`);
         const d = await r.json();
-        if (alive && d.ok) setListeners(typeof d.listeners === "number" ? d.listeners : null);
+        if (alive && d.ok && typeof d.listeners === "number") {
+          setListeners(d.listeners);
+          setListenerHist((h) => [...h, { t: Date.now(), n: d.listeners }].slice(-120));
+        }
       } catch {
         /* ignore */
       }
@@ -74,9 +119,12 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
       clearInterval(iv);
     };
   }, [live, stationId]);
+  useEffect(() => {
+    if (!live) setListenerHist([]);
+  }, [live]);
 
   const go = () => {
-    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim() };
+    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, includeMic);
   };
@@ -85,9 +133,10 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
     if (!scheduleInput) return;
     const ts = new Date(scheduleInput).getTime();
     if (!ts || ts <= Date.now()) return;
-    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim() };
+    const endTs = scheduleEndInput ? new Date(scheduleEndInput).getTime() : null;
+    const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
-    onSchedule({ at: ts, playlistId: schedulePlaylist || null });
+    onSchedule({ at: ts, endAt: endTs && endTs > ts ? endTs : null, playlistId: schedulePlaylist || null });
   };
 
   const previewBroadcast = async (b) => {
@@ -107,6 +156,21 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
   const canGo = host.trim() && Number(port) > 0 && password.trim();
   const pct = Math.min(100, Math.round(level * 140));
   const schedRemain = scheduledAt ? Math.max(0, Math.round((scheduledAt - Date.now()) / 60000)) : 0;
+  const spark = (() => {
+    if (listenerHist.length < 2) return null;
+    const ns = listenerHist.map((p) => p.n);
+    const max = Math.max(...ns, 1);
+    const min = Math.min(...ns, 0);
+    const W = 240;
+    const H = 40;
+    const span = max - min || 1;
+    const pts = listenerHist.map((p, i) => {
+      const x = (i / (listenerHist.length - 1)) * W;
+      const y = H - ((p.n - min) / span) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    return { points: pts.join(" "), max, W, H };
+  })();
 
   return (
     <div
@@ -128,6 +192,15 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
         <div className="p-5 space-y-4 overflow-y-auto">
           {live || reconnecting ? (
             <div className="space-y-4" data-testid="go-live-onair">
+              {dropAlert && (
+                <div
+                  className="flex items-center gap-2 rounded-lg border border-[var(--hl-onair)] bg-[rgba(255,23,68,0.15)] px-3 py-2 hl-onair-pulse"
+                  data-testid="go-live-drop-alert"
+                >
+                  <AlertTriangle size={16} className="text-[var(--hl-onair)]" />
+                  <span className="text-sm text-[var(--hl-onair)] font-600">Connection trouble — audio may be dropping out</span>
+                </div>
+              )}
               {reconnecting ? (
                 <div className="flex flex-col items-center gap-1.5" data-testid="go-live-reconnecting">
                   <RotateCw size={26} className="text-[var(--hl-amber)] animate-spin" />
@@ -151,6 +224,17 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
                   <span className="text-[var(--hl-text)]">
                     {listeners == null ? "—" : listeners} {listeners === 1 ? "listener" : "listeners"}
                   </span>
+                </div>
+              )}
+              {spark && (
+                <div className="rounded-lg border border-[var(--hl-line)] p-2.5" data-testid="go-live-listener-graph">
+                  <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-[var(--hl-muted)] mb-1">
+                    <span>Listeners over show</span>
+                    <span className="text-[var(--hl-cue)]">peak {spark.max}</span>
+                  </div>
+                  <svg viewBox={`0 0 ${spark.W} ${spark.H}`} preserveAspectRatio="none" className="w-full h-10">
+                    <polyline points={spark.points} fill="none" stroke="#2ee5c4" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                  </svg>
                 </div>
               )}
               {nowPlaying && (
@@ -281,6 +365,16 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
                   />
                   <Mic size={14} className="text-[var(--hl-onair)]" /> Put my mic on air (talk over the music)
                 </label>
+                <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="go-live-alert-sound"
+                    checked={alertSound}
+                    onChange={(e) => setAlertSound(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--hl-amber)]"
+                  />
+                  <AlertTriangle size={14} className="text-[var(--hl-amber)]" /> Sound an alert if the stream drops out
+                </label>
                 <label className="block">
                   <span className="text-xs text-[var(--hl-muted)]">Station ID (optional — for live listener count)</span>
                   <input
@@ -302,6 +396,7 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
                         {scheduledPlaylistId && playlists.find((p) => p.id === scheduledPlaylistId)
                           ? ` · plays "${playlists.find((p) => p.id === scheduledPlaylistId).name}"`
                           : ""}
+                        {scheduledEndAt ? ` · ends ${new Date(scheduledEndAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
                       </span>
                       <button
                         data-testid="go-live-cancel-schedule"
@@ -343,6 +438,17 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
                         >
                           Arm
                         </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] w-16 shrink-0">End (opt.)</span>
+                        <input
+                          data-testid="go-live-schedule-end"
+                          type="datetime-local"
+                          value={scheduleEndInput}
+                          onChange={(e) => setScheduleEndInput(e.target.value)}
+                          className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
+                          title="Auto-stop the broadcast at this time"
+                        />
                       </div>
                     </>
                   )}
@@ -394,6 +500,14 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, sche
                           <div className="text-xs truncate text-[var(--hl-text)]">{b.name.replace("HotLive95 Broadcast ", "")}</div>
                           <div className="text-[10px] text-[var(--hl-muted)]">{fmtSize(b.size || 0)}</div>
                         </div>
+                        <button
+                          data-testid={`go-live-archive-add-${b.id}`}
+                          onClick={() => onArchiveToPlaylist(b)}
+                          className="h-7 w-7 grid place-items-center rounded shrink-0 text-[var(--hl-muted)] hover:text-[var(--hl-cue)]"
+                          title="Add to the current playlist to re-air"
+                        >
+                          <ListPlus size={14} />
+                        </button>
                         <button
                           data-testid={`go-live-archive-download-${b.id}`}
                           onClick={() => onDownloadBroadcast(b)}

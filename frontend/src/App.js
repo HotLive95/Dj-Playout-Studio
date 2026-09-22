@@ -280,6 +280,7 @@ function App() {
   const [bcError, setBcError] = useState("");
   const [bcReconnect, setBcReconnect] = useState(null);
   const [scheduleAt, setScheduleAt] = useState(null);
+  const [scheduleEndAt, setScheduleEndAt] = useState(null);
   const [schedulePlaylistId, setSchedulePlaylistId] = useState(null);
   const [broadcasts, setBroadcasts] = useState(() => {
     try {
@@ -1791,6 +1792,41 @@ function App() {
     const blob = await getBlob(b.id);
     return blob ? URL.createObjectURL(blob) : null;
   };
+  // Turn a saved broadcast into a re-airable track in the current playlist.
+  const archiveToPlaylist = async (b) => {
+    const blob = await getBlob(b.id);
+    if (!blob) {
+      setBanner("That broadcast file is no longer available.");
+      return;
+    }
+    if (!currentPlaylistId) {
+      setBanner("Open a playlist first, then add the broadcast.");
+      return;
+    }
+    const nid = uid();
+    await putBlob(nid, blob);
+    const title = b.name.replace("HotLive95 Broadcast ", "Broadcast ").replace(/\.webm$/i, "");
+    const track = { id: nid, name: `${title}.webm`, title, artist: "Broadcast", type: b.type || "audio/webm" };
+    setTracks((prev) => ({ ...prev, [nid]: track }));
+    setPlaylists((prev) => prev.map((p) => (p.id === currentPlaylistId ? { ...p, trackIds: [...p.trackIds, nid] } : p)));
+    setBanner(`Added "${title}" to your playlist — ready to re-air.`);
+  };
+  // Auto-stop the broadcast at the scheduled end time (unattended shows).
+  useEffect(() => {
+    if (!scheduleEndAt) return;
+    const iv = setInterval(() => {
+      if (Date.now() >= scheduleEndAt) {
+        const wasLive = bcState === "live" || bcState === "reconnecting" || bcState === "connecting";
+        setScheduleEndAt(null);
+        if (wasLive) {
+          stopBroadcast();
+          setBanner("Scheduled show ended — broadcast stopped.");
+        }
+      }
+    }, 4000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleEndAt, bcState]);
   const startBroadcast = async (config, mic) => {
     const base = process.env.REACT_APP_BACKEND_URL || "";
     const wsUrl = base.replace(/^http/, "ws") + "/api/broadcast/ws";
@@ -2687,6 +2723,7 @@ function App() {
           error={bcError}
           reconnect={bcReconnect}
           scheduledAt={scheduleAt}
+          scheduledEndAt={scheduleEndAt}
           scheduledPlaylistId={schedulePlaylistId}
           playlists={playlists}
           broadcasts={broadcasts}
@@ -2695,11 +2732,12 @@ function App() {
           getHealth={() => engineRef.current?.getBroadcastHealth?.() || null}
           onStart={startBroadcast}
           onStop={stopBroadcast}
-          onSchedule={(p) => { setScheduleAt(p.at); setSchedulePlaylistId(p.playlistId || null); }}
-          onCancelSchedule={() => { setScheduleAt(null); setSchedulePlaylistId(null); }}
+          onSchedule={(p) => { setScheduleAt(p.at); setScheduleEndAt(p.endAt || null); setSchedulePlaylistId(p.playlistId || null); }}
+          onCancelSchedule={() => { setScheduleAt(null); setScheduleEndAt(null); setSchedulePlaylistId(null); }}
           onDownloadBroadcast={downloadBroadcast}
           onDeleteBroadcast={deleteBroadcast}
           onGetBroadcastUrl={getBroadcastUrl}
+          onArchiveToPlaylist={archiveToPlaylist}
           onClose={() => setGoLiveOpen(false)}
         />
       )}
