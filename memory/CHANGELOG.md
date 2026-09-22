@@ -1,5 +1,20 @@
 # Changelog — Hot Live 95 DJ Playout Studio
 
+## 2026-06 — Broadcast enhancements (reconnect, listeners, archive, schedule)
+UI + regression 100% (iteration_30); relay/station endpoints verified.
+- **Auto Reconnect** (`audioEngine.js`): on an unexpected drop the engine keeps
+  the audio graph, reopens the WS with exponential backoff (2→30s, max 10 tries)
+  and a fresh encoder; the Go Live panel shows a live "Reconnecting in Ns
+  (attempt N)" countdown.
+- **Listener Count**: optional Station ID field; backend
+  `GET /api/broadcast/station-status?station_id=` proxies radio.co's public
+  status (`listeners.total`), polled every 15s while on air.
+- **Stream Archive**: each broadcast is recorded (MediaRecorder on the broadcast
+  mix) and auto-downloaded as a dated `HotLive95 Broadcast YYYY-MM-DD HH-MM.webm`
+  on stop.
+- **Scheduled Go-Live**: arm a datetime; the app auto-starts the broadcast from
+  the saved config at that time (hands-free), with an armed/countdown + cancel.
+
 ## 2026-06 — Live broadcast to radio.co (Go Live)
 Backend relay proven end-to-end (real radio.co SHOUTcast v1 handshake returned
 live; 32KB MP3 forwarded byte-for-byte to a fake SHOUTcast server). UI +
