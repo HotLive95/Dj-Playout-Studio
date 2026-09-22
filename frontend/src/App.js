@@ -25,7 +25,7 @@ import GoLiveModal from "@/components/GoLiveModal";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
-import { putBlob } from "@/lib/db";
+import { putBlob, getBlob, deleteBlob } from "@/lib/db";
 import { api } from "@/lib/api";
 import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessing";
 import { camelotCompatible } from "@/lib/key";
@@ -280,6 +280,17 @@ function App() {
   const [bcError, setBcError] = useState("");
   const [bcReconnect, setBcReconnect] = useState(null);
   const [scheduleAt, setScheduleAt] = useState(null);
+  const [schedulePlaylistId, setSchedulePlaylistId] = useState(null);
+  const [broadcasts, setBroadcasts] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("hotlive95_broadcasts") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("hotlive95_broadcasts", JSON.stringify(broadcasts));
+  }, [broadcasts]);
   const [initialCloudCode, setInitialCloudCode] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [backupDismissed, setBackupDismissed] = useState(false);
@@ -1743,18 +1754,42 @@ function App() {
   const nudgeStandby = (dir) => engineRef.current?.nudgeStandby(dir);
 
   // ---- Live broadcast to radio.co ----
-  const onBroadcastArchive = (blob) => {
-    const ts = new Date();
+  const onBroadcastArchive = async (blob) => {
+    const ts = Date.now();
+    const d = new Date(ts);
     const pad = (x) => String(x).padStart(2, "0");
-    const name = `HotLive95 Broadcast ${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())} ${pad(ts.getHours())}-${pad(ts.getMinutes())}.webm`;
+    const name = `HotLive95 Broadcast ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}.webm`;
+    const id = uid();
+    try {
+      await putBlob(id, blob);
+      setBroadcasts((prev) => [{ id, name, ts, size: blob.size, type: blob.type || "audio/webm" }, ...prev].slice(0, 50));
+      setBanner(`Broadcast saved to your archive: ${name}`);
+    } catch {
+      setBanner("Couldn't save the broadcast archive.");
+    }
+  };
+  const downloadBroadcast = async (b) => {
+    const blob = await getBlob(b.id);
+    if (!blob) return;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = name;
+    a.download = b.name;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 6000);
-    setBanner(`Broadcast archived: ${name}`);
+  };
+  const deleteBroadcast = async (b) => {
+    try {
+      await deleteBlob(b.id);
+    } catch {
+      /* ignore */
+    }
+    setBroadcasts((prev) => prev.filter((x) => x.id !== b.id));
+  };
+  const getBroadcastUrl = async (b) => {
+    const blob = await getBlob(b.id);
+    return blob ? URL.createObjectURL(blob) : null;
   };
   const startBroadcast = async (config, mic) => {
     const base = process.env.REACT_APP_BACKEND_URL || "";
@@ -1812,6 +1847,10 @@ function App() {
         }
         if (cfg.password) {
           setScheduleAt(null);
+          if (schedulePlaylistId) {
+            setCurrentPlaylistId(schedulePlaylistId);
+            setTimeout(() => engineRef.current?.playIndex(0), 700);
+          }
           if (!goLiveOpen) setGoLiveOpen(true);
           startBroadcast(
             { host: cfg.host, port: Number(cfg.port), password: cfg.password, name: cfg.name, bitrate: Number(cfg.bitrate), genre: "Various" },
@@ -2648,12 +2687,19 @@ function App() {
           error={bcError}
           reconnect={bcReconnect}
           scheduledAt={scheduleAt}
+          scheduledPlaylistId={schedulePlaylistId}
+          playlists={playlists}
+          broadcasts={broadcasts}
           nowPlaying={currentTrack ? `${currentTrack.artist ? currentTrack.artist + " - " : ""}${currentTrack.title || currentTrack.name}` : ""}
           getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
+          getHealth={() => engineRef.current?.getBroadcastHealth?.() || null}
           onStart={startBroadcast}
           onStop={stopBroadcast}
-          onSchedule={(ts) => setScheduleAt(ts)}
-          onCancelSchedule={() => setScheduleAt(null)}
+          onSchedule={(p) => { setScheduleAt(p.at); setSchedulePlaylistId(p.playlistId || null); }}
+          onCancelSchedule={() => { setScheduleAt(null); setSchedulePlaylistId(null); }}
+          onDownloadBroadcast={downloadBroadcast}
+          onDeleteBroadcast={deleteBroadcast}
+          onGetBroadcastUrl={getBroadcastUrl}
           onClose={() => setGoLiveOpen(false)}
         />
       )}

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2 } from "lucide-react";
 
 const CFG_KEY = "hotlive95_radioco";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
@@ -14,7 +14,7 @@ const loadCfg = () => {
 // Broadcast the studio's live program mix to a radio.co station (SHOUTcast v1),
 // relayed through the app backend. Online-only; the DJ's own credentials stay
 // on this device and are sent over the encrypted (wss) connection to start.
-export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowPlaying, getLevel, onStart, onStop, onSchedule, onCancelSchedule, onClose }) {
+export default function GoLiveModal({ state, error, reconnect, scheduledAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onClose }) {
   const saved = loadCfg();
   const [host, setHost] = useState(saved.host || "denim.radio.co");
   const [port, setPort] = useState(saved.port || 5189);
@@ -24,8 +24,12 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowP
   const [includeMic, setIncludeMic] = useState(saved.includeMic !== false);
   const [stationId, setStationId] = useState(saved.stationId || "");
   const [scheduleInput, setScheduleInput] = useState("");
+  const [schedulePlaylist, setSchedulePlaylist] = useState(scheduledPlaylistId || "");
   const [listeners, setListeners] = useState(null);
   const [level, setLevel] = useState(0);
+  const [health, setHealth] = useState(null);
+  const [playId, setPlayId] = useState(null);
+  const [playUrl, setPlayUrl] = useState(null);
   const raf = useRef(0);
 
   const live = state === "live";
@@ -33,17 +37,19 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowP
   const reconnecting = state === "reconnecting";
 
   useEffect(() => {
-    if (!live) {
+    if (!live && !reconnecting) {
       setLevel(0);
+      setHealth(null);
       return;
     }
     const tick = () => {
       setLevel(getLevel());
+      if (getHealth) setHealth(getHealth());
       raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf.current);
-  }, [live, getLevel]);
+  }, [live, reconnecting, getLevel, getHealth]);
 
   // Poll radio.co public status for the live listener count while on air.
   useEffect(() => {
@@ -79,11 +85,24 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowP
     if (!scheduleInput) return;
     const ts = new Date(scheduleInput).getTime();
     if (!ts || ts <= Date.now()) return;
-    // Persist config so the scheduled auto-start has the credentials it needs.
     const cfg = { host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim() };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
-    onSchedule(ts);
+    onSchedule({ at: ts, playlistId: schedulePlaylist || null });
   };
+
+  const previewBroadcast = async (b) => {
+    if (playId === b.id) {
+      setPlayId(null);
+      if (playUrl) URL.revokeObjectURL(playUrl);
+      setPlayUrl(null);
+      return;
+    }
+    if (playUrl) URL.revokeObjectURL(playUrl);
+    const url = await onGetBroadcastUrl(b);
+    setPlayUrl(url);
+    setPlayId(url ? b.id : null);
+  };
+  const fmtSize = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 
   const canGo = host.trim() && Number(port) > 0 && password.trim();
   const pct = Math.min(100, Math.round(level * 140));
@@ -151,6 +170,35 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowP
                   />
                 </div>
               </div>
+              {health && (
+                <div className="flex items-center justify-between rounded-lg border border-[var(--hl-line)] px-3 py-2" data-testid="go-live-health">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        health.status === "good"
+                          ? "bg-[#2ee5c4]"
+                          : health.status === "buffering" || health.status === "unstable"
+                          ? "bg-[var(--hl-amber)]"
+                          : "bg-[var(--hl-onair)]"
+                      }`}
+                    />
+                    <span className="text-sm text-[var(--hl-text)]" data-testid="go-live-health-status">
+                      {health.status === "good"
+                        ? "Stable connection"
+                        : health.status === "buffering"
+                        ? "Buffering — network slow"
+                        : health.status === "unstable"
+                        ? "Dropouts detected"
+                        : health.status === "reconnecting"
+                        ? "Reconnecting"
+                        : "Connecting"}
+                    </span>
+                  </div>
+                  <span className="text-xs tabular-nums text-[var(--hl-muted)]" data-testid="go-live-health-kbps">
+                    {health.kbps} kbps{health.drops ? ` · ${health.drops} drops` : ""}
+                  </span>
+                </div>
+              )}
               <button
                 data-testid="go-live-stop"
                 onClick={onStop}
@@ -251,6 +299,9 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowP
                     <div className="flex items-center justify-between gap-2" data-testid="go-live-scheduled">
                       <span className="text-sm text-[var(--hl-text)]">
                         Armed for {new Date(scheduledAt).toLocaleString()} · in {schedRemain} min
+                        {scheduledPlaylistId && playlists.find((p) => p.id === scheduledPlaylistId)
+                          ? ` · plays "${playlists.find((p) => p.id === scheduledPlaylistId).name}"`
+                          : ""}
                       </span>
                       <button
                         data-testid="go-live-cancel-schedule"
@@ -261,24 +312,39 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowP
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <input
-                        data-testid="go-live-schedule-input"
-                        type="datetime-local"
-                        value={scheduleInput}
-                        onChange={(e) => setScheduleInput(e.target.value)}
-                        className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
-                      />
-                      <button
-                        data-testid="go-live-arm-schedule"
-                        onClick={armSchedule}
-                        disabled={!canGo || !scheduleInput}
-                        className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-xs font-700 hover:bg-[rgba(255,171,0,0.12)] disabled:opacity-40"
-                        title="Auto-start the broadcast at this time (needs the password saved)"
+                    <>
+                      <select
+                        data-testid="go-live-schedule-playlist"
+                        value={schedulePlaylist}
+                        onChange={(e) => setSchedulePlaylist(e.target.value)}
+                        className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
                       >
-                        Arm
-                      </button>
-                    </div>
+                        <option value="">Auto-play a playlist… (optional)</option>
+                        {playlists.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-center gap-2">
+                        <input
+                          data-testid="go-live-schedule-input"
+                          type="datetime-local"
+                          value={scheduleInput}
+                          onChange={(e) => setScheduleInput(e.target.value)}
+                          className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
+                        />
+                        <button
+                          data-testid="go-live-arm-schedule"
+                          onClick={armSchedule}
+                          disabled={!canGo || !scheduleInput}
+                          className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-xs font-700 hover:bg-[rgba(255,171,0,0.12)] disabled:opacity-40"
+                          title="Auto-start the broadcast at this time (needs the password saved)"
+                        >
+                          Arm
+                        </button>
+                      </div>
+                    </>
                   )}
                   <p className="text-[10px] text-[var(--hl-muted)]">Keep the app open on this device; it goes on air hands-free at the set time.</p>
                 </div>
@@ -303,6 +369,55 @@ export default function GoLiveModal({ state, error, reconnect, scheduledAt, nowP
               <p className="text-[11px] text-[var(--hl-muted)] text-center">
                 Broadcasting needs an internet connection. Your offline DJing is unaffected.
               </p>
+
+              {broadcasts.length > 0 && (
+                <div className="rounded-lg border border-[var(--hl-line)] p-3 space-y-2" data-testid="go-live-archive">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
+                    <Archive size={14} className="text-[var(--hl-cue)]" /> Past broadcasts ({broadcasts.length})
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {broadcasts.map((b) => (
+                      <div
+                        key={b.id}
+                        data-testid={`go-live-archive-item-${b.id}`}
+                        className="flex items-center gap-2 rounded-md bg-black/30 px-2.5 py-1.5"
+                      >
+                        <button
+                          data-testid={`go-live-archive-play-${b.id}`}
+                          onClick={() => previewBroadcast(b)}
+                          className="h-7 w-7 grid place-items-center rounded shrink-0 text-[var(--hl-cue)] hover:bg-white/10"
+                          title={playId === b.id ? "Stop" : "Preview"}
+                        >
+                          {playId === b.id ? <Square size={13} className="fill-current" /> : <Play size={14} />}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs truncate text-[var(--hl-text)]">{b.name.replace("HotLive95 Broadcast ", "")}</div>
+                          <div className="text-[10px] text-[var(--hl-muted)]">{fmtSize(b.size || 0)}</div>
+                        </div>
+                        <button
+                          data-testid={`go-live-archive-download-${b.id}`}
+                          onClick={() => onDownloadBroadcast(b)}
+                          className="h-7 w-7 grid place-items-center rounded shrink-0 text-[var(--hl-muted)] hover:text-white"
+                          title="Download"
+                        >
+                          <Download size={14} />
+                        </button>
+                        <button
+                          data-testid={`go-live-archive-delete-${b.id}`}
+                          onClick={() => onDeleteBroadcast(b)}
+                          className="h-7 w-7 grid place-items-center rounded shrink-0 text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {playUrl && (
+                    <audio data-testid="go-live-archive-audio" src={playUrl} autoPlay controls className="w-full h-8 mt-1" onEnded={() => setPlayId(null)} />
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

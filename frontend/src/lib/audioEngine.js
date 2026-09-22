@@ -883,6 +883,22 @@ export default class AudioEngine {
     return this._bcLevel || 0;
   }
 
+  getBroadcastHealth() {
+    const ws = this._bcWs;
+    const now = performance.now();
+    const win = (this._bcSentSamples || []).filter((s) => now - s[0] < 3000);
+    this._bcSentSamples = win;
+    const bytes = win.reduce((a, s) => a + s[1], 0);
+    const kbps = win.length ? Math.round((bytes * 8) / 3 / 1000) : 0;
+    const buffered = ws ? ws.bufferedAmount : 0;
+    let status = "good";
+    if (this._bcReconnectTimer) status = "reconnecting";
+    else if (!this._bcReady) status = "connecting";
+    else if (buffered > 200000) status = "buffering";
+    else if (this._bcLastDrop && now - this._bcLastDrop < 4000) status = "unstable";
+    return { kbps, buffered, drops: this._bcDrops || 0, status };
+  }
+
   async startBroadcast({ wsUrl, config, mic = true, archive = true, onState, onArchive }) {
     const ctx = this._ensureProgramGraph();
     if (!ctx) throw new Error("Live audio is not supported here.");
@@ -902,6 +918,9 @@ export default class AudioEngine {
     this._bcStop = false;
     this._bcAttempt = 0;
     this._bcLevel = 0;
+    this._bcDrops = 0;
+    this._bcLastDrop = 0;
+    this._bcSentSamples = [];
     if (this._bcReconnectTimer) clearInterval(this._bcReconnectTimer);
 
     // Broadcast sub-mix: program master (+ optional mic) -> encoder tap.
@@ -951,7 +970,15 @@ export default class AudioEngine {
       const ws = this._bcWs;
       if (!this._bcReady || !ws || ws.readyState !== WebSocket.OPEN) return;
       const mp3 = this._bcEnc.encodeBuffer(li, ri);
-      if (mp3.length && ws.bufferedAmount < 512000) ws.send(mp3.buffer);
+      if (mp3.length) {
+        if (ws.bufferedAmount < 512000) {
+          ws.send(mp3.buffer);
+          this._bcSentSamples.push([performance.now(), mp3.length]);
+        } else {
+          this._bcLastDrop = performance.now();
+          this._bcDrops = (this._bcDrops || 0) + 1;
+        }
+      }
     };
 
     // Archive: record the whole broadcast to a file for reposting later.
