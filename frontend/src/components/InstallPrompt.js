@@ -1,40 +1,35 @@
 import React, { useEffect, useState } from "react";
-import { Download, X, Share, Radio } from "lucide-react";
+import { Download, X, Share, Radio, MonitorDown } from "lucide-react";
+import { installStore, isStandalone, detectPlatform } from "../lib/installStore";
 
 const DISMISS_KEY = "hotlive95_a2hs_dismissed";
 
-// Friendly "Add to Home Screen" tip for phone DJs so the studio launches like a
-// native app. Android/Chrome uses the real beforeinstallprompt (one-tap install);
-// iOS Safari (which has no such event) gets short Share → Add to Home Screen steps.
-// Shows on phones only, once, and remembers dismissal.
+const STEP_TEXT = {
+  windows: 'Click the install icon in the address bar, or the ⋮ menu → "Install Hot Live 95…".',
+  mac: 'Chrome/Edge: install icon in the address bar (or ⋮ → Install). Safari: File → "Add to Dock".',
+  ios: "Tap the Share button, then “Add to Home Screen”.",
+  android: 'Open the ⋮ menu and tap "Install app".',
+  desktop: 'Open the browser ⋮ menu and choose "Install Hot Live 95…".',
+};
+const PLAT_LABEL = { windows: "Windows", mac: "Mac", ios: "iPad / iPhone", android: "Android", desktop: "your device" };
+
+// First-run, full-screen welcome that makes installing the studio obvious on
+// every device. One-tap install on Chrome/Edge (beforeinstallprompt); other
+// platforms get short steps. Shows once, then remembers dismissal.
 export const InstallPrompt = () => {
-  const [deferred, setDeferred] = useState(null);
   const [show, setShow] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [hasPrompt, setHasPrompt] = useState(installStore.hasPrompt());
+  const [showSteps, setShowSteps] = useState(false);
 
   useEffect(() => {
     if (localStorage.getItem(DISMISS_KEY) === "1") return;
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      window.navigator.standalone === true;
-    if (standalone) return;
-
-    const ua = window.navigator.userAgent || "";
-    const ios = /iphone|ipad|ipod/i.test(ua);
-    const isSafari = /safari/i.test(ua) && !/crios|fxios|android/i.test(ua);
-    if (ios && isSafari) {
-      setIsIOS(true);
-      setShow(true);
-      return;
-    }
-
-    const onBip = (e) => {
-      e.preventDefault();
-      setDeferred(e);
-      setShow(true);
+    if (isStandalone()) return;
+    const t = setTimeout(() => setShow(true), 600);
+    const unsub = installStore.subscribe(() => setHasPrompt(installStore.hasPrompt()));
+    return () => {
+      clearTimeout(t);
+      unsub();
     };
-    window.addEventListener("beforeinstallprompt", onBip);
-    return () => window.removeEventListener("beforeinstallprompt", onBip);
   }, []);
 
   const dismiss = () => {
@@ -43,60 +38,82 @@ export const InstallPrompt = () => {
   };
 
   const install = async () => {
-    if (!deferred) return;
-    deferred.prompt();
-    try {
-      await deferred.userChoice;
-    } catch {
-      /* ignore */
+    if (hasPrompt) {
+      await installStore.prompt();
+      dismiss();
+    } else {
+      setShowSteps(true);
     }
-    setDeferred(null);
-    dismiss();
   };
 
   if (!show) return null;
+  const plat = detectPlatform();
 
   return (
     <div
       data-testid="install-prompt"
-      className="md:hidden fixed left-3 right-3 bottom-[74px] z-50 rounded-xl border border-[var(--hl-fire)] bg-[var(--hl-panel)]/98 backdrop-blur-md shadow-2xl p-3"
+      className="fixed inset-0 z-[70] grid place-items-center p-4 bg-black/80 backdrop-blur-md"
     >
-      <button
-        data-testid="install-prompt-dismiss"
-        onClick={dismiss}
-        className="absolute top-2 right-2 h-7 w-7 grid place-items-center rounded-md text-[var(--hl-muted)] active:bg-white/10"
-        title="Not now"
-      >
-        <X size={16} />
-      </button>
-      <div className="flex items-start gap-3 pr-6">
-        <div className="h-10 w-10 shrink-0 rounded-lg hl-fire-gradient grid place-items-center">
-          <Radio size={20} className="text-white" />
-        </div>
-        <div className="min-w-0">
-          <div className="font-display text-sm font-700 tracking-wide">
-            Install Hot Live 95
+      <div className="relative w-full max-w-md rounded-2xl border border-[var(--hl-fire)] bg-[var(--hl-panel)] shadow-2xl overflow-hidden">
+        <button
+          data-testid="install-prompt-dismiss"
+          onClick={dismiss}
+          className="absolute top-3 right-3 h-8 w-8 grid place-items-center rounded-lg text-[var(--hl-muted)] hover:bg-white/10"
+          title="Maybe later"
+        >
+          <X size={18} />
+        </button>
+        <div className="hl-fire-gradient h-1.5 w-full" />
+        <div className="p-6 text-center">
+          <div className="mx-auto h-16 w-16 grid place-items-center rounded-2xl hl-fire-gradient mb-4">
+            <Radio size={30} className="text-white" />
           </div>
-          {isIOS ? (
-            <p className="text-xs text-[var(--hl-muted)] mt-1 leading-relaxed">
-              Tap the{" "}
-              <Share size={12} className="inline -mt-0.5 text-[var(--hl-fire)]" /> Share button,
-              then <span className="text-[var(--hl-text)]">Add to Home Screen</span> to launch the
-              studio like an app.
-            </p>
+          <div className="font-display text-2xl font-700 tracking-wide">Install Hot Live 95</div>
+          <p className="text-sm text-[var(--hl-muted)] mt-2 leading-relaxed">
+            Add the studio to <span className="text-[var(--hl-text)]">{PLAT_LABEL[plat]}</span> for full-screen,
+            one-tap launch that keeps working offline — perfect for live shows.
+          </p>
+
+          {!showSteps ? (
+            <div className="mt-5 space-y-2.5">
+              <button
+                data-testid="install-prompt-install"
+                onClick={install}
+                className="w-full h-12 rounded-xl hl-fire-gradient text-white font-700 flex items-center justify-center gap-2 active:brightness-110"
+              >
+                {plat === "ios" ? <Share size={18} /> : <Download size={18} />} Install to this device
+              </button>
+              <button
+                data-testid="install-prompt-later"
+                onClick={dismiss}
+                className="w-full h-10 rounded-xl border border-[var(--hl-line)] text-sm text-[var(--hl-muted)] hover:text-white hover:border-white"
+              >
+                Maybe later
+              </button>
+            </div>
           ) : (
-            <p className="text-xs text-[var(--hl-muted)] mt-1 leading-relaxed">
-              Add the studio to your home screen for one-tap, full-screen access on the go.
-            </p>
-          )}
-          {!isIOS && (
-            <button
-              data-testid="install-prompt-install"
-              onClick={install}
-              className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hl-fire-gradient text-white text-xs font-700 active:brightness-110"
-            >
-              <Download size={14} /> Add to Home Screen
-            </button>
+            <div className="mt-5 text-left rounded-xl border border-[var(--hl-line)] p-4" data-testid="install-prompt-steps">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-cue)] mb-2">
+                <MonitorDown size={14} /> How to install on {PLAT_LABEL[plat]}
+              </div>
+              <p className="text-sm leading-relaxed">
+                {plat === "ios" ? (
+                  <>
+                    Tap the <Share size={13} className="inline -mt-0.5 text-[var(--hl-fire)]" /> Share button, then{" "}
+                    <span className="text-[var(--hl-text)]">Add to Home Screen</span>.
+                  </>
+                ) : (
+                  STEP_TEXT[plat] || STEP_TEXT.desktop
+                )}
+              </p>
+              <button
+                data-testid="install-prompt-steps-done"
+                onClick={dismiss}
+                className="mt-4 w-full h-10 rounded-xl hl-fire-gradient text-white font-700"
+              >
+                Got it
+              </button>
+            </div>
           )}
         </div>
       </div>

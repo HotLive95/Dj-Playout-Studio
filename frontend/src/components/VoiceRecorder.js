@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Mic, Square, Play, Pause, Save, X, Circle, Music2, Headphones, AlertTriangle, Timer, Waves, Star, Trash2, SlidersHorizontal } from "lucide-react";
+import { Mic, Square, Play, Pause, Save, X, Circle, Music2, Headphones, AlertTriangle, Timer, Waves, Star, Trash2, SlidersHorizontal, Download, Upload } from "lucide-react";
 import { formatTime } from "../lib/format";
 import { audioCtx, bufferToWav, computePeaks } from "../lib/audioProcessing";
 import { api } from "../lib/api";
@@ -76,6 +76,7 @@ export default function VoiceRecorder({
   const [gateThreshDb, setGateThreshDb] = useState(-45);
   const [fxPresets, setFxPresets] = useState(loadFxPresets);
   const [fxPresetName, setFxPresetName] = useState("");
+  const fxFileRef = useRef(null);
   const padGainRef = useRef(null);
   const compRef = useRef(null);
   const makeupGainRef = useRef(null);
@@ -254,6 +255,32 @@ export default function VoiceRecorder({
     const next = fxPresets.filter((x) => x.name !== nm);
     setFxPresets(next);
     localStorage.setItem(FX_PRESET_KEY, JSON.stringify(next));
+  };
+  const exportFxPresets = () => {
+    const blob = new Blob([JSON.stringify(fxPresets, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "HotLive95 Voice FX Presets.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+  const importFxPresets = async (file) => {
+    if (!file) return;
+    try {
+      const arr = JSON.parse(await file.text());
+      if (!Array.isArray(arr)) return;
+      const byName = new Map(fxPresets.map((p) => [p.name, p]));
+      arr.forEach((p) => {
+        if (p && p.name) byName.set(p.name, p);
+      });
+      const next = [...byName.values()];
+      setFxPresets(next);
+      localStorage.setItem(FX_PRESET_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore bad file */
+    }
   };
 
   // Redraw the trim/punch waveform.
@@ -1291,6 +1318,34 @@ export default function VoiceRecorder({
                     >
                       <Star size={12} /> Save
                     </button>
+                    <button
+                      data-testid="voice-fx-preset-export"
+                      onClick={exportFxPresets}
+                      disabled={fxPresets.length === 0}
+                      className="h-8 w-8 grid place-items-center rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)] disabled:opacity-40"
+                      title="Export FX presets to a file to share with your crew"
+                    >
+                      <Download size={13} />
+                    </button>
+                    <button
+                      data-testid="voice-fx-preset-import"
+                      onClick={() => fxFileRef.current?.click()}
+                      className="h-8 w-8 grid place-items-center rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-amber)] hover:border-[var(--hl-amber)]"
+                      title="Import FX presets from a shared file"
+                    >
+                      <Upload size={13} />
+                    </button>
+                    <input
+                      ref={fxFileRef}
+                      data-testid="voice-fx-preset-import-input"
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) importFxPresets(e.target.files[0]);
+                        e.target.value = "";
+                      }}
+                    />
                   </div>
                 </div>
 

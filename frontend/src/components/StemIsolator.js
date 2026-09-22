@@ -15,6 +15,7 @@ import {
   Music2,
   Circle,
   Square,
+  Radio,
 } from "lucide-react";
 import { decodeToBuffer, audioCtx, bufferToWav } from "../lib/audioProcessing";
 import { STEMS, buildStemGraph, renderStem } from "../lib/stemIsolator";
@@ -26,7 +27,7 @@ const PAD_COUNT = 6;
 // Live DSP stem isolator: load a track, then mute/solo/level Vocals, Music,
 // Bass and Drums in real time. Send any isolated stem to a jingle pad, or
 // render it out to a file. Fully offline.
-export default function StemIsolator({ playlists = [], tracks = {}, jingles = [], getUrl, onAssignStemToPad, onClose }) {
+export default function StemIsolator({ playlists = [], tracks = {}, jingles = [], getUrl, onAssignStemToPad, onSendMixToDeck, onClose }) {
   const trackList = [];
   const seen = new Set();
   playlists.forEach((p) =>
@@ -55,6 +56,7 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
   const [recording, setRecording] = useState(false);
   const [recSec, setRecSec] = useState(0);
   const [recBusy, setRecBusy] = useState(false);
+  const [lastMix, setLastMix] = useState(null);
   const recDestRef = useRef(null);
   const recorderRef = useRef(null);
   const recChunksRef = useRef([]);
@@ -293,6 +295,7 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
         const wav = bufferToWav(buf);
         const safe = (srcName || "stem-mix").replace(/[^a-z0-9\-_ ]/gi, "").trim() || "stem-mix";
         downloadBlob(wav, `${safe} - Stem Mix.wav`);
+        setLastMix({ blob: wav, name: `${srcName || "Stem"} · Mix` });
         setFlash("Stem mix saved");
         setTimeout(() => setFlash(""), 2500);
       } catch {
@@ -486,6 +489,16 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
                   onChange={(e) => seek(Number(e.target.value))}
                   className="hl-range w-full"
                 />
+                {lastMix && (
+                  <button
+                    data-testid="stem-send-deck"
+                    onClick={() => onSendMixToDeck && onSendMixToDeck(lastMix.blob, lastMix.name)}
+                    className="w-full h-9 flex items-center justify-center gap-2 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] text-xs font-700 hover:bg-[rgba(46,229,196,0.12)] transition"
+                    title="Arm the last recorded stem mix on the standby deck for a live drop"
+                  >
+                    <Radio size={14} /> Send mix to standby deck
+                  </button>
+                )}
               </div>
 
               {/* Stem channels */}

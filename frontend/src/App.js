@@ -1939,6 +1939,34 @@ function App() {
       n[index] = undefined;
       return n;
     });
+  const renameJingle = (index, label) =>
+    setJingles((prev) => {
+      const n = [...prev];
+      if (n[index]) n[index] = { ...n[index], label };
+      return n;
+    });
+  const colorJingle = (index, color) =>
+    setJingles((prev) => {
+      const n = [...prev];
+      if (n[index]) n[index] = { ...n[index], color };
+      return n;
+    });
+  // Arm a recorded stem mix straight onto the standby deck for a live acappella drop.
+  const sendMixToDeck = async (blob, name) => {
+    const id = uid();
+    let meta;
+    if (platform.isElectron) {
+      const d = await platform.saveMedia(`${(name || "Stem Mix").replace(/[\\/:*?"<>|]+/g, "_")}.wav`, blob);
+      meta = { id: d.id, name: name || "Stem Mix", path: d.path, title: name || "Stem Mix", artist: "Stem Mix", type: "audio/wav" };
+    } else {
+      await putBlob(id, blob);
+      meta = { id, name: name || "Stem Mix", type: "audio/wav", title: name || "Stem Mix", artist: "Stem Mix" };
+    }
+    setTracks((prev) => ({ ...prev, [meta.id]: meta }));
+    await engineRef.current?.loadStandby(meta);
+    setStemsOpen(false);
+    setBanner(`Armed "${meta.title}" on the standby deck — hit TAKE (\\) for the drop.`);
+  };
   const playJingle = async (index) => {
     const j = jinglesRef.current[index];
     if (!j) return;
@@ -2289,6 +2317,8 @@ function App() {
         onAssignTrack={assignJingleFromTrack}
         onPlay={playJingle}
         onClear={clearJingle}
+        onRename={renameJingle}
+        onColor={colorJingle}
         onSetVolume={setJingleVolume}
         duckDepth={settings.jingleDuckDepth ?? 0.4}
         onSetDuckDepth={(d) => setSettings((s) => ({ ...s, jingleDuckDepth: d }))}
@@ -2519,6 +2549,7 @@ function App() {
           jingles={jingles}
           getUrl={getUrl}
           onAssignStemToPad={assignStemToPad}
+          onSendMixToDeck={sendMixToDeck}
           onClose={() => setStemsOpen(false)}
         />
       )}

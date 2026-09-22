@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, ChevronRight, Repeat, Lock, Rewind } from "lucide-react";
+import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, ChevronRight, Repeat, Lock, Rewind, Pencil, Check } from "lucide-react";
 import Waveform from "./Waveform";
 
 const PAD_COUNT = 6;
@@ -141,10 +141,22 @@ function BeatMeter({ getBeat, armed }) {
   );
 }
 
-export default function JingleBar({ jingles, isElectron, padPage = 0, onSetPadPage, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, rollDiv, onSetRollDiv, rollingPads, onToggleRoll, autoCueNext, onToggleAutoCueNext, onOneTapMix, airPeaks, airProgress, standbyPeaks, standbyHarmonic, onStop }) {
+export default function JingleBar({ jingles, isElectron, padPage = 0, onSetPadPage, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onRename, onColor, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, rollDiv, onSetRollDiv, rollingPads, onToggleRoll, autoCueNext, onToggleAutoCueNext, onOneTapMix, airPeaks, airProgress, standbyPeaks, standbyHarmonic, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
+  const [editPad, setEditPad] = useState(null);
+
+  const PAD_COLORS = [
+    { name: "amber", v: "#ffab00" },
+    { name: "fire", v: "#ff5a1f" },
+    { name: "cyan", v: "#2ee5c4" },
+    { name: "blue", v: "#3aa0ff" },
+    { name: "green", v: "#7CFF9B" },
+    { name: "pink", v: "#ff5a8a" },
+    { name: "violet", v: "#9b6bff" },
+    { name: "white", v: "#e5e5e5" },
+  ];
 
   const assign = (i) => {
     if (isElectron) {
@@ -260,20 +272,27 @@ export default function JingleBar({ jingles, isElectron, padPage = 0, onSetPadPa
               onDrop={(e) => onPadDrop(e, i)}
             >
               {j ? (
-                <div className="flex flex-col gap-1 rounded-lg border border-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)] pb-1">
+                <div
+                  className="flex flex-col gap-1 rounded-lg border pb-1"
+                  style={{ borderColor: j.color || "var(--hl-amber)", background: "rgba(255,255,255,0.04)" }}
+                >
                   <button
                     data-testid={`jingle-pad-${i}`}
                     onClick={() => onPlay(i)}
-                    className="group flex items-center gap-2 h-9 pl-2.5 pr-3 rounded-t-lg text-[var(--hl-amber)] hover:bg-[rgba(255,171,0,0.15)] transition"
-                    title={`Play "${j.name}" (key ${i + 1}) — drag a new file here to replace`}
+                    className="group flex items-center gap-2 h-9 pl-2.5 pr-3 rounded-t-lg hover:bg-white/5 transition"
+                    style={{ color: j.color || "var(--hl-amber)" }}
+                    title={`Play "${j.label || j.name}" (key ${((i % 6) + 1)}) — drag a new file here to replace`}
                   >
-                    <span className="grid place-items-center h-5 w-5 rounded bg-[var(--hl-amber)] text-black text-[11px] font-700">
+                    <span
+                      className="grid place-items-center h-5 w-5 rounded text-black text-[11px] font-700"
+                      style={{ background: j.color || "var(--hl-amber)" }}
+                    >
                       {i + 1}
                     </span>
-                    <span className="text-sm max-w-[120px] truncate">{j.name}</span>
+                    <span className="text-sm max-w-[120px] truncate">{j.label || j.name}</span>
                   </button>
                   <div className="flex items-center gap-1.5 px-2.5">
-                    <Volume2 size={12} className="text-[var(--hl-amber)] shrink-0" />
+                    <Volume2 size={12} className="shrink-0" style={{ color: j.color || "var(--hl-amber)" }} />
                     <input
                       data-testid={`jingle-volume-${i}`}
                       type="range"
@@ -283,9 +302,21 @@ export default function JingleBar({ jingles, isElectron, padPage = 0, onSetPadPa
                       value={typeof j.volume === "number" ? j.volume : 1}
                       onChange={(e) => onSetVolume(i, Number(e.target.value))}
                       onClick={(e) => e.stopPropagation()}
-                      className="hl-jingle-vol w-20"
+                      className="hl-jingle-vol w-16"
                       title="Pad volume — dip it under your voice"
                     />
+                    <button
+                      data-testid={`jingle-edit-${i}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditPad((p) => (p === i ? null : i));
+                      }}
+                      className="h-5 w-5 grid place-items-center rounded shrink-0 hover:bg-white/10"
+                      style={{ color: j.color || "var(--hl-amber)" }}
+                      title="Rename & colour this pad"
+                    >
+                      <Pencil size={11} />
+                    </button>
                     <button
                       data-testid={`jingle-roll-${i}`}
                       onClick={(e) => {
@@ -295,13 +326,53 @@ export default function JingleBar({ jingles, isElectron, padPage = 0, onSetPadPa
                       className={`h-5 w-5 grid place-items-center rounded shrink-0 transition ${
                         rollingPads?.includes(i)
                           ? "bg-[var(--hl-fire)] text-white hl-roll-active"
-                          : "text-[var(--hl-amber)] hover:bg-[rgba(255,171,0,0.2)]"
+                          : "hover:bg-white/10"
                       }`}
+                      style={rollingPads?.includes(i) ? {} : { color: j.color || "var(--hl-amber)" }}
                       title="Beat-synced loop roll — retriggers this pad in time with the track"
                     >
                       <Rewind size={12} />
                     </button>
                   </div>
+                  {editPad === i && (
+                    <div
+                      data-testid={`jingle-edit-panel-${i}`}
+                      className="px-2.5 pt-1 pb-0.5 space-y-1.5 border-t border-white/10 mt-0.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-1">
+                        <input
+                          data-testid={`jingle-label-input-${i}`}
+                          value={j.label || ""}
+                          onChange={(e) => onRename(i, e.target.value)}
+                          placeholder={j.name}
+                          className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded px-2 py-1 text-[11px] outline-none focus:border-[var(--hl-amber)]"
+                        />
+                        <button
+                          data-testid={`jingle-edit-done-${i}`}
+                          onClick={() => setEditPad(null)}
+                          className="h-6 w-6 grid place-items-center rounded text-[var(--hl-cue)] hover:bg-white/10"
+                          title="Done"
+                        >
+                          <Check size={13} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {PAD_COLORS.map((c) => (
+                          <button
+                            key={c.name}
+                            data-testid={`jingle-color-${i}-${c.name}`}
+                            onClick={() => onColor(i, c.v)}
+                            className={`h-4 w-4 rounded-full border ${
+                              (j.color || "#ffab00") === c.v ? "ring-2 ring-white/70" : "border-black/40"
+                            }`}
+                            style={{ background: c.v }}
+                            title={c.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <button
