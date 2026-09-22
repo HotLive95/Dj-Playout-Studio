@@ -1,5 +1,7 @@
 // Dual-element audio engine with crossfade / gapless auto-play for live playout,
 // plus an independent CUE (headphone pre-listen) channel and audio-output routing.
+import { Mp3Encoder } from "@breezystack/lamejs";
+
 export default class AudioEngine {
   constructor(onUpdate, onCue, onStandby, onBpm, onCommit) {
     this.onUpdate = onUpdate;
@@ -871,6 +873,163 @@ export default class AudioEngine {
       }
     });
   }
+
+  // ---- LIVE BROADCAST (program mix -> MP3 -> WSS relay -> radio.co) ----
+  isBroadcasting() {
+    return !!this._bcWs && this._bcWs.readyState === WebSocket.OPEN;
+  }
+
+  getBroadcastLevel() {
+    return this._bcLevel || 0;
+  }
+
+  async startBroadcast({ wsUrl, config, mic = true, onState }) {
+    const ctx = this._ensureProgramGraph();
+    if (!ctx) throw new Error("Live audio is not supported here.");
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* ignore */
+      }
+    }
+    this._bcOnState = onState || (() => {});
+    this._bcReady = false;
+    this._bcStop = false;
+    this._bcLevel = 0;
+
+    // Broadcast sub-mix: program master (+ optional mic) -> encoder tap.
+    const mix = ctx.createGain();
+    this._recMaster.connect(mix);
+    this._bcMix = mix;
+    this._bcMic = null;
+    this._bcMicStream = null;
+    if (mic) {
+      try {
+        this._bcMicStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        });
+        this._bcMic = ctx.createMediaStreamSource(this._bcMicStream);
+        this._bcMic.connect(mix); // into the broadcast mix only (never to speakers)
+      } catch {
+        this._bcMicStream = null; // graceful: music-only broadcast
+      }
+    }
+
+    const bitrate = Number(config.bitrate) || 128;
+    const enc = new Mp3Encoder(2, Math.round(ctx.sampleRate), bitrate);
+    const proc = ctx.createScriptProcessor(4096, 2, 2);
+    const silent = ctx.createGain();
+    silent.gain.value = 0;
+    mix.connect(proc);
+    proc.connect(silent);
+    silent.connect(ctx.destination); // pulls the processor without adding audible output
+    this._bcProc = proc;
+    this._bcSilent = silent;
+
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
+    this._bcWs = ws;
+
+    proc.onaudioprocess = (ev) => {
+      const inb = ev.inputBuffer;
+      const l = inb.getChannelData(0);
+      const r = inb.numberOfChannels > 1 ? inb.getChannelData(1) : l;
+      const n = l.length;
+      const li = new Int16Array(n);
+      const ri = new Int16Array(n);
+      let sum = 0;
+      for (let i = 0; i < n; i++) {
+        const lv = Math.max(-1, Math.min(1, l[i]));
+        const rv = Math.max(-1, Math.min(1, r[i]));
+        li[i] = lv * 32767;
+        ri[i] = rv * 32767;
+        sum += lv * lv;
+      }
+      this._bcLevel = Math.sqrt(sum / n);
+      if (!this._bcReady || ws.readyState !== WebSocket.OPEN) return;
+      const mp3 = enc.encodeBuffer(li, ri);
+      if (mp3.length && ws.bufferedAmount < 512000) ws.send(mp3.buffer);
+    };
+
+    ws.onopen = () => {
+      this._bcOnState("connecting");
+      ws.send(JSON.stringify(config));
+    };
+    ws.onmessage = (e) => {
+      let m = {};
+      try {
+        m = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (m.type === "live") {
+        this._bcReady = true;
+        this._bcOnState("live");
+      } else if (m.type === "error") {
+        this._bcOnState("error", m.error || "Broadcast failed.");
+        this.stopBroadcast();
+      }
+    };
+    ws.onerror = () => {
+      if (!this._bcStop) this._bcOnState("error", "Connection to the broadcast relay failed.");
+    };
+    ws.onclose = () => {
+      try {
+        const rest = enc.flush();
+        if (rest && rest.length && ws.readyState === WebSocket.OPEN) ws.send(rest.buffer);
+      } catch {
+        /* ignore */
+      }
+      if (!this._bcStop) this._bcOnState("stopped");
+    };
+  }
+
+  sendBroadcastMeta(title) {
+    if (this.isBroadcasting() && this._bcReady && title) {
+      try {
+        this._bcWs.send(JSON.stringify({ type: "meta", title: String(title) }));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  stopBroadcast() {
+    this._bcStop = true;
+    this._bcReady = false;
+    this._bcLevel = 0;
+    try {
+      if (this._bcProc) this._bcProc.onaudioprocess = null;
+    } catch {
+      /* ignore */
+    }
+    [this._bcProc, this._bcSilent, this._bcMix, this._bcMic].forEach((node) => {
+      try {
+        node && node.disconnect();
+      } catch {
+        /* ignore */
+      }
+    });
+    try {
+      if (this._bcMicStream) this._bcMicStream.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (this._bcWs && this._bcWs.readyState <= 1) this._bcWs.close();
+    } catch {
+      /* ignore */
+    }
+    this._bcProc = null;
+    this._bcSilent = null;
+    this._bcMix = null;
+    this._bcMic = null;
+    this._bcMicStream = null;
+    this._bcWs = null;
+    if (this._bcOnState) this._bcOnState("stopped");
+  }
+
 
   _emitStandby() {
     if (!this.onStandby) return;

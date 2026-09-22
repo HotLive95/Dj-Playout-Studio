@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File, Request
+from fastapi import FastAPI, APIRouter, Header, HTTPException, UploadFile, File, Request, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
@@ -22,6 +22,7 @@ import qrcode
 import io
 import base64
 import urllib.parse
+import urllib.request
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1014,6 +1015,103 @@ async def admin_run_show_expiry(x_admin_token: Optional[str] = Header(None)):
     check_admin(x_admin_token)
     res = await process_show_expiry()
     return {"status": "ok", **res}
+
+
+# ---------- Live broadcast relay: browser (MP3 over WSS) -> radio.co (SHOUTcast v1) ----------
+async def _update_shoutcast_meta(host: str, base_port: int, pwd: str, song: str):
+    url = f"http://{host}:{base_port}/admin.cgi?" + urllib.parse.urlencode(
+        {"pass": pwd, "mode": "updinfo", "song": song[:250]}
+    )
+
+    def _do():
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "HotLive95"})
+            urllib.request.urlopen(req, timeout=6).read()
+        except Exception:
+            pass
+
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, _do)
+    except Exception:
+        pass
+
+
+@api_router.websocket("/broadcast/ws")
+async def broadcast_ws(ws: WebSocket):
+    await ws.accept()
+    writer = None
+    host = None
+    base_port = None
+    pwd = None
+    try:
+        cfg = json.loads(await asyncio.wait_for(ws.receive_text(), 30))
+        host = str(cfg["host"]).strip()
+        port = int(cfg["port"])
+        pwd = str(cfg["password"])
+        name = str(cfg.get("name") or "Live")
+        genre = str(cfg.get("genre") or "Various")
+        br = str(cfg.get("bitrate") or 128)
+        base_port = port - 1
+        try:
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
+        except Exception:
+            await ws.send_json({"type": "error", "error": f"Couldn't reach {host}:{port}. Check the host and source port."})
+            await ws.close()
+            return
+        writer.write(pwd.encode("utf-8", "ignore") + b"\r\n")
+        await writer.drain()
+        try:
+            resp = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 12)
+        except Exception:
+            resp = b""
+        if not resp.startswith(b"OK2"):
+            await ws.send_json({"type": "error", "error": "radio.co refused the source connection. Check the broadcast password and that you're within a live slot / Live Anytime is on."})
+            await ws.close()
+            return
+        headers = (
+            f"icy-name:{name}\r\n"
+            f"icy-genre:{genre}\r\n"
+            "icy-pub:1\r\n"
+            f"icy-br:{br}\r\n"
+            "content-type:audio/mpeg\r\n\r\n"
+        ).encode("utf-8", "ignore")
+        writer.write(headers)
+        await writer.drain()
+        await ws.send_json({"type": "live"})
+        while True:
+            msg = await ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+            data = msg.get("bytes")
+            if data:
+                writer.write(data)
+                await writer.drain()
+                continue
+            txt = msg.get("text")
+            if txt:
+                try:
+                    m = json.loads(txt)
+                    if m.get("type") == "meta" and m.get("title") and base_port:
+                        asyncio.create_task(_update_shoutcast_meta(host, base_port, pwd, str(m["title"])))
+                except Exception:
+                    pass
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await ws.send_json({"type": "error", "error": str(e)[:200]})
+        except Exception:
+            pass
+    finally:
+        if writer:
+            try:
+                writer.close()
+            except Exception:
+                pass
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
 
 app.include_router(api_router)

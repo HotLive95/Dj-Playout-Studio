@@ -1,8 +1,8 @@
 import React from "react";
-import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud, Layers } from "lucide-react";
+import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud, Layers, Podcast } from "lucide-react";
 import InstallButton from "./InstallButton";
 
-export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems }) {
+export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems, onGoLive, broadcasting }) {
   const fmtRec = (s) => {
     const t = Math.floor(s || 0);
     return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
@@ -58,6 +58,19 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
 
       <div className="flex items-center gap-2 md:gap-4">
         <InstallButton variant="header" />
+        <button
+          data-testid="go-live-button"
+          onClick={onGoLive}
+          className={`h-9 px-3 flex items-center gap-1.5 rounded-md text-xs font-700 transition ${
+            broadcasting
+              ? "bg-[var(--hl-onair)] text-white hl-onair-pulse"
+              : "border border-[var(--hl-onair)] text-[var(--hl-onair)] hover:bg-[rgba(255,23,68,0.12)]"
+          }`}
+          title="Broadcast this studio live to radio.co"
+        >
+          <Podcast size={15} />
+          <span className="hidden sm:inline">{broadcasting ? "ON AIR" : "Go Live"}</span>
+        </button>
         <button
           data-testid="record-session-button"
           onClick={onToggleRecord}

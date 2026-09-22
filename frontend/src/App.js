@@ -21,6 +21,7 @@ import { LicenseStatus } from "@/components/LicenseStatus";
 import TakesVault from "@/components/TakesVault";
 import CloudHandoffModal from "@/components/CloudHandoffModal";
 import StemIsolator from "@/components/StemIsolator";
+import GoLiveModal from "@/components/GoLiveModal";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
@@ -274,6 +275,9 @@ function App() {
   const [cloudOpen, setCloudOpen] = useState(false);
   const [stemsOpen, setStemsOpen] = useState(false);
   const [jinglePage, setJinglePage] = useState(0);
+  const [goLiveOpen, setGoLiveOpen] = useState(false);
+  const [bcState, setBcState] = useState("idle");
+  const [bcError, setBcError] = useState("");
   const [initialCloudCode, setInitialCloudCode] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [backupDismissed, setBackupDismissed] = useState(false);
@@ -1735,6 +1739,41 @@ function App() {
   const clearStandby = () => engineRef.current?.clearStandby();
   const syncStandby = () => engineRef.current?.syncStandby();
   const nudgeStandby = (dir) => engineRef.current?.nudgeStandby(dir);
+
+  // ---- Live broadcast to radio.co ----
+  const startBroadcast = async (config, mic) => {
+    const base = process.env.REACT_APP_BACKEND_URL || "";
+    const wsUrl = base.replace(/^http/, "ws") + "/api/broadcast/ws";
+    setBcError("");
+    setBcState("connecting");
+    try {
+      await engineRef.current.startBroadcast({
+        wsUrl,
+        config,
+        mic,
+        onState: (s, msg) => {
+          setBcState(s === "stopped" ? "idle" : s);
+          if (s === "error") setBcError(msg || "Broadcast error.");
+        },
+      });
+      const t = currentTrackId ? tracks[currentTrackId] : null;
+      if (t) engineRef.current.sendBroadcastMeta(`${t.artist ? t.artist + " - " : ""}${t.title || t.name}`);
+    } catch (e) {
+      setBcState("error");
+      setBcError(e.message || "Couldn't start the broadcast.");
+    }
+  };
+  const stopBroadcast = () => {
+    engineRef.current?.stopBroadcast();
+    setBcState("idle");
+  };
+  useEffect(() => {
+    if (bcState === "live" && currentTrackId) {
+      const t = tracks[currentTrackId];
+      if (t) engineRef.current?.sendBroadcastMeta(`${t.artist ? t.artist + " - " : ""}${t.title || t.name}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrackId, bcState]);
   const setFaderCurve = (c) => setSettings((s) => ({ ...s, faderCurve: c }));
   const toggleSyncLock = () => setSettings((s) => ({ ...s, syncLock: !s.syncLock }));
   const getBeat = useCallback(() => engineRef.current?.beatInfo(), []);
@@ -2190,7 +2229,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} onGoLive={() => setGoLiveOpen(true)} broadcasting={bcState === "live"} />
 
       {banner && (
         <div
@@ -2551,6 +2590,18 @@ function App() {
           onAssignStemToPad={assignStemToPad}
           onSendMixToDeck={sendMixToDeck}
           onClose={() => setStemsOpen(false)}
+        />
+      )}
+
+      {goLiveOpen && (
+        <GoLiveModal
+          state={bcState}
+          error={bcError}
+          nowPlaying={currentTrack ? `${currentTrack.artist ? currentTrack.artist + " - " : ""}${currentTrack.title || currentTrack.name}` : ""}
+          getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
+          onStart={startBroadcast}
+          onStop={stopBroadcast}
+          onClose={() => setGoLiveOpen(false)}
         />
       )}
 
