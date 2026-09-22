@@ -273,6 +273,7 @@ function App() {
   const [vaultOpen, setVaultOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [stemsOpen, setStemsOpen] = useState(false);
+  const [jinglePage, setJinglePage] = useState(0);
   const [initialCloudCode, setInitialCloudCode] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [backupDismissed, setBackupDismissed] = useState(false);
@@ -290,6 +291,8 @@ function App() {
   const peaksCacheRef = useRef({});
   const rollsRef = useRef({});
   const playJingleRef = useRef(() => {});
+  const jinglePageRef = useRef(0);
+  jinglePageRef.current = jinglePage;
   const cueInRef = useRef(() => {});
   const cueOutRef = useRef(() => {});
   const dirtyReadyRef = useRef(false);
@@ -884,7 +887,7 @@ function App() {
         default:
           if (/^Digit[1-6]$/.test(e.code)) {
             e.preventDefault();
-            playJingleRef.current(parseInt(e.code.slice(5), 10) - 1);
+            playJingleRef.current(jinglePageRef.current * 6 + parseInt(e.code.slice(5), 10) - 1);
           }
           break;
       }
@@ -1614,10 +1617,10 @@ function App() {
         );
 
       if (replaceAll) {
-        const freshJingles = new Array(6).fill(undefined);
+        const freshJingles = new Array(12).fill(undefined);
         importedJingles.forEach(({ index, j }) => {
-          const slot = index >= 0 && index < 6 && !freshJingles[index] ? index : freshJingles.findIndex((x) => !x);
-          if (slot >= 0 && slot < 6) freshJingles[slot] = j;
+          const slot = index >= 0 && index < 12 && !freshJingles[index] ? index : freshJingles.findIndex((x) => !x);
+          if (slot >= 0 && slot < 12) freshJingles[slot] = j;
         });
         setTracks(newTracks);
         setPlaylists(newPlaylists);
@@ -1657,10 +1660,10 @@ function App() {
       if (importedJingles.length) {
         setJingles((prev) => {
           const n = [...prev];
-          while (n.length < 6) n.push(undefined);
+          while (n.length < 12) n.push(undefined);
           importedJingles.forEach(({ index, j }) => {
-            let slot = index >= 0 && index < 6 && !n[index] ? index : n.findIndex((x, i) => i < 6 && !x);
-            if (slot >= 0 && slot < 6) n[slot] = j;
+            let slot = index >= 0 && index < 12 && !n[index] ? index : n.findIndex((x, i) => i < 12 && !x);
+            if (slot >= 0 && slot < 12) n[slot] = j;
           });
           return n;
         });
@@ -1898,7 +1901,7 @@ function App() {
     }
     setJingles((prev) => {
       const n = [...prev];
-      n[Math.max(0, Math.min(index, 5))] = j;
+      n[Math.max(0, Math.min(index, 11))] = j;
       return n;
     });
     setBanner(`Loaded stem "${name}" to Pad ${index + 1}`);
@@ -2279,6 +2282,8 @@ function App() {
       <JingleBar
         jingles={jingles}
         isElectron={platform.isElectron}
+        padPage={jinglePage}
+        onSetPadPage={setJinglePage}
         onAssignFile={assignJingleBrowser}
         onAssignDialog={assignJingleDialog}
         onAssignTrack={assignJingleFromTrack}

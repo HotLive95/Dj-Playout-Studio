@@ -13,8 +13,10 @@ import {
   Download,
   Zap,
   Music2,
+  Circle,
+  Square,
 } from "lucide-react";
-import { decodeToBuffer } from "../lib/audioProcessing";
+import { decodeToBuffer, audioCtx, bufferToWav } from "../lib/audioProcessing";
 import { STEMS, buildStemGraph, renderStem } from "../lib/stemIsolator";
 import { formatTime } from "../lib/format";
 import { downloadBlob } from "../lib/playlistExport";
@@ -50,6 +52,13 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
   const [busyStem, setBusyStem] = useState("");
   const [padTarget, setPadTarget] = useState({});
   const [flash, setFlash] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [recSec, setRecSec] = useState(0);
+  const [recBusy, setRecBusy] = useState(false);
+  const recDestRef = useRef(null);
+  const recorderRef = useRef(null);
+  const recChunksRef = useRef([]);
+  const recTimerRef = useRef(null);
 
   const ctxRef = useRef(null);
   const srcNodeRef = useRef(null);
@@ -80,6 +89,14 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
 
   const teardown = () => {
     cancelAnimationFrame(rafRef.current);
+    if (recTimerRef.current) clearInterval(recTimerRef.current);
+    try {
+      recorderRef.current && recorderRef.current.state !== "inactive" && recorderRef.current.stop();
+    } catch {
+      /* ignore */
+    }
+    recorderRef.current = null;
+    recDestRef.current = null;
     try {
       srcNodeRef.current && srcNodeRef.current.stop();
     } catch {
@@ -142,6 +159,7 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
     src.buffer = buf;
     const graph = buildStemGraph(ctx, src);
     graph.master.connect(ctx.destination);
+    if (recDestRef.current) graph.master.connect(recDestRef.current);
     graphRef.current = graph;
     srcNodeRef.current = src;
     STEMS.forEach(({ id }) => {
@@ -251,6 +269,59 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
     setBusyStem("");
   };
 
+  // Record the LIVE isolated mix (with your fader/mute/solo moves) to a WAV.
+  const startRecord = () => {
+    if (!buffer) return;
+    if (!playing) play();
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const dest = ctx.createMediaStreamDestination();
+    recDestRef.current = dest;
+    if (graphRef.current) graphRef.current.master.connect(dest);
+    const mime =
+      window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+    recChunksRef.current = [];
+    const rec = new MediaRecorder(dest.stream, { mimeType: mime });
+    rec.ondataavailable = (e) => e.data && e.data.size && recChunksRef.current.push(e.data);
+    rec.onstop = async () => {
+      setRecBusy(true);
+      try {
+        const webm = new Blob(recChunksRef.current, { type: rec.mimeType || "audio/webm" });
+        const buf = await audioCtx().decodeAudioData((await webm.arrayBuffer()).slice(0));
+        const wav = bufferToWav(buf);
+        const safe = (srcName || "stem-mix").replace(/[^a-z0-9\-_ ]/gi, "").trim() || "stem-mix";
+        downloadBlob(wav, `${safe} - Stem Mix.wav`);
+        setFlash("Stem mix saved");
+        setTimeout(() => setFlash(""), 2500);
+      } catch {
+        setFlash("Couldn't save the mix recording.");
+        setTimeout(() => setFlash(""), 3000);
+      }
+      setRecBusy(false);
+    };
+    rec.start();
+    recorderRef.current = rec;
+    setRecording(true);
+    setRecSec(0);
+    const t0 = Date.now();
+    recTimerRef.current = setInterval(() => setRecSec((Date.now() - t0) / 1000), 250);
+  };
+  const stopRecord = () => {
+    if (recTimerRef.current) clearInterval(recTimerRef.current);
+    recTimerRef.current = null;
+    try {
+      recorderRef.current && recorderRef.current.state !== "inactive" && recorderRef.current.stop();
+    } catch {
+      /* ignore */
+    }
+    recorderRef.current = null;
+    recDestRef.current = null;
+    setRecording(false);
+  };
+  const toggleRecord = () => (recording ? stopRecord() : startRecord());
+
   const dur = buffer?.duration || 0;
 
   return (
@@ -284,6 +355,7 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
               <select
                 data-testid="stem-source-select"
                 value={srcTrackId}
+                disabled={recording}
                 onChange={(e) => {
                   const t = tracks[e.target.value];
                   setSrcTrackId(e.target.value);
@@ -379,6 +451,26 @@ export default function StemIsolator({ playlists = [], tracks = {}, jingles = []
                     title="Loop"
                   >
                     <Repeat size={16} />
+                  </button>
+                  <button
+                    data-testid="stem-record-mix"
+                    onClick={toggleRecord}
+                    disabled={recBusy}
+                    className={`h-9 px-3 flex items-center gap-1.5 rounded-lg border text-xs font-700 transition disabled:opacity-50 ${
+                      recording
+                        ? "border-[var(--hl-onair)] text-[var(--hl-onair)] bg-[rgba(255,23,68,0.12)]"
+                        : "border-[var(--hl-onair)] text-[var(--hl-onair)] hover:bg-[rgba(255,23,68,0.1)]"
+                    }`}
+                    title="Record the live isolated mix (with your fader moves) to a WAV file"
+                  >
+                    {recBusy ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : recording ? (
+                      <Square size={12} className="fill-current" />
+                    ) : (
+                      <Circle size={12} className="fill-current" />
+                    )}
+                    {recBusy ? "Saving…" : recording ? formatTime(recSec) : "REC MIX"}
                   </button>
                   <span className="ml-auto text-xs tabular-nums text-[var(--hl-muted)]" data-testid="stem-time">
                     {formatTime(pos)} / {formatTime(dur)}

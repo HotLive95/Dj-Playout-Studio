@@ -3,6 +3,7 @@ import { Zap, Plus, X, Square, Volume2, Radio, ArrowLeftRight, ChevronLeft, Chev
 import Waveform from "./Waveform";
 
 const PAD_COUNT = 6;
+const PAGE_COUNT = 2;
 
 // High-end DJ-style crossfader: drag the cap from ON AIR (left) to STANDBY (right).
 function Crossfader({ pos, armed, onChange }) {
@@ -140,7 +141,7 @@ function BeatMeter({ getBeat, armed }) {
   );
 }
 
-export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, rollDiv, onSetRollDiv, rollingPads, onToggleRoll, autoCueNext, onToggleAutoCueNext, onOneTapMix, airPeaks, airProgress, standbyPeaks, standbyHarmonic, onStop }) {
+export default function JingleBar({ jingles, isElectron, padPage = 0, onSetPadPage, onAssignFile, onAssignDialog, onAssignTrack, onPlay, onClear, onSetVolume, duckDepth, onSetDuckDepth, duckMs, onSetDuckMs, standbyTrack, faderPos, onFader, onTake, onClearStandby, faderCurve, onSetFaderCurve, onSync, onNudge, onairBpm, standbyBpm, syncRate, syncLock, onToggleSyncLock, getBeat, rollDiv, onSetRollDiv, rollingPads, onToggleRoll, autoCueNext, onToggleAutoCueNext, onOneTapMix, airPeaks, airProgress, standbyPeaks, standbyHarmonic, onStop }) {
   const inputRef = useRef(null);
   const targetIndex = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -187,6 +188,31 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
         <Zap size={16} className="text-[var(--hl-amber)]" />
         <span className="font-display text-xs tracking-[0.2em] text-[var(--hl-muted)]">JINGLES</span>
         <div
+          className="flex items-center rounded-md border border-[var(--hl-line)] overflow-hidden"
+          data-testid="pad-page-switcher"
+          title="Pad bank page — 12 pads across 2 pages"
+        >
+          <button
+            data-testid="pad-page-prev"
+            onClick={() => onSetPadPage && onSetPadPage((padPage + PAGE_COUNT - 1) % PAGE_COUNT)}
+            className="h-6 w-6 grid place-items-center text-[var(--hl-muted)] hover:text-[var(--hl-amber)]"
+            title="Previous pad page"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="px-1.5 text-[10px] font-700 tabular-nums text-[var(--hl-amber)]" data-testid="pad-page-label">
+            {padPage + 1}/{PAGE_COUNT}
+          </span>
+          <button
+            data-testid="pad-page-next"
+            onClick={() => onSetPadPage && onSetPadPage((padPage + 1) % PAGE_COUNT)}
+            className="h-6 w-6 grid place-items-center text-[var(--hl-muted)] hover:text-[var(--hl-amber)]"
+            title="Next pad page"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+        <div
           className="hidden md:flex items-center rounded-md border border-[var(--hl-line)] overflow-hidden"
           title="Loop-roll division (beat-synced stutter length)"
           data-testid="roll-div-selector"
@@ -214,7 +240,8 @@ export default function JingleBar({ jingles, isElectron, onAssignFile, onAssignD
       </div>
 
       <div className="grid grid-cols-3 gap-1.5 w-full md:flex md:items-center md:gap-2 md:flex-1 md:min-w-0 md:w-auto md:overflow-x-auto">
-        {Array.from({ length: PAD_COUNT }).map((_, i) => {
+        {Array.from({ length: PAD_COUNT }).map((_, idx) => {
+          const i = padPage * PAD_COUNT + idx;
           const j = jingles[i];
           return (
             <div

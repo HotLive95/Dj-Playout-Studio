@@ -5,9 +5,17 @@ import { audioCtx, bufferToWav, computePeaks } from "../lib/audioProcessing";
 import { api } from "../lib/api";
 
 const PRESET_KEY = "hotlive95_bed_presets";
+const FX_PRESET_KEY = "hotlive95_fx_presets";
 const loadPresets = () => {
   try {
     return JSON.parse(localStorage.getItem(PRESET_KEY) || "[]");
+  } catch {
+    return [];
+  }
+};
+const loadFxPresets = () => {
+  try {
+    return JSON.parse(localStorage.getItem(FX_PRESET_KEY) || "[]");
   } catch {
     return [];
   }
@@ -66,6 +74,8 @@ export default function VoiceRecorder({
   const [compMakeupDb, setCompMakeupDb] = useState(3);
   const [gateOn, setGateOn] = useState(false);
   const [gateThreshDb, setGateThreshDb] = useState(-45);
+  const [fxPresets, setFxPresets] = useState(loadFxPresets);
+  const [fxPresetName, setFxPresetName] = useState("");
   const padGainRef = useRef(null);
   const compRef = useRef(null);
   const makeupGainRef = useRef(null);
@@ -217,6 +227,33 @@ export default function VoiceRecorder({
     comp.connect(makeup);
     makeup.connect(gate);
     return gate;
+  };
+
+  // Save / load the pad+compressor+gate settings as one-tap voice FX presets.
+  const saveFxPreset = () => {
+    const nm = fxPresetName.trim();
+    if (!nm) return;
+    const p = { name: nm, padDb, compOn, compThreshDb, compRatio, compMakeupDb, gateOn, gateThreshDb };
+    const next = [...fxPresets.filter((x) => x.name !== nm), p];
+    setFxPresets(next);
+    localStorage.setItem(FX_PRESET_KEY, JSON.stringify(next));
+    setFxPresetName("");
+  };
+  const applyFxPreset = (nm) => {
+    const p = fxPresets.find((x) => x.name === nm);
+    if (!p) return;
+    setPadDb(p.padDb ?? 0);
+    setCompOn(!!p.compOn);
+    setCompThreshDb(p.compThreshDb ?? -24);
+    setCompRatio(p.compRatio ?? 3);
+    setCompMakeupDb(p.compMakeupDb ?? 3);
+    setGateOn(!!p.gateOn);
+    setGateThreshDb(p.gateThreshDb ?? -45);
+  };
+  const deleteFxPreset = (nm) => {
+    const next = fxPresets.filter((x) => x.name !== nm);
+    setFxPresets(next);
+    localStorage.setItem(FX_PRESET_KEY, JSON.stringify(next));
   };
 
   // Redraw the trim/punch waveform.
@@ -1210,6 +1247,51 @@ export default function VoiceRecorder({
                   <span className="ml-auto text-[10px] normal-case tracking-normal text-[var(--hl-muted)]">
                     live on monitor &amp; recording
                   </span>
+                </div>
+
+                {/* One-tap FX presets */}
+                <div className="space-y-1.5" data-testid="voice-fx-presets">
+                  {fxPresets.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5" data-testid="voice-fx-preset-chips">
+                      {fxPresets.map((p) => (
+                        <span
+                          key={p.name}
+                          className="inline-flex items-center gap-1 text-[11px] bg-[rgba(58,160,255,0.1)] border border-[var(--hl-cue)] rounded-full pl-2 pr-1 py-0.5 text-[var(--hl-cue)]"
+                        >
+                          <button
+                            data-testid={`voice-fx-preset-${p.name.replace(/\s/g, "-")}`}
+                            onClick={() => applyFxPreset(p.name)}
+                            title={`Load FX preset "${p.name}"`}
+                          >
+                            {p.name}
+                          </button>
+                          <button
+                            onClick={() => deleteFxPreset(p.name)}
+                            className="h-4 w-4 grid place-items-center rounded-full hover:text-[var(--hl-onair)]"
+                            title="Delete FX preset"
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      data-testid="voice-fx-preset-name"
+                      value={fxPresetName}
+                      onChange={(e) => setFxPresetName(e.target.value)}
+                      placeholder="Save these FX as…"
+                      className="flex-1 bg-black/50 border border-[var(--hl-line)] rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-[var(--hl-cue)]"
+                    />
+                    <button
+                      data-testid="voice-fx-preset-save"
+                      onClick={saveFxPreset}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--hl-line)] text-xs hover:border-[var(--hl-cue)] hover:text-[var(--hl-cue)]"
+                    >
+                      <Star size={12} /> Save
+                    </button>
+                  </div>
                 </div>
 
                 {/* Input pad (gain trim) */}
