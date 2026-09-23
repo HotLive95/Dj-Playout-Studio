@@ -1085,7 +1085,7 @@ async def broadcast_test(request: Request):
         try:
             reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
         except Exception:
-            return {"ok": False, "message": f"Couldn't reach {host}:{port}. Check the host and source port."}
+            return {"ok": False, "reachable": False, "status": "unreachable", "message": f"Couldn't reach {host}:{port}. Check the host and source port."}
         writer.write(pwd.encode("utf-8", "ignore") + b"\r\n")
         await writer.drain()
         try:
@@ -1100,14 +1100,20 @@ async def broadcast_test(request: Request):
             or b" 200 " in resp
         )
         if ok:
-            return {"ok": True, "message": "radio.co accepted your login — you're clear to go live."}
+            return {"ok": True, "reachable": True, "status": "ready", "message": "radio.co accepted your login — you're clear to go live."}
         snippet = resp.decode("latin-1", "ignore").strip()[:120]
-        detail = (
-            f" (server replied: {snippet})"
-            if snippet
-            else " (no reply — usually a wrong source port, or you're not in a live slot yet)"
+        # We reached radio.co over TCP but it didn't accept a source. This is
+        # normal outside a booked slot / with Live Anytime off, and radio.co
+        # returns the same "Invalid password" reply in that case as for a truly
+        # wrong password — so we report reachability and guide the DJ.
+        msg = (
+            f"Reached radio.co at {host}:{port}, so your host and source port are correct. "
+            "It isn't accepting a live source right now — this is normal before your booked slot, or with Live Anytime off. "
+            "It should connect at your scheduled time. If it still refuses during your slot, re-check the broadcast (Live/DJ) password."
         )
-        return {"ok": False, "message": "radio.co refused the login. Check the password, source port, and that Live Anytime is on / you're in a live slot." + detail}
+        if snippet:
+            msg += f" (server replied: {snippet})"
+        return {"ok": False, "reachable": True, "status": "not_in_slot", "message": msg}
     finally:
         if writer:
             try:

@@ -14,7 +14,7 @@ const loadCfg = () => {
 // Broadcast the studio's live program mix to a radio.co station (SHOUTcast v1),
 // relayed through the app backend. Online-only; the DJ's own credentials stay
 // on this device and are sent over the encrypted (wss) connection to start.
-export default function GoLiveModal({ state, error, reconnect, loginRetry, onCancelRetry, onTest, onStartMeter, onStopMeter, getMeterLevel, metaFormat = "artist-title", onMetaFormat, scheduledAt, scheduledEndAt, scheduledPlaylistId, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onSchedule, onCancelSchedule, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
+export default function GoLiveModal({ state, error, reconnect, loginRetry, onCancelRetry, onTest, onStartMeter, onStopMeter, getMeterLevel, metaFormat = "artist-title", onMetaFormat, schedules = [], onAddSchedule, onRemoveSchedule, playlists = [], broadcasts = [], nowPlaying, getLevel, getHealth, onStart, onStop, onDownloadBroadcast, onDeleteBroadcast, onGetBroadcastUrl, onArchiveToPlaylist, onClose }) {
   const saved = loadCfg();
   const [host, setHost] = useState(saved.host || "denim.radio.co");
   const [port, setPort] = useState(saved.port || 5189);
@@ -26,7 +26,8 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const [alertSound, setAlertSound] = useState(saved.alertSound !== false);
   const [scheduleInput, setScheduleInput] = useState("");
   const [scheduleEndInput, setScheduleEndInput] = useState("");
-  const [schedulePlaylist, setSchedulePlaylist] = useState(scheduledPlaylistId || "");
+  const [schedulePlaylist, setSchedulePlaylist] = useState("");
+  const [scheduleLabel, setScheduleLabel] = useState("");
   const [listeners, setListeners] = useState(null);
   const [listenerHist, setListenerHist] = useState([]);
   const [level, setLevel] = useState(0);
@@ -284,31 +285,36 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, cfg.includeMic, { autoWait });
   };
 
-  // Arm a scheduled go-live, but first run a quick login test so a bad
-  // password / port is caught now rather than at air time.
-  const armSchedule = async () => {
+  // Add a show to the persistent lineup. Runs a quick reachability test so a
+  // wrong host/port is caught now; a "not in slot" result is expected before
+  // the show and still lets the DJ schedule ahead of time.
+  const addToLineup = async () => {
     if (!scheduleInput) return;
     const ts = new Date(scheduleInput).getTime();
-    if (!ts || ts <= Date.now()) return;
+    if (!ts || ts <= Date.now()) {
+      setTestResult({ ok: false, message: "Pick a start time in the future." });
+      return;
+    }
     const endTs = scheduleEndInput ? new Date(scheduleEndInput).getTime() : null;
     const cfg = cfgObj();
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     setArmTesting(true);
     setTestResult(null);
+    let res = null;
     try {
-      const res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password });
-      setTestResult(res || { ok: false, message: "No response from the test service." });
-      if (!res || !res.ok) {
-        setArmTesting(false);
-        return; // caught a bad login early — don't arm yet
-      }
+      res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password });
     } catch {
-      setTestResult({ ok: false, message: "Couldn't reach the test service. Check your internet connection." });
-      setArmTesting(false);
-      return;
+      res = { ok: false, reachable: false, message: "Couldn't reach the test service. Check your internet connection." };
     }
     setArmTesting(false);
-    onSchedule({ at: ts, endAt: endTs && endTs > ts ? endTs : null, playlistId: schedulePlaylist || null });
+    setTestResult(res);
+    // Block only when radio.co couldn't be reached at all (bad host/port).
+    if (res && res.reachable === false) return;
+    onAddSchedule({ at: ts, endAt: endTs && endTs > ts ? endTs : null, playlistId: schedulePlaylist || null, label: scheduleLabel, config: cfg });
+    setScheduleInput("");
+    setScheduleEndInput("");
+    setScheduleLabel("");
+    setSchedulePlaylist("");
   };
 
   const previewBroadcast = async (b) => {
@@ -327,7 +333,8 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
 
   const canGo = host.trim() && Number(port) > 0 && password.trim();
   const pct = Math.min(100, Math.round(level * 140));
-  const schedRemain = scheduledAt ? Math.max(0, Math.round((scheduledAt - Date.now()) / 60000)) : 0;
+  const upcoming = [...schedules].filter((s) => !s.done).sort((a, b) => a.at - b.at);
+  const fmtWhen = (ts) => new Date(ts).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const spark = (() => {
     if (listenerHist.length < 2) return null;
     const ns = listenerHist.map((p) => p.n);
@@ -623,75 +630,99 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                     className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-onair)]"
                   />
                 </label>
-                <div className="rounded-lg border border-[var(--hl-line)] p-3 space-y-2">
+                <div className="rounded-lg border border-[var(--hl-line)] p-3 space-y-2" data-testid="go-live-lineup">
                   <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
-                    <CalendarClock size={14} className="text-[var(--hl-amber)]" /> Scheduled go-live (optional)
+                    <CalendarClock size={14} className="text-[var(--hl-amber)]" /> Show lineup — schedule ahead
                   </div>
-                  {scheduledAt ? (
-                    <div className="flex items-center justify-between gap-2" data-testid="go-live-scheduled">
-                      <span className="text-sm text-[var(--hl-text)]">
-                        Armed for {new Date(scheduledAt).toLocaleString()} · in {schedRemain} min
-                        {scheduledPlaylistId && playlists.find((p) => p.id === scheduledPlaylistId)
-                          ? ` · plays "${playlists.find((p) => p.id === scheduledPlaylistId).name}"`
-                          : ""}
-                        {scheduledEndAt ? ` · ends ${new Date(scheduledEndAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
-                      </span>
-                      <button
-                        data-testid="go-live-cancel-schedule"
-                        onClick={onCancelSchedule}
-                        className="text-xs px-2 py-1 rounded border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-onair)] hover:border-[var(--hl-onair)]"
-                      >
-                        Cancel
-                      </button>
+
+                  {upcoming.length > 0 && (
+                    <div className="space-y-1.5" data-testid="go-live-lineup-list">
+                      {upcoming.map((s) => {
+                        const pl = playlists.find((p) => p.id === s.playlistId);
+                        return (
+                          <div
+                            key={s.id}
+                            data-testid={`go-live-show-${s.id}`}
+                            className="flex items-start justify-between gap-2 rounded-md bg-black/30 px-2.5 py-1.5"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm text-[var(--hl-text)] truncate">
+                                {s.label || (s.config && s.config.name) || "Live show"}
+                              </div>
+                              <div className="text-[10px] text-[var(--hl-muted)]">
+                                {fmtWhen(s.at)}
+                                {s.endAt ? ` – ${new Date(s.endAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                                {pl ? ` · ${pl.name}` : ""}
+                              </div>
+                            </div>
+                            <button
+                              data-testid={`go-live-show-remove-${s.id}`}
+                              onClick={() => onRemoveSchedule(s.id)}
+                              className="shrink-0 h-6 w-6 grid place-items-center rounded text-[var(--hl-muted)] hover:text-[var(--hl-onair)]"
+                              title="Remove this show"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ) : (
-                    <>
-                      <select
-                        data-testid="go-live-schedule-playlist"
-                        value={schedulePlaylist}
-                        onChange={(e) => setSchedulePlaylist(e.target.value)}
-                        className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
-                      >
-                        <option value="">Auto-play a playlist… (optional)</option>
-                        {playlists.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="flex items-center gap-2">
-                        <input
-                          data-testid="go-live-schedule-input"
-                          type="datetime-local"
-                          value={scheduleInput}
-                          onChange={(e) => setScheduleInput(e.target.value)}
-                          className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
-                        />
-                        <button
-                          data-testid="go-live-arm-schedule"
-                          onClick={armSchedule}
-                          disabled={!canGo || !scheduleInput || armTesting}
-                          className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-xs font-700 hover:bg-[rgba(255,171,0,0.12)] disabled:opacity-40 flex items-center gap-1.5"
-                          title="Checks your login first, then auto-starts at this time"
-                        >
-                          {armTesting ? <Loader2 size={13} className="animate-spin" /> : null}
-                          {armTesting ? "Checking…" : "Arm"}
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] w-16 shrink-0">End (opt.)</span>
-                        <input
-                          data-testid="go-live-schedule-end"
-                          type="datetime-local"
-                          value={scheduleEndInput}
-                          onChange={(e) => setScheduleEndInput(e.target.value)}
-                          className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
-                          title="Auto-stop the broadcast at this time"
-                        />
-                      </div>
-                    </>
                   )}
-                  <p className="text-[10px] text-[var(--hl-muted)]">Keep the app open on this device; it goes on air hands-free at the set time.</p>
+
+                  <input
+                    data-testid="go-live-schedule-label"
+                    value={scheduleLabel}
+                    onChange={(e) => setScheduleLabel(e.target.value)}
+                    placeholder="Show name (e.g. DJ Nova · Drive Time)"
+                    className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
+                  />
+                  <select
+                    data-testid="go-live-schedule-playlist"
+                    value={schedulePlaylist}
+                    onChange={(e) => setSchedulePlaylist(e.target.value)}
+                    className="w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-2 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
+                  >
+                    <option value="">Auto-play a playlist… (optional)</option>
+                    {playlists.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] w-12 shrink-0">Start</span>
+                    <input
+                      data-testid="go-live-schedule-input"
+                      type="datetime-local"
+                      value={scheduleInput}
+                      onChange={(e) => setScheduleInput(e.target.value)}
+                      className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] w-12 shrink-0">End</span>
+                    <input
+                      data-testid="go-live-schedule-end"
+                      type="datetime-local"
+                      value={scheduleEndInput}
+                      onChange={(e) => setScheduleEndInput(e.target.value)}
+                      className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-amber)]"
+                      title="Auto-stop the broadcast at this time (optional)"
+                    />
+                  </div>
+                  <button
+                    data-testid="go-live-add-show"
+                    onClick={addToLineup}
+                    disabled={!canGo || !scheduleInput || armTesting}
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--hl-amber)] text-[var(--hl-amber)] text-xs font-700 hover:bg-[rgba(255,171,0,0.12)] disabled:opacity-40 flex items-center justify-center gap-1.5"
+                    title="Tests reachability, then saves this show to the lineup"
+                  >
+                    {armTesting ? <Loader2 size={13} className="animate-spin" /> : <CalendarClock size={13} />}
+                    {armTesting ? "Checking connection…" : "Add show to lineup"}
+                  </button>
+                  <p className="text-[10px] text-[var(--hl-muted)] leading-relaxed">
+                    Shows are saved on this device and survive restarts. Keep the studio open on the broadcasting computer — each show goes on air hands-free at its start time (radio.co accepts the connection once the slot opens).
+                  </p>
                 </div>
               </div>
 
@@ -721,10 +752,18 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                   className={`flex items-start gap-2 text-sm rounded-lg border px-3 py-2 ${
                     testResult.ok
                       ? "border-[#2ee5c4] text-[#2ee5c4] bg-[rgba(46,229,196,0.1)]"
+                      : testResult.reachable
+                      ? "border-[var(--hl-amber)] text-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)]"
                       : "border-[var(--hl-onair)] text-[var(--hl-onair)] bg-[rgba(255,23,68,0.1)]"
                   }`}
                 >
-                  {testResult.ok ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" /> : <AlertTriangle size={15} className="mt-0.5 shrink-0" />}
+                  {testResult.ok ? (
+                    <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
+                  ) : testResult.reachable ? (
+                    <Info size={15} className="mt-0.5 shrink-0" />
+                  ) : (
+                    <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  )}
                   <span>{testResult.message}</span>
                 </div>
               )}
@@ -736,7 +775,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                 </div>
               )}
 
-              {((state === "error" && error) || (testResult && !testResult.ok)) && (
+              {((state === "error" && error) || (testResult && !testResult.ok && !testResult.reachable)) && (
                 <div className="rounded-lg border border-[var(--hl-line)] bg-black/30 p-3 space-y-1.5" data-testid="go-live-checklist">
                   <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
                     <ListChecks size={14} className="text-[var(--hl-cue)]" /> Before radio.co will accept you

@@ -147,3 +147,11 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Auto-Wait Notify: GoLiveModal plays a two-tone go-live chime and flashes the on-air panel (hl-golive-flash CSS) the moment state transitions to live.
 - Test Before Schedule: Arm now runs an async pre-flight connection test; a bad login is shown immediately (red result + checklist) and the schedule is NOT armed until the test passes. Arm shows a "Checking…" spinner.
 - Verified in preview: meta-format switch, quick-launch button, and Arm-blocks-on-bad-login all confirmed.
+
+##  — Scheduling ahead + pre-slot connection test
+- Persistent multi-show lineup: schedules stored in localStorage (hotlive95_schedules) as a list; DJs can add multiple shows days in advance, each with label + playlist + start/end + a config snapshot (host/port/password/bitrate/mic/autoWait/metaFormat). Survives app restart. Remove per show.
+- Scheduler: single App interval auto-goes-live at each shows start (loads its playlist, uses its saved config, honours autoWait) while the studio stays open on the device, and auto-stops at end. Prunes shows >1 day done.
+- Smarter Test connection: backend /broadcast/test now returns {ok, reachable, status}. reachable=true + not_in_slot => amber INFO ("host/port correct; not accepting a source now — normal before your slot; will connect at your scheduled time"). unreachable => red. This lets DJs validate host/port/reachability BEFORE their slot (radio.co returns the same "Invalid password" for wrong-pw and out-of-slot, so we cannot distinguish — messaging reflects that).
+- Add-to-lineup runs the test first; blocks only when radio.co is UNREACHABLE (bad host/port), otherwise allows scheduling ahead even though radio.co refuses a source now.
+- CONSTRAINT (told to user, chose option C): browser/PWA streams from the device, so scheduled shows need the studio open on that machine. True unattended-while-closed 24/7 broadcast = server-side playout = separate future project (roadmap).
+- Verified in preview: amber reachable message, show added to lineup, persisted across reload.

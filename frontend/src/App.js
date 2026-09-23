@@ -279,9 +279,25 @@ function App() {
   const [bcState, setBcState] = useState("idle");
   const [bcError, setBcError] = useState("");
   const [bcReconnect, setBcReconnect] = useState(null);
-  const [scheduleAt, setScheduleAt] = useState(null);
-  const [scheduleEndAt, setScheduleEndAt] = useState(null);
-  const [schedulePlaylistId, setSchedulePlaylistId] = useState(null);
+  const [schedules, setSchedules] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("hotlive95_schedules") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const scheduleFiredRef = useRef(new Set());
+  useEffect(() => {
+    localStorage.setItem("hotlive95_schedules", JSON.stringify(schedules));
+  }, [schedules]);
+  const addSchedule = (s) => {
+    const entry = { id: uid(), at: s.at, endAt: s.endAt || null, playlistId: s.playlistId || null, label: (s.label || "").slice(0, 60), config: s.config || {}, done: false };
+    setSchedules((prev) => [...prev, entry].sort((a, b) => a.at - b.at));
+  };
+  const removeSchedule = (id) => {
+    scheduleFiredRef.current.delete(id);
+    setSchedules((prev) => prev.filter((x) => x.id !== id));
+  };
   const [bcLoginRetry, setBcLoginRetry] = useState(null);
   const bcRetryRef = useRef({ count: 0, timer: null, lastArgs: null, cancelled: false });
   const MAX_LOGIN_RETRY = 3;
@@ -1839,22 +1855,51 @@ function App() {
     setPlaylists((prev) => prev.map((p) => (p.id === currentPlaylistId ? { ...p, trackIds: [...p.trackIds, nid] } : p)));
     setBanner(`Added "${title}" to your playlist — ready to re-air.`);
   };
-  // Auto-stop the broadcast at the scheduled end time (unattended shows).
+  // Scheduled shows: persistently stored so DJs can set them up days ahead.
+  // While the studio stays open on this device, auto-go-live at each show's
+  // time using that show's saved config, and auto-stop at its end time.
+  // (Broadcasting while the app/computer is closed needs server-side playout.)
   useEffect(() => {
-    if (!scheduleEndAt) return;
     const iv = setInterval(() => {
-      if (Date.now() >= scheduleEndAt) {
-        const wasLive = bcState === "live" || bcState === "reconnecting" || bcState === "connecting";
-        setScheduleEndAt(null);
-        if (wasLive) {
+      const now = Date.now();
+      if (bcState === "idle") {
+        const due = schedules.find(
+          (s) => !s.done && !scheduleFiredRef.current.has(s.id) && now >= s.at && now < (s.endAt || s.at + 6 * 3600000)
+        );
+        if (due) {
+          scheduleFiredRef.current.add(due.id);
+          const cfg = due.config || {};
+          if (due.playlistId) {
+            setCurrentPlaylistId(due.playlistId);
+            setTimeout(() => engineRef.current?.playIndex(0), 800);
+          }
+          if (!goLiveOpen) setGoLiveOpen(true);
+          if (cfg.password) {
+            setBanner(`Scheduled show "${due.label || "Live"}" is going on air…`);
+            startBroadcast(
+              { host: cfg.host, port: Number(cfg.port), password: cfg.password, name: cfg.name, bitrate: Number(cfg.bitrate), genre: "Various" },
+              cfg.includeMic !== false,
+              { autoWait: !!cfg.autoWait }
+            );
+          }
+        }
+      }
+      const toEnd = schedules.filter((s) => !s.done && s.endAt && now >= s.endAt);
+      if (toEnd.length) {
+        const liveOne = toEnd.find((s) => scheduleFiredRef.current.has(s.id));
+        if (liveOne && (bcState === "live" || bcState === "connecting" || bcState === "reconnecting")) {
           stopBroadcast();
           setBanner("Scheduled show ended — broadcast stopped.");
         }
+        setSchedules((prev) => prev.map((x) => (toEnd.some((t) => t.id === x.id) ? { ...x, done: true } : x)));
+      } else {
+        const stale = schedules.filter((s) => s.done && now - (s.endAt || s.at) > 86400000);
+        if (stale.length) setSchedules((prev) => prev.filter((x) => !stale.some((s) => s.id === x.id)));
       }
     }, 4000);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleEndAt, bcState]);
+  }, [schedules, bcState, goLiveOpen]);
   // Verify the radio.co login without going on air (one-tap credential check).
   const testBroadcast = async (config) => {
     const base = process.env.REACT_APP_BACKEND_URL || "";
@@ -1976,34 +2021,6 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrackId, bcState, metaFormat]);
-  // Scheduled go-live: auto-start at the booked time using the saved config.
-  useEffect(() => {
-    if (!scheduleAt) return;
-    const iv = setInterval(() => {
-      if (Date.now() >= scheduleAt && bcState === "idle") {
-        let cfg = {};
-        try {
-          cfg = JSON.parse(localStorage.getItem("hotlive95_radioco") || "{}");
-        } catch {
-          cfg = {};
-        }
-        if (cfg.password) {
-          setScheduleAt(null);
-          if (schedulePlaylistId) {
-            setCurrentPlaylistId(schedulePlaylistId);
-            setTimeout(() => engineRef.current?.playIndex(0), 700);
-          }
-          if (!goLiveOpen) setGoLiveOpen(true);
-          startBroadcast(
-            { host: cfg.host, port: Number(cfg.port), password: cfg.password, name: cfg.name, bitrate: Number(cfg.bitrate), genre: "Various" },
-            cfg.includeMic !== false
-          );
-        }
-      }
-    }, 4000);
-    return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleAt, bcState]);
   const setFaderCurve = (c) => setSettings((s) => ({ ...s, faderCurve: c }));
   const toggleSyncLock = () => setSettings((s) => ({ ...s, syncLock: !s.syncLock }));
   const getBeat = useCallback(() => engineRef.current?.beatInfo(), []);
@@ -2836,9 +2853,9 @@ function App() {
           getMeterLevel={() => engineRef.current?.getInputMeterLevel?.() || 0}
           metaFormat={metaFormat}
           onMetaFormat={changeMetaFormat}
-          scheduledAt={scheduleAt}
-          scheduledEndAt={scheduleEndAt}
-          scheduledPlaylistId={schedulePlaylistId}
+          schedules={schedules}
+          onAddSchedule={addSchedule}
+          onRemoveSchedule={removeSchedule}
           playlists={playlists}
           broadcasts={broadcasts}
           nowPlaying={currentTrack ? formatTrackMeta(currentTrack) : ""}
@@ -2846,8 +2863,6 @@ function App() {
           getHealth={() => engineRef.current?.getBroadcastHealth?.() || null}
           onStart={startBroadcast}
           onStop={stopBroadcast}
-          onSchedule={(p) => { setScheduleAt(p.at); setScheduleEndAt(p.endAt || null); setSchedulePlaylistId(p.playlistId || null); }}
-          onCancelSchedule={() => { setScheduleAt(null); setScheduleEndAt(null); setSchedulePlaylistId(null); }}
           onDownloadBroadcast={downloadBroadcast}
           onDeleteBroadcast={deleteBroadcast}
           onGetBroadcastUrl={getBroadcastUrl}
