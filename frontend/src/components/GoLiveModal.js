@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks, Bookmark, Save, Gauge, Timer } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks, Bookmark, Save, Gauge, Timer, Server } from "lucide-react";
 
 const CFG_KEY = "hotlive95_radioco";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
@@ -23,6 +23,9 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const [bitrate, setBitrate] = useState(saved.bitrate || 128);
   const [includeMic, setIncludeMic] = useState(saved.includeMic !== false);
   const [stationId, setStationId] = useState(saved.stationId || "");
+  const [username, setUsername] = useState(saved.username || "");
+  const [mount, setMount] = useState(saved.mount || "/");
+  const [showAdvanced, setShowAdvanced] = useState(!!(saved.username || (saved.mount && saved.mount !== "/")));
   const [alertSound, setAlertSound] = useState(saved.alertSound !== false);
   const [scheduleInput, setScheduleInput] = useState("");
   const [scheduleEndInput, setScheduleEndInput] = useState("");
@@ -181,7 +184,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     if (!live) setListenerHist([]);
   }, [live]);
 
-  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait, metaFormat });
+  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait, metaFormat, username: username.trim(), mount: mount.trim() || "/" });
 
   const startMeter = async () => {
     if (!onStartMeter) return;
@@ -216,7 +219,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     const cfg = cfgObj();
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     stopMeter();
-    onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, includeMic, { autoWait });
+    onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various", username: cfg.username, mount: cfg.mount }, includeMic, { autoWait });
   };
 
   const runTest = async () => {
@@ -226,7 +229,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     const cfg = cfgObj();
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     try {
-      const res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password });
+      const res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password, username: cfg.username, mount: cfg.mount });
       setTestResult(res || { ok: false, message: "No response from the test service." });
     } catch {
       setTestResult({ ok: false, message: "Couldn't reach the test service. Check your internet connection." });
@@ -238,7 +241,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const savePreset = () => {
     const label = (presetName.trim() || host.trim()).slice(0, 40);
     if (!label) return;
-    const p = { id: Date.now().toString(36), label, host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), includeMic, stationId: stationId.trim(), alertSound };
+    const p = { id: Date.now().toString(36), label, host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), includeMic, stationId: stationId.trim(), alertSound, username: username.trim(), mount: mount.trim() || "/" };
     setPresets((prev) => {
       const next = [p, ...prev.filter((x) => x.label.toLowerCase() !== label.toLowerCase())].slice(0, 12);
       localStorage.setItem("hotlive95_radioco_presets", JSON.stringify(next));
@@ -254,6 +257,9 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     setBitrate(p.bitrate || 128);
     setIncludeMic(p.includeMic !== false);
     setStationId(p.stationId || "");
+    setUsername(p.username || "");
+    setMount(p.mount || "/");
+    if (p.username || (p.mount && p.mount !== "/")) setShowAdvanced(true);
     if (typeof p.alertSound === "boolean") setAlertSound(p.alertSound);
     setTestResult(null);
   };
@@ -279,10 +285,12 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       alertSound: typeof p.alertSound === "boolean" ? p.alertSound : alertSound,
       autoWait,
       metaFormat,
+      username: p.username || "",
+      mount: p.mount || "/",
     };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     stopMeter();
-    onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various" }, cfg.includeMic, { autoWait });
+    onStart({ host: cfg.host, port: cfg.port, password: cfg.password, name: cfg.name, bitrate: cfg.bitrate, genre: "Various", username: cfg.username, mount: cfg.mount }, cfg.includeMic, { autoWait });
   };
 
   // Add a show to the persistent lineup. Runs a quick reachability test so a
@@ -302,7 +310,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     setTestResult(null);
     let res = null;
     try {
-      res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password });
+      res = await onTest({ host: cfg.host, port: cfg.port, password: cfg.password, username: cfg.username, mount: cfg.mount });
     } catch {
       res = { ok: false, reachable: false, message: "Couldn't reach the test service. Check your internet connection." };
     }
@@ -636,6 +644,47 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                     className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-onair)]"
                   />
                 </label>
+
+                <div className="rounded-lg border border-[var(--hl-line)] p-2.5">
+                  <button
+                    type="button"
+                    data-testid="go-live-advanced-toggle"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                    className="w-full flex items-center justify-between text-xs uppercase tracking-wider text-[var(--hl-muted)]"
+                  >
+                    <span className="flex items-center gap-2"><Server size={13} className="text-[var(--hl-cue)]" /> Own server (Icecast / AzuraCast / Liquidsoap)</span>
+                    <span className="text-[var(--hl-cue)]">{showAdvanced ? "Hide" : "Set up"}</span>
+                  </button>
+                  {showAdvanced && (
+                    <div className="mt-2.5 space-y-2.5" data-testid="go-live-advanced">
+                      <p className="text-[10px] text-[var(--hl-muted)] leading-relaxed">
+                        Leave blank for radio.co. For your own station enter the per-DJ details from your server's Streamers/DJs page.
+                      </p>
+                      <div className="flex gap-2">
+                        <label className="flex-1">
+                          <span className="text-xs text-[var(--hl-muted)]">DJ username</span>
+                          <input
+                            data-testid="go-live-username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            placeholder="source"
+                            className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
+                          />
+                        </label>
+                        <label className="w-28">
+                          <span className="text-xs text-[var(--hl-muted)]">Mount</span>
+                          <input
+                            data-testid="go-live-mount"
+                            value={mount}
+                            onChange={(e) => setMount(e.target.value)}
+                            placeholder="/"
+                            className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="rounded-lg border border-[var(--hl-line)] p-3 space-y-2" data-testid="go-live-lineup">
                   <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
                     <CalendarClock size={14} className="text-[var(--hl-amber)]" /> Show lineup — schedule ahead

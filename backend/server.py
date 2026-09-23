@@ -1100,17 +1100,20 @@ async def _try_shoutcast(host, port, pwd, name, genre, br):
         return {"ok": False, "reached": True, "raw": ""}
 
 
-async def _try_icecast(host, port, pwd, name, genre, br):
-    """Icecast 2 SOURCE handshake (radio.co is Icecast-based). Returns HTTP code
-    so we can tell a wrong password (401) from an out-of-slot refusal (403)."""
+async def _try_icecast(host, port, pwd, name, genre, br, username="source", mount="/"):
+    """Icecast 2 SOURCE handshake (radio.co & AzuraCast are Liquidsoap/Icecast).
+    Returns HTTP code so we can tell a wrong password (401) from an
+    out-of-slot / forbidden refusal (403)."""
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
     except Exception:
         return {"ok": False, "reached": False, "raw": "", "code": 0}
     try:
-        auth = base64.b64encode(("source:" + pwd).encode("utf-8", "ignore")).decode("ascii")
+        user = username or "source"
+        mnt = mount if (mount or "").startswith("/") else "/" + (mount or "")
+        auth = base64.b64encode((user + ":" + pwd).encode("utf-8", "ignore")).decode("ascii")
         req = (
-            "SOURCE / HTTP/1.0\r\n"
+            f"SOURCE {mnt} HTTP/1.0\r\n"
             f"Authorization: Basic {auth}\r\n"
             "User-Agent: HotLive95\r\n"
             "Content-Type: audio/mpeg\r\n"
@@ -1148,13 +1151,13 @@ async def _try_icecast(host, port, pwd, name, genre, br):
         return {"ok": False, "reached": True, "raw": "", "code": 0}
 
 
-async def _radioco_connect(host, port, pwd, name="Live", genre="Various", br="128"):
+async def _radioco_connect(host, port, pwd, name="Live", genre="Various", br="128", username="source", mount="/"):
     """Try SHOUTcast v1 first, then Icecast SOURCE. On ok, result['writer'] is
     ready to receive MP3 bytes and must be closed by the caller."""
     sc = await _try_shoutcast(host, port, pwd, name, genre, br)
     if sc.get("ok"):
         return sc
-    ic = await _try_icecast(host, port, pwd, name, genre, br)
+    ic = await _try_icecast(host, port, pwd, name, genre, br, username, mount)
     if ic.get("ok"):
         return ic
     return {
@@ -1163,6 +1166,25 @@ async def _radioco_connect(host, port, pwd, name="Live", genre="Various", br="12
         "code": ic.get("code", 0),
         "raw": ic.get("raw") or sc.get("raw") or "",
     }
+
+
+async def _update_icecast_meta(host, port, user, pwd, mount, song):
+    mnt = mount if (mount or "").startswith("/") else "/" + (mount or "")
+    q = urllib.parse.urlencode({"mode": "updinfo", "mount": mnt, "song": song[:250]})
+    url = f"http://{host}:{port}/admin/metadata?{q}"
+    auth = base64.b64encode(f"{user or 'source'}:{pwd}".encode("utf-8", "ignore")).decode("ascii")
+
+    def _do():
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "HotLive95", "Authorization": f"Basic {auth}"})
+            urllib.request.urlopen(req, timeout=6).read()
+        except Exception:
+            pass
+
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, _do)
+    except Exception:
+        pass
 
 
 @api_router.post("/broadcast/test")
@@ -1180,7 +1202,9 @@ async def broadcast_test(request: Request):
         return {"ok": False, "message": "Enter a valid source port."}
     if not host or not port or not pwd:
         return {"ok": False, "message": "Fill in the host, source port and password first."}
-    res = await _radioco_connect(host, port, pwd)
+    username = (str(cfg.get("username") or "").strip()) or "source"
+    mount = (str(cfg.get("mount") or "").strip()) or "/"
+    res = await _radioco_connect(host, port, pwd, username=username, mount=mount)
     # Close the probe connection; a real go-live opens a fresh one.
     w = res.get("writer")
     if w:
@@ -1221,20 +1245,23 @@ async def broadcast_ws(ws: WebSocket):
         name = str(cfg.get("name") or "Live")
         genre = str(cfg.get("genre") or "Various")
         br = str(cfg.get("bitrate") or 128)
+        username = (str(cfg.get("username") or "").strip()) or "source"
+        mount = (str(cfg.get("mount") or "").strip()) or "/"
         base_port = port - 1
-        res = await _radioco_connect(host, port, pwd, name=name, genre=genre, br=br)
+        res = await _radioco_connect(host, port, pwd, name=name, genre=genre, br=br, username=username, mount=mount)
         if not res.get("ok"):
             if not res.get("reached"):
                 err = f"Couldn't reach {host}:{port}. Check the host and source port."
             elif res.get("code") == 401:
-                err = "radio.co rejected the broadcast password (401). Use your Live/DJ broadcasting password from the radio.co dashboard — it's separate from your Studio login."
+                err = "The broadcast server rejected the password (401). Use the Live/DJ broadcasting password for this account — it's separate from your Studio login."
             else:
                 raw = res.get("raw") or ""
-                err = "radio.co won't accept a live source right now. Only the station owner can go live anytime; other DJs need a scheduled live event with the slot open. Add your show on radio.co (or enable Live Anytime as owner), then reconnect." + (f" (server: {raw})" if raw else "")
+                err = "The broadcast server won't accept a live source right now. On radio.co only the owner can go live anytime; other DJs need a scheduled event with the slot open. On your own server, check the DJ account/mount is enabled. Then reconnect." + (f" (server: {raw})" if raw else "")
             await ws.send_json({"type": "error", "error": err})
             await ws.close()
             return
         writer = res["writer"]
+        bc_mode = res.get("mode")
         await ws.send_json({"type": "live"})
         while True:
             msg = await ws.receive()
@@ -1249,8 +1276,11 @@ async def broadcast_ws(ws: WebSocket):
             if txt:
                 try:
                     m = json.loads(txt)
-                    if m.get("type") == "meta" and m.get("title") and base_port:
-                        asyncio.create_task(_update_shoutcast_meta(host, base_port, pwd, str(m["title"])))
+                    if m.get("type") == "meta" and m.get("title"):
+                        if bc_mode == "icecast":
+                            asyncio.create_task(_update_icecast_meta(host, port, username, pwd, mount, str(m["title"])))
+                        elif base_port:
+                            asyncio.create_task(_update_shoutcast_meta(host, base_port, pwd, str(m["title"])))
                 except Exception:
                     pass
     except WebSocketDisconnect:

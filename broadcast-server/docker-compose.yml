@@ -1,0 +1,37 @@
+# Hot Live 95 — independent 24/7 radio server
+# Icecast (listener stream) + Liquidsoap (AutoDJ + live DJ harbor)
+# Deploy on any small VPS (Ubuntu 22.04+, 1GB RAM is plenty).
+
+services:
+  icecast:
+    image: moul/icecast
+    restart: unless-stopped
+    environment:
+      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - ICECAST_RELAY_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - ICECAST_ADMIN_PASSWORD=${ICECAST_ADMIN_PASSWORD}
+      - ICECAST_PASSWORD=${ICECAST_ADMIN_PASSWORD}
+      - ICECAST_HOSTNAME=${PUBLIC_HOSTNAME}
+    ports:
+      - "8000:8000"   # listeners: http://YOUR_HOST:8000/stream
+
+  liquidsoap:
+    image: savonet/liquidsoap:v2.2.5
+    restart: unless-stopped
+    depends_on:
+      - icecast
+    volumes:
+      - ./radio.liq:/radio.liq:ro
+      - ./music:/music          # put your MP3 library here (AutoDJ)
+      - ./recordings:/recordings
+    environment:
+      - ICECAST_HOST=icecast
+      - ICECAST_PORT=8000
+      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - HARBOR_PASSWORD=${HARBOR_PASSWORD}
+      - DJS=${DJS}
+      - MOUNT=${MOUNT}
+      - BITRATE=${BITRATE}
+    ports:
+      - "8005:8005"   # live DJ input: DJ Playout Studio connects here
+    command: liquidsoap /radio.liq

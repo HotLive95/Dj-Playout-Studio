@@ -155,3 +155,11 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Add-to-lineup runs the test first; blocks only when radio.co is UNREACHABLE (bad host/port), otherwise allows scheduling ahead even though radio.co refuses a source now.
 - CONSTRAINT (told to user, chose option C): browser/PWA streams from the device, so scheduled shows need the studio open on that machine. True unattended-while-closed 24/7 broadcast = server-side playout = separate future project (roadmap).
 - Verified in preview: amber reachable message, show added to lineup, persisted across reload.
+
+##  — Independent 24/7 station (Option B): Icecast/Liquidsoap
+- Backend relay+test now speak Icecast SOURCE with configurable username + mount (defaults source + /), on top of SHOUTcast v1 fallback. Confirmed radio.co = Liquidsoap harbor (401 realm) — Icecast handshake returns real HTTP codes (401 bad password vs 403 slot).
+- Added _update_icecast_meta (Icecast /admin/metadata) and mode-aware now-playing push in the WS relay.
+- GoLiveModal: new "Own server (Icecast/AzuraCast/Liquidsoap)" section with DJ username + mount, threaded through cfgObj, go(), runTest(), goPreset(), presets, addToLineup, and App scheduler config snapshot.
+- Server package /app/broadcast-server/: docker-compose.yml (Icecast moul/icecast + Liquidsoap savonet/liquidsoap 2.2.5), radio.liq (AutoDJ /music + live harbor :8005 /live with shared HARBOR_PASSWORD + optional per-DJ DJS list + crossfade + fallback -> Icecast /stream), .env.example, README.md with full VPS deploy + studio setup steps.
+- CONSTRAINT: the always-on Icecast/Liquidsoap server MUST run on a dedicated VPS (cannot run in the Emergent app pod). Studio is the live client. radio.liq per-DJ auth is UNTESTED here (no Liquidsoap runtime); shared HARBOR_PASSWORD path is the safe default.
+- Verified in preview: own-server username/mount UI + test classification (bad_password/unreachable), no overflow.
