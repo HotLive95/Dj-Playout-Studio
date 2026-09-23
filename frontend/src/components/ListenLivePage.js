@@ -32,6 +32,7 @@ export default function ListenLivePage() {
   const [volume, setVolume] = useState(0.9);
   const [error, setError] = useState("");
   const [nowPlaying, setNowPlaying] = useState(null);
+  const [stationLive, setStationLive] = useState(null);
   const [listeners, setListeners] = useState(null);
 
   // Live listener count + now-playing. Prefer AzuraCast stats API if set,
@@ -47,6 +48,7 @@ export default function ListenLivePage() {
         const r = await fetch(url);
         const d = await r.json();
         if (!alive || !d || !d.ok) return;
+        if (typeof d.live === "boolean") setStationLive(d.live);
         if (typeof d.listeners === "number") setListeners(d.listeners);
         if (d.nowPlaying) setNowPlaying({ title: d.nowPlaying });
       } catch {
@@ -159,11 +161,11 @@ export default function ListenLivePage() {
               <p className="text-[11px] uppercase tracking-[0.35em] text-[var(--hl-muted)] mt-1">Detroit · A.I. Radio</p>
             </div>
 
-            {/* Live badge */}
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--hl-line)] bg-black/40">
-              <span className={`h-2.5 w-2.5 rounded-full ${playing ? "bg-[var(--hl-onair)] animate-pulse" : "bg-[var(--hl-muted)]"}`} />
+            {/* Live badge — reflects the station's real on-air status */}
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--hl-line)] bg-black/40" data-testid="live-badge">
+              <span className={`h-2.5 w-2.5 rounded-full ${stationLive ? "bg-[#2ee5c4] animate-pulse" : stationLive === false ? "bg-[var(--hl-muted)]" : playing ? "bg-[var(--hl-onair)] animate-pulse" : "bg-[var(--hl-muted)]"}`} />
               <span className="text-xs font-600 uppercase tracking-wider" data-testid="live-status">
-                {playing ? "On Air — Live" : "Live Radio"}
+                {stationLive === true ? "🟢 Live" : stationLive === false ? "⚪ Offline" : playing ? "On Air — Live" : "Live Radio"}
               </span>
             </div>
 

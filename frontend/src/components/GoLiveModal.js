@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks, Bookmark, Save, Gauge, Timer, Server, Upload, Copy, Code2, Share2 } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks, Bookmark, Save, Gauge, Timer, Server, Upload, Copy, Code2, Share2, Wand2, QrCode } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 
 const CFG_KEY = "hotlive95_radioco";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
@@ -66,6 +67,9 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const [showEmbed, setShowEmbed] = useState(false);
   const [stationCheck, setStationCheck] = useState(null);
   const [checkingStation, setCheckingStation] = useState(false);
+  const [azuraUrl, setAzuraUrl] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const importRef = useRef(null);
   const [armTesting, setArmTesting] = useState(false);
   const [flash, setFlash] = useState(false);
@@ -347,6 +351,26 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       }
     };
     reader.readAsText(file);
+  };
+  const autoFillAzura = async () => {
+    const u = azuraUrl.trim();
+    if (!u) return;
+    setResolving(true);
+    try {
+      const r = await fetch(`${BACKEND}/api/broadcast/azuracast-resolve?url=${encodeURIComponent(u)}`);
+      const d = await r.json();
+      if (d && d.ok) {
+        if (d.host) setHost(d.host);
+        if (d.listenUrl) setStreamUrl(d.listenUrl);
+        if (d.nowPlayingUrl) setStatsUrl(d.nowPlayingUrl);
+        if (d.name && !name.trim()) setName(d.name);
+        setShowEmbed(true);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setResolving(false);
+    }
   };
   const checkStation = async () => {
     const url = streamUrl.trim();
@@ -791,6 +815,28 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                       <p className="text-[10px] text-[var(--hl-muted)] leading-relaxed">
                         Leave blank for radio.co. For your own station enter the per-DJ details from your server's Streamers/DJs page.
                       </p>
+                      <div className="rounded-md bg-black/30 p-2 space-y-1.5">
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--hl-cue)] flex items-center gap-1"><Wand2 size={11} /> AzuraCast auto‑fill</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            data-testid="go-live-azura-url"
+                            value={azuraUrl}
+                            onChange={(e) => setAzuraUrl(e.target.value)}
+                            placeholder="Paste your AzuraCast public/station URL"
+                            className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
+                          />
+                          <button
+                            data-testid="go-live-azura-fill"
+                            onClick={autoFillAzura}
+                            disabled={!azuraUrl.trim() || resolving}
+                            className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] text-xs font-700 hover:bg-[rgba(46,229,196,0.1)] disabled:opacity-40 flex items-center gap-1.5"
+                          >
+                            {resolving ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                            {resolving ? "…" : "Auto‑fill"}
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-[var(--hl-muted)]">Fills host, listen URL &amp; now‑playing URL. Then just add each DJ's port, username &amp; password.</p>
+                      </div>
                       <div className="flex gap-2">
                         <label className="flex-1">
                           <span className="text-xs text-[var(--hl-muted)]">DJ username</span>
@@ -1139,6 +1185,23 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                       </div>
                       <div className="text-[11px] text-[var(--hl-muted)] font-mono bg-black/40 rounded px-2 py-1.5 break-all">{embedCode}</div>
                       <p className="text-[10px] text-[var(--hl-muted)] mt-1">Paste this into hotlive95dj.com to embed the player. Save the stream URL above and the plain /live link works with no query string.</p>
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        data-testid="go-live-qr-toggle"
+                        onClick={() => setShowQr((v) => !v)}
+                        className="text-[10px] uppercase tracking-wider text-[var(--hl-cue)] flex items-center gap-1"
+                      >
+                        <QrCode size={12} /> {showQr ? "Hide" : "Show"} scan‑to‑listen QR
+                      </button>
+                      {showQr && (
+                        <div className="mt-2 flex flex-col items-center gap-1.5 bg-white rounded-lg p-3" data-testid="go-live-qr">
+                          <QRCodeCanvas value={shareLink} size={148} includeMargin={false} level="M" />
+                          <span className="text-[10px] text-black/70 font-600">Scan to listen · Hot Live 95</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -1278,6 +1278,53 @@ async def azuracast_status(url: str = "", base: str = "", station: str = ""):
     return {"ok": True, "live": live, "listeners": listeners, "nowPlaying": song}
 
 
+@api_router.get("/broadcast/azuracast-resolve")
+async def azuracast_resolve(url: str = ""):
+    """From an AzuraCast public page / now-playing / listen URL, resolve the
+    station's host, listen URL and now-playing API URL to auto-fill the studio."""
+    url = url.strip()
+    if not url:
+        return {"ok": False}
+    p = urllib.parse.urlparse(url if "://" in url else "https://" + url)
+    base = f"{p.scheme or 'https'}://{p.netloc}"
+    segs = [s for s in (p.path or "").split("/") if s]
+    shortcode = ""
+    for key in ("nowplaying", "public", "station", "listen"):
+        if key in segs:
+            i = segs.index(key)
+            if i + 1 < len(segs):
+                shortcode = segs[i + 1]
+                break
+    if not shortcode:
+        qsd = urllib.parse.parse_qs(p.query or "")
+        shortcode = (qsd.get("station") or qsd.get("shortcode") or [""])[0]
+    if not shortcode:
+        return {"ok": False, "message": "Couldn't find the station code in that URL. Paste your AzuraCast public page or now-playing URL."}
+    npurl = f"{base}/api/nowplaying/{shortcode}"
+
+    def _fetch():
+        req = urllib.request.Request(npurl, headers={"User-Agent": "HotLive95"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read().decode("utf-8", "ignore"))
+
+    try:
+        data = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+    except Exception:
+        return {"ok": False, "message": f"Couldn't reach {npurl}. Check the URL and that the station is public."}
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    st = (data.get("station") or {}) if isinstance(data, dict) else {}
+    return {
+        "ok": True,
+        "host": p.netloc.split(":")[0],
+        "base": base,
+        "shortcode": shortcode,
+        "name": str(st.get("name") or ""),
+        "listenUrl": str(st.get("listen_url") or ""),
+        "nowPlayingUrl": npurl,
+    }
+
+
 @api_router.post("/broadcast/test")
 async def broadcast_test(request: Request):
     """Verify a radio.co source login (SHOUTcast v1 or Icecast) without streaming."""

@@ -190,3 +190,10 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - saveStreamUrl now also stores hotlive95_status_url; /live player uses ?status= / saved status url -> azuracast-status for live listeners + now-playing (fallback to icecast-status/stream).
 - VPS-SETUP.md: added AzuraCast one-command install section (docker.sh) + exact studio field mapping (DJ/streamer port, listen URL, now-playing API URL).
 - Verified in preview: AzuraCast stats field + station check show On air + listener count from real AzuraCast API.
+
+##  — DO command sheet, live badge, AzuraCast auto-fill, QR
+- Backend GET /api/broadcast/azuracast-resolve (parses public/nowplaying/listen/station URL -> host, listenUrl, nowPlayingUrl, name via /api/nowplaying). Verified vs demo.azuracast.com.
+- GoLiveModal Own server: "AzuraCast auto-fill" (paste station URL -> fills host, stream URL, now-playing URL, name). QR (qrcode.react QRCodeCanvas) "scan-to-listen" in Share & embed for the share link.
+- ListenLivePage /live: live badge now reflects real station status (stationLive from azuracast/icecast status): green LIVE / grey OFFLINE; also shows listeners + now-playing from AzuraCast. Verified badge=LIVE, 1 listener, now-playing from demo.
+- /app/broadcast-server/DIGITALOCEAN-AZURACAST.md: end-to-end droplet command sheet (create, DNS, ufw, docker.sh install, HTTPS via LetsEncrypt, station/DJ setup, studio connect, update cmds).
+- Verified in preview (mobile 390): auto-fill, QR canvas, player live badge all working against AzuraCast demo API.
