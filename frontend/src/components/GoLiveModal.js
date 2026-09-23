@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks, Bookmark, Save, Gauge, Timer, Server } from "lucide-react";
+import { X, Podcast, Radio, Loader2, Square, AlertTriangle, Mic, Info, Users, CalendarClock, RotateCw, Archive, Play, Download, Trash2, ListPlus, Plug, CheckCircle2, ListChecks, Bookmark, Save, Gauge, Timer, Server, Upload, Copy, Code2, Share2 } from "lucide-react";
 
 const CFG_KEY = "hotlive95_radioco";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
@@ -54,6 +54,16 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     }
   });
   const [presetName, setPresetName] = useState("");
+  const [streamUrl, setStreamUrl] = useState(() => {
+    try {
+      return localStorage.getItem("hotlive95_stream_url") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [copied, setCopied] = useState("");
+  const [showEmbed, setShowEmbed] = useState(false);
+  const importRef = useRef(null);
   const [armTesting, setArmTesting] = useState(false);
   const [flash, setFlash] = useState(false);
   const prevLive = useRef(false);
@@ -298,6 +308,60 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       return next;
     });
   };
+  const exportProfiles = () => {
+    const blob = new Blob([JSON.stringify(presets, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hotlive95-dj-profiles.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const importProfiles = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const arr = JSON.parse(reader.result);
+        if (!Array.isArray(arr)) return;
+        setPresets((prev) => {
+          const byLabel = new Map(prev.map((p) => [String(p.label).toLowerCase(), p]));
+          arr.forEach((p) => {
+            if (p && p.label) byLabel.set(String(p.label).toLowerCase(), { ...p, id: p.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 6) });
+          });
+          const next = Array.from(byLabel.values()).slice(0, 24);
+          localStorage.setItem("hotlive95_radioco_presets", JSON.stringify(next));
+          return next;
+        });
+        setCopied("imported");
+        setTimeout(() => setCopied(""), 1500);
+      } catch {
+        /* ignore */
+      }
+    };
+    reader.readAsText(file);
+  };
+  const saveStreamUrl = () => {
+    try {
+      localStorage.setItem("hotlive95_stream_url", streamUrl.trim());
+    } catch {
+      /* ignore */
+    }
+    setCopied("saved");
+    setTimeout(() => setCopied(""), 1500);
+  };
+  const copyText = async (text, key) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(""), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+  const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const shareLink = streamUrl.trim() ? `${appOrigin}/live?stream=${encodeURIComponent(streamUrl.trim())}` : `${appOrigin}/live`;
+  const embedCode = `<iframe src="${shareLink}" width="360" height="640" style="border:0;border-radius:16px;overflow:hidden" allow="autoplay" title="Hot Live 95"></iframe>`;
   // One-tap: load a saved station and go live immediately.
   const goPreset = (p) => {
     loadPreset(p);
@@ -919,6 +983,94 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                 >
                   <Save size={14} /> Save
                 </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  data-testid="go-live-export-profiles"
+                  onClick={exportProfiles}
+                  disabled={presets.length === 0}
+                  className="flex-1 px-3 py-2 rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] text-xs font-600 hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)] disabled:opacity-40 flex items-center justify-center gap-1.5"
+                  title="Download all DJ connection profiles as a file"
+                >
+                  <Download size={13} /> Export profiles
+                </button>
+                <button
+                  data-testid="go-live-import-profiles"
+                  onClick={() => importRef.current && importRef.current.click()}
+                  className="flex-1 px-3 py-2 rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] text-xs font-600 hover:text-[var(--hl-cue)] hover:border-[var(--hl-cue)] flex items-center justify-center gap-1.5"
+                  title="Load DJ connection profiles from a file"
+                >
+                  <Upload size={13} /> {copied === "imported" ? "Imported!" : "Import profiles"}
+                </button>
+                <input
+                  ref={importRef}
+                  data-testid="go-live-import-input"
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => {
+                    importProfiles(e.target.files && e.target.files[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+
+              <div className="rounded-lg border border-[var(--hl-line)] p-2.5">
+                <button
+                  type="button"
+                  data-testid="go-live-embed-toggle"
+                  onClick={() => setShowEmbed((v) => !v)}
+                  className="w-full flex items-center justify-between text-xs uppercase tracking-wider text-[var(--hl-muted)]"
+                >
+                  <span className="flex items-center gap-2"><Share2 size={13} className="text-[var(--hl-cue)]" /> Share &amp; embed the web player</span>
+                  <span className="text-[var(--hl-cue)]">{showEmbed ? "Hide" : "Open"}</span>
+                </button>
+                {showEmbed && (
+                  <div className="mt-2.5 space-y-2.5" data-testid="go-live-embed">
+                    <label className="block">
+                      <span className="text-xs text-[var(--hl-muted)]">Public stream URL (what listeners play)</span>
+                      <div className="mt-1 flex items-center gap-2">
+                        <input
+                          data-testid="go-live-stream-url"
+                          value={streamUrl}
+                          onChange={(e) => setStreamUrl(e.target.value)}
+                          placeholder="https://stream.hotlive95dj.com/stream"
+                          className="flex-1 min-w-0 bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
+                        />
+                        <button
+                          data-testid="go-live-save-stream-url"
+                          onClick={saveStreamUrl}
+                          className="shrink-0 px-3 py-2 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] text-xs font-700 hover:bg-[rgba(46,229,196,0.1)]"
+                          title="Save so the /live player uses it automatically"
+                        >
+                          {copied === "saved" ? "Saved!" : "Save"}
+                        </button>
+                      </div>
+                    </label>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)]">Share link</span>
+                        <button data-testid="go-live-copy-link" onClick={() => copyText(shareLink, "link")} className="text-[10px] text-[var(--hl-cue)] flex items-center gap-1">
+                          <Copy size={11} /> {copied === "link" ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-[var(--hl-text)] bg-black/40 rounded px-2 py-1.5 break-all">{shareLink}</div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] flex items-center gap-1"><Code2 size={11} /> Website embed</span>
+                        <button data-testid="go-live-copy-embed" onClick={() => copyText(embedCode, "embed")} className="text-[10px] text-[var(--hl-cue)] flex items-center gap-1">
+                          <Copy size={11} /> {copied === "embed" ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-[var(--hl-muted)] font-mono bg-black/40 rounded px-2 py-1.5 break-all">{embedCode}</div>
+                      <p className="text-[10px] text-[var(--hl-muted)] mt-1">Paste this into hotlive95dj.com to embed the player. Save the stream URL above and the plain /live link works with no query string.</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2">

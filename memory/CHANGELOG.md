@@ -171,3 +171,9 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Server Profiles: existing saveable presets already switch full configs (incl username/mount/listenerPort) in one tap; added a radio.co vs own badge on each chip.
 - Files: /app/broadcast-server/VPS-SETUP.md (DigitalOcean + Hetzner tailored to hotlive95dj.com, firewall, DNS, deploy), Caddyfile (HTTPS reverse proxy for stream.hotlive95dj.com), plus append-caddy snippet in the guide.
 - Verified: icecast-status graceful on bad host; radio.co test intact; /live player renders with ?stream=.
+
+## 2026-09-23 — Player embed + auto stream URL + profile import/export
+- GoLiveModal "Share & embed the web player": save a public stream URL (localStorage hotlive95_stream_url), copyable share link (${origin}/live?stream=...) and a ready <iframe> embed snippet (uses window.location.origin so it points at prod once deployed).
+- Auto Stream URL: ListenLivePage /live now falls back ?stream= -> localStorage hotlive95_stream_url -> env, so the plain /live link works after saving once.
+- Profile Import/Export: Export downloads hotlive95-dj-profiles.json (all presets); Import merges from file (dedupe by label, cap 24).
+- Verified in preview: buttons present, embed section generates correct URL-encoded iframe, no overflow.

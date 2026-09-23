@@ -6,7 +6,14 @@ const ENV_STREAM = process.env.REACT_APP_STATION_STREAM_URL || "";
 const WEBSITE_URL = process.env.REACT_APP_STATION_WEBSITE || "";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
 const qs = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-const STREAM_URL = qs.get("stream") || ENV_STREAM;
+const LS_STREAM = (() => {
+  try {
+    return (typeof window !== "undefined" && localStorage.getItem("hotlive95_stream_url")) || "";
+  } catch {
+    return "";
+  }
+})();
+const STREAM_URL = qs.get("stream") || LS_STREAM || ENV_STREAM;
 
 // Public "Listen Live" landing page (route: /live). Point the domain here.
 export default function ListenLivePage() {
