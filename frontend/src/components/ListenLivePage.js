@@ -13,7 +13,15 @@ const LS_STREAM = (() => {
     return "";
   }
 })();
+const LS_STATUS = (() => {
+  try {
+    return (typeof window !== "undefined" && localStorage.getItem("hotlive95_status_url")) || "";
+  } catch {
+    return "";
+  }
+})();
 const STREAM_URL = qs.get("stream") || LS_STREAM || ENV_STREAM;
+const STATUS_URL = qs.get("status") || LS_STATUS || "";
 
 // Public "Listen Live" landing page (route: /live). Point the domain here.
 export default function ListenLivePage() {
@@ -26,15 +34,21 @@ export default function ListenLivePage() {
   const [nowPlaying, setNowPlaying] = useState(null);
   const [listeners, setListeners] = useState(null);
 
-  // Live listener count from the station's Icecast status.
+  // Live listener count + now-playing. Prefer AzuraCast stats API if set,
+  // else fall back to the Icecast status of the stream URL.
   useEffect(() => {
-    if (!STREAM_URL || !BACKEND) return;
+    if (!BACKEND || (!STATUS_URL && !STREAM_URL)) return;
     let alive = true;
     const poll = async () => {
       try {
-        const r = await fetch(`${BACKEND}/api/broadcast/icecast-status?stream=${encodeURIComponent(STREAM_URL)}`);
+        const url = STATUS_URL
+          ? `${BACKEND}/api/broadcast/azuracast-status?url=${encodeURIComponent(STATUS_URL)}`
+          : `${BACKEND}/api/broadcast/icecast-status?stream=${encodeURIComponent(STREAM_URL)}`;
+        const r = await fetch(url);
         const d = await r.json();
-        if (alive && d && d.ok && typeof d.listeners === "number") setListeners(d.listeners);
+        if (!alive || !d || !d.ok) return;
+        if (typeof d.listeners === "number") setListeners(d.listeners);
+        if (d.nowPlaying) setNowPlaying({ title: d.nowPlaying });
       } catch {
         /* ignore */
       }

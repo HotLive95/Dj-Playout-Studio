@@ -1238,6 +1238,46 @@ async def icecast_status(host: str = "", port: int = 0, mount: str = "", stream:
     return {"ok": True, "live": live, "listeners": listeners}
 
 
+@api_router.get("/broadcast/azuracast-status")
+async def azuracast_status(url: str = "", base: str = "", station: str = ""):
+    """Live status from an AzuraCast station's now-playing API.
+    Pass the full now-playing URL, or base + station shortcode."""
+    npurl = url.strip()
+    if not npurl and base:
+        npurl = base.rstrip("/") + "/api/nowplaying/" + station.strip()
+    if not npurl:
+        return {"ok": False}
+
+    def _fetch():
+        req = urllib.request.Request(npurl, headers={"User-Agent": "HotLive95"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read().decode("utf-8", "ignore"))
+
+    try:
+        data = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+    except Exception:
+        return {"ok": False}
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    if not isinstance(data, dict):
+        return {"ok": False}
+    live = bool(data.get("is_online"))
+    listeners = 0
+    l = data.get("listeners")
+    if isinstance(l, dict):
+        try:
+            listeners = int(l.get("current") or 0)
+        except Exception:
+            listeners = 0
+    song = ""
+    npd = data.get("now_playing")
+    if isinstance(npd, dict):
+        s = npd.get("song")
+        if isinstance(s, dict):
+            song = str(s.get("text") or "").strip()
+    return {"ok": True, "live": live, "listeners": listeners, "nowPlaying": song}
+
+
 @api_router.post("/broadcast/test")
 async def broadcast_test(request: Request):
     """Verify a radio.co source login (SHOUTcast v1 or Icecast) without streaming."""

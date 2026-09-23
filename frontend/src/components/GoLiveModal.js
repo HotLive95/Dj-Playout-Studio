@@ -26,6 +26,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const [username, setUsername] = useState(saved.username || "");
   const [mount, setMount] = useState(saved.mount || "/");
   const [listenerPort, setListenerPort] = useState(saved.listenerPort || 8000);
+  const [statsUrl, setStatsUrl] = useState(saved.statsUrl || "");
   const [showAdvanced, setShowAdvanced] = useState(!!(saved.username || (saved.mount && saved.mount !== "/")));
   const [alertSound, setAlertSound] = useState(saved.alertSound !== false);
   const [scheduleInput, setScheduleInput] = useState("");
@@ -197,16 +198,19 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     if (!live) setListenerHist([]);
   }, [live]);
 
-  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait, metaFormat, username: username.trim(), mount: mount.trim() || "/", listenerPort: Number(listenerPort) || 8000 });
+  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait, metaFormat, username: username.trim(), mount: mount.trim() || "/", listenerPort: Number(listenerPort) || 8000, statsUrl: statsUrl.trim() });
   const isOwnServer = !!(username.trim() || (mount.trim() && mount.trim() !== "/"));
 
-  // Own-server (Icecast) live listener count while on air.
+  // Own-server live listener count while on air (AzuraCast API or Icecast status).
   useEffect(() => {
     if (!live || !isOwnServer) return;
     let alive = true;
     const poll = async () => {
       try {
-        const r = await fetch(`${BACKEND}/api/broadcast/icecast-status?host=${encodeURIComponent(host.trim())}&port=${Number(listenerPort) || 8000}&mount=${encodeURIComponent(mount.trim() || "/")}`);
+        const u = statsUrl.trim()
+          ? `${BACKEND}/api/broadcast/azuracast-status?url=${encodeURIComponent(statsUrl.trim())}`
+          : `${BACKEND}/api/broadcast/icecast-status?host=${encodeURIComponent(host.trim())}&port=${Number(listenerPort) || 8000}&mount=${encodeURIComponent(mount.trim() || "/")}`;
+        const r = await fetch(u);
         const d = await r.json();
         if (alive && d && d.ok && typeof d.listeners === "number") {
           setListeners(d.listeners);
@@ -223,7 +227,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       clearInterval(iv);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, isOwnServer, host, listenerPort, mount]);
+  }, [live, isOwnServer, host, listenerPort, mount, statsUrl]);
 
   const startMeter = async () => {
     if (!onStartMeter) return;
@@ -280,7 +284,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const savePreset = () => {
     const label = (presetName.trim() || host.trim()).slice(0, 40);
     if (!label) return;
-    const p = { id: Date.now().toString(36), label, host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), includeMic, stationId: stationId.trim(), alertSound, username: username.trim(), mount: mount.trim() || "/", listenerPort: Number(listenerPort) || 8000 };
+    const p = { id: Date.now().toString(36), label, host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), includeMic, stationId: stationId.trim(), alertSound, username: username.trim(), mount: mount.trim() || "/", listenerPort: Number(listenerPort) || 8000, statsUrl: statsUrl.trim() };
     setPresets((prev) => {
       const next = [p, ...prev.filter((x) => x.label.toLowerCase() !== label.toLowerCase())].slice(0, 12);
       localStorage.setItem("hotlive95_radioco_presets", JSON.stringify(next));
@@ -299,6 +303,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     setUsername(p.username || "");
     setMount(p.mount || "/");
     setListenerPort(p.listenerPort || 8000);
+    setStatsUrl(p.statsUrl || "");
     if (p.username || (p.mount && p.mount !== "/")) setShowAdvanced(true);
     if (typeof p.alertSound === "boolean") setAlertSound(p.alertSound);
     setTestResult(null);
@@ -343,25 +348,20 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     };
     reader.readAsText(file);
   };
-  const saveStreamUrl = () => {
-    try {
-      localStorage.setItem("hotlive95_stream_url", streamUrl.trim());
-    } catch {
-      /* ignore */
-    }
-    setCopied("saved");
-    setTimeout(() => setCopied(""), 1500);
-  };
   const checkStation = async () => {
     const url = streamUrl.trim();
-    if (!url) {
-      setStationCheck({ reachable: false, live: false, msg: "Enter your public stream URL above first." });
+    const stats = statsUrl.trim();
+    if (!url && !stats) {
+      setStationCheck({ reachable: false, live: false, msg: "Enter your public stream URL (or AzuraCast stats URL) above first." });
       return;
     }
     setCheckingStation(true);
     setStationCheck(null);
     try {
-      const r = await fetch(`${BACKEND}/api/broadcast/icecast-status?stream=${encodeURIComponent(url)}`);
+      const endpoint = stats
+        ? `${BACKEND}/api/broadcast/azuracast-status?url=${encodeURIComponent(stats)}`
+        : `${BACKEND}/api/broadcast/icecast-status?stream=${encodeURIComponent(url)}`;
+      const r = await fetch(endpoint);
       const d = await r.json();
       if (!d || !d.ok) {
         setStationCheck({ reachable: false, live: false, msg: "Couldn't reach the stream server. Check it's running and the URL (and HTTPS) is right." });
@@ -373,6 +373,16 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     } finally {
       setCheckingStation(false);
     }
+  };
+  const saveStreamUrl = () => {
+    try {
+      localStorage.setItem("hotlive95_stream_url", streamUrl.trim());
+      localStorage.setItem("hotlive95_status_url", statsUrl.trim());
+    } catch {
+      /* ignore */
+    }
+    setCopied("saved");
+    setTimeout(() => setCopied(""), 1500);
   };
   const copyText = async (text, key) => {
     try {
@@ -404,6 +414,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       username: p.username || "",
       mount: p.mount || "/",
       listenerPort: p.listenerPort || 8000,
+      statsUrl: p.statsUrl || "",
     };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     stopMeter();
@@ -810,6 +821,16 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                           value={listenerPort}
                           onChange={(e) => setListenerPort(e.target.value)}
                           placeholder="8000"
+                          className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs text-[var(--hl-muted)]">AzuraCast now‑playing URL (optional — for live badge &amp; count)</span>
+                        <input
+                          data-testid="go-live-stats-url"
+                          value={statsUrl}
+                          onChange={(e) => setStatsUrl(e.target.value)}
+                          placeholder="https://radio.hotlive95dj.com/api/nowplaying/hot_live_95"
                           className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
                         />
                       </label>

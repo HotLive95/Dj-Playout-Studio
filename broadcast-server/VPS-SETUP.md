@@ -7,6 +7,38 @@ Pick one host. Both are fine; DigitalOcean is the most beginner‑friendly.
 
 ---
 
+## ⭐ EASIEST OF ALL: AzuraCast (all‑in‑one, multi‑DJ, 24/7)
+
+AzuraCast bundles Icecast + Liquidsoap + AutoDJ + per‑DJ accounts + a web player.
+Every DJ can go live anytime. DJ Playout Studio already supports it.
+
+1. Create the VPS (Ubuntu 24.04, 2 GB RAM recommended), point DNS
+   `radio.hotlive95dj.com → server IP`, open ports 22/80/443 (+ the stream/DJ
+   ports AzuraCast assigns, usually 8000 & 8005 — it tells you).
+2. Install (one command):
+   ```
+   curl -fsSL https://raw.githubusercontent.com/AzuraCast/AzuraCast/main/docker.sh > docker.sh
+   bash docker.sh install
+   ```
+3. Open `https://radio.hotlive95dj.com`, finish setup, create your station
+   ("Hot Live 95"), upload music, and turn ON **Enable Streamers/DJs**.
+4. Add a **Streamer/DJ account** per DJ (Station → Streamers/DJs) — username + password.
+5. In **Station → "Connection Information"**, note: DJ/streamer **port**, the
+   public **listen URL**, and the **now‑playing API URL**
+   (`https://radio.hotlive95dj.com/api/nowplaying/hot_live_95`).
+6. In DJ Playout Studio → Go Live → **Own server**:
+   - Host `radio.hotlive95dj.com`, Port = the DJ/streamer port, DJ username +
+     password = that streamer account, Mount `/` (as shown by AzuraCast).
+   - Paste the **now‑playing API URL** into the "AzuraCast now‑playing URL" field
+     (lights up the live badge + listener count).
+   - **Test connection** → green → **Go live**.
+7. In "Share & embed": stream URL = AzuraCast **listen URL**, tap
+   **"Is my station live?"** to confirm 🟢, paste the embed on your website.
+
+No hand‑editing of Icecast/Liquidsoap files needed — AzuraCast manages it all.
+
+---
+
 ## ⚡ Fastest path: ICECAST‑ONLY (recommended to start)
 
 This gets you on air today. The studio is the live source; listeners play the

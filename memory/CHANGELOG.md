@@ -183,3 +183,10 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - GoLiveModal Share&Embed: new "Is my station live?" button -> pings icecast-status for the saved stream URL, shows 🟢 On air + listeners / amber server-up-no-source / red offline (go-live-station-check testid).
 - Server package: added docker-compose.icecast-only.yml (moul/icecast, port 8000 = both listeners and DJ source) for the simple no-Liquidsoap path; VPS-SETUP.md now leads with an ICECAST-ONLY quick start (studio streams direct to Icecast at :8000 mount /stream, user source).
 - Verified: live field logic in place, one-tap check shows offline correctly pre-deploy, mobile layout clean.
+
+##  — AzuraCast support
+- Backend GET /api/broadcast/azuracast-status (url OR base+station) -> parses AzuraCast /api/nowplaying: {ok, live (is_online), listeners.current, nowPlaying (song.text)}. Verified against demo.azuracast.com (live/1 listener/now-playing).
+- GoLiveModal Own server: new "AzuraCast now-playing URL" field (statsUrl) persisted in cfg + presets (save/load/quick-launch). When set, the "Is my station live?" check and the on-air listener poll use azuracast-status; else Icecast status-json.
+- saveStreamUrl now also stores hotlive95_status_url; /live player uses ?status= / saved status url -> azuracast-status for live listeners + now-playing (fallback to icecast-status/stream).
+- VPS-SETUP.md: added AzuraCast one-command install section (docker.sh) + exact studio field mapping (DJ/streamer port, listen URL, now-playing API URL).
+- Verified in preview: AzuraCast stats field + station check show On air + listener count from real AzuraCast API.
