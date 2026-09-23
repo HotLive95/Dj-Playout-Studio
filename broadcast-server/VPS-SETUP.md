@@ -7,6 +7,29 @@ Pick one host. Both are fine; DigitalOcean is the most beginner‑friendly.
 
 ---
 
+## ⚡ Fastest path: ICECAST‑ONLY (recommended to start)
+
+This gets you on air today. The studio is the live source; listeners play the
+same server. No 24/7 AutoDJ yet — add Liquidsoap later with `docker-compose.yml`.
+
+1. Create the VPS + point DNS + open firewall (see host steps below). For
+   Icecast‑only you only need ports **22, 80, 443, 8000**.
+2. `cp .env.example .env` and set `ICECAST_SOURCE_PASSWORD`,
+   `ICECAST_ADMIN_PASSWORD`, `PUBLIC_HOSTNAME=stream.hotlive95dj.com`.
+3. Launch just Icecast:
+   `docker compose -f docker-compose.icecast-only.yml up -d`
+4. (For website embedding) run Caddy for HTTPS — see the Caddy step below.
+5. In DJ Playout Studio → Go Live → **Own server**:
+   - Host `stream.hotlive95dj.com`, Port `8000`, DJ username `source`,
+     Password = `ICECAST_SOURCE_PASSWORD`, Mount `/stream`, Listener port `8000`.
+   - **Test connection** → should go green → **Go live**.
+6. In "Share & embed": save stream URL `https://stream.hotlive95dj.com/stream`,
+   tap **"Is my station live?"** to confirm 🟢, then paste the embed on your site.
+
+Upgrade to 24/7 AutoDJ anytime by switching to `docker-compose.yml` (Liquidsoap).
+
+---
+
 ## A) DigitalOcean (recommended)
 
 1. **Create a Droplet**: Ubuntu 24.04, Basic / Regular, **$6/mo (1 GB)**. Region

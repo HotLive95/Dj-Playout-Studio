@@ -1215,17 +1215,27 @@ async def icecast_status(host: str = "", port: int = 0, mount: str = "", stream:
     sources = src if isinstance(src, list) else ([src] if isinstance(src, dict) else [])
     total = 0
     picked = None
+    live = False
+    matched = False
     for s in sources:
         if not isinstance(s, dict):
             continue
         listenurl = str(s.get("listenurl") or "")
         n = s.get("listeners")
         n = int(n) if isinstance(n, (int, float)) else 0
-        if mnt and mnt != "/" and listenurl.endswith(mnt):
+        is_this = bool(mnt and mnt != "/" and listenurl.endswith(mnt))
+        if is_this:
             picked = n
+            matched = True
         total += n
+    # A source only appears in status-json while it's actively connected, so
+    # its presence = the station is live.
+    if mnt and mnt != "/":
+        live = matched
+    else:
+        live = len(sources) > 0
     listeners = picked if picked is not None else total
-    return {"ok": True, "listeners": listeners}
+    return {"ok": True, "live": live, "listeners": listeners}
 
 
 @api_router.post("/broadcast/test")

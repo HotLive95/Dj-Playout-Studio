@@ -1,0 +1,23 @@
+# Hot Live 95 — ICECAST-ONLY quick start (no Liquidsoap yet)
+#
+# Simplest way to get on air: the studio (DJ Playout Studio) is the live SOURCE,
+# and listeners play the same server. No 24/7 AutoDJ — audio plays only while a
+# studio is connected. Add Liquidsoap later (docker-compose.yml) for 24/7.
+#
+#   Listeners:   http://YOUR_HOST:8000/stream   (or https via Caddy)
+#   DJ source:   host=YOUR_HOST  port=8000  user=source  pass=ICECAST_SOURCE_PASSWORD  mount=/stream
+#
+# Run:  docker compose -f docker-compose.icecast-only.yml up -d
+
+services:
+  icecast:
+    image: moul/icecast
+    restart: unless-stopped
+    environment:
+      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - ICECAST_ADMIN_PASSWORD=${ICECAST_ADMIN_PASSWORD}
+      - ICECAST_PASSWORD=${ICECAST_ADMIN_PASSWORD}
+      - ICECAST_RELAY_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - ICECAST_HOSTNAME=${PUBLIC_HOSTNAME}
+    ports:
+      - "8000:8000"   # listeners AND the DJ live source both use this port

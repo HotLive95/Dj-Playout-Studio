@@ -177,3 +177,9 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Auto Stream URL: ListenLivePage /live now falls back ?stream= -> localStorage hotlive95_stream_url -> env, so the plain /live link works after saving once.
 - Profile Import/Export: Export downloads hotlive95-dj-profiles.json (all presets); Import merges from file (dedupe by label, cap 24).
 - Verified in preview: buttons present, embed section generates correct URL-encoded iframe, no overflow.
+
+##  — One-tap station check + Icecast-only setup
+- Backend: /api/broadcast/icecast-status now returns live (bool) = whether a source is currently connected to the mount (presence in status-json.xsl).
+- GoLiveModal Share&Embed: new "Is my station live?" button -> pings icecast-status for the saved stream URL, shows 🟢 On air + listeners / amber server-up-no-source / red offline (go-live-station-check testid).
+- Server package: added docker-compose.icecast-only.yml (moul/icecast, port 8000 = both listeners and DJ source) for the simple no-Liquidsoap path; VPS-SETUP.md now leads with an ICECAST-ONLY quick start (studio streams direct to Icecast at :8000 mount /stream, user source).
+- Verified: live field logic in place, one-tap check shows offline correctly pre-deploy, mobile layout clean.

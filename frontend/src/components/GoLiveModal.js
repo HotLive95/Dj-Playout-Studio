@@ -63,6 +63,8 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   });
   const [copied, setCopied] = useState("");
   const [showEmbed, setShowEmbed] = useState(false);
+  const [stationCheck, setStationCheck] = useState(null);
+  const [checkingStation, setCheckingStation] = useState(false);
   const importRef = useRef(null);
   const [armTesting, setArmTesting] = useState(false);
   const [flash, setFlash] = useState(false);
@@ -349,6 +351,28 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     }
     setCopied("saved");
     setTimeout(() => setCopied(""), 1500);
+  };
+  const checkStation = async () => {
+    const url = streamUrl.trim();
+    if (!url) {
+      setStationCheck({ reachable: false, live: false, msg: "Enter your public stream URL above first." });
+      return;
+    }
+    setCheckingStation(true);
+    setStationCheck(null);
+    try {
+      const r = await fetch(`${BACKEND}/api/broadcast/icecast-status?stream=${encodeURIComponent(url)}`);
+      const d = await r.json();
+      if (!d || !d.ok) {
+        setStationCheck({ reachable: false, live: false, msg: "Couldn't reach the stream server. Check it's running and the URL (and HTTPS) is right." });
+      } else {
+        setStationCheck({ reachable: true, live: !!d.live, listeners: typeof d.listeners === "number" ? d.listeners : 0 });
+      }
+    } catch {
+      setStationCheck({ reachable: false, live: false, msg: "Couldn't reach the stream server." });
+    } finally {
+      setCheckingStation(false);
+    }
   };
   const copyText = async (text, key) => {
     try {
@@ -1048,6 +1072,32 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                         </button>
                       </div>
                     </label>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        data-testid="go-live-check-station"
+                        onClick={checkStation}
+                        disabled={checkingStation}
+                        className="px-3 py-2 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] text-xs font-700 hover:bg-[rgba(46,229,196,0.1)] disabled:opacity-50 flex items-center gap-1.5"
+                        title="Ping your stream server to see if it's on air"
+                      >
+                        {checkingStation ? <Loader2 size={14} className="animate-spin" /> : <Radio size={14} />}
+                        {checkingStation ? "Checking…" : "Is my station live?"}
+                      </button>
+                      {stationCheck && (
+                        <div
+                          data-testid="go-live-station-check"
+                          className={`flex items-center gap-1.5 text-xs font-600 ${stationCheck.live ? "text-[#2ee5c4]" : stationCheck.reachable ? "text-[var(--hl-amber)]" : "text-[var(--hl-onair)]"}`}
+                        >
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ background: stationCheck.live ? "#2ee5c4" : stationCheck.reachable ? "var(--hl-amber)" : "var(--hl-onair)" }} />
+                          {stationCheck.live
+                            ? `On air · ${stationCheck.listeners} listening`
+                            : stationCheck.reachable
+                            ? "Server up · no live source yet"
+                            : stationCheck.msg || "Offline"}
+                        </div>
+                      )}
+                    </div>
 
                     <div>
                       <div className="flex items-center justify-between mb-1">
