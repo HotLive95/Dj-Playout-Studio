@@ -1065,9 +1065,109 @@ async def broadcast_station_status(station_id: str):
     return {"ok": True, "status": data.get("status"), "listeners": listeners, "track": track}
 
 
+async def _try_shoutcast(host, port, pwd, name, genre, br):
+    """SHOUTcast v1 source handshake. On success, headers are sent and the
+    returned writer is ready to stream MP3 bytes."""
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
+    except Exception:
+        return {"ok": False, "reached": False, "raw": ""}
+    try:
+        writer.write(pwd.encode("utf-8", "ignore") + b"\r\n")
+        await writer.drain()
+        try:
+            resp = await asyncio.wait_for(reader.read(1024), 12)
+        except Exception:
+            resp = b""
+        raw = resp.decode("latin-1", "ignore").strip()[:160]
+        if resp.startswith(b"OK2") or resp.startswith(b"OK"):
+            headers = (
+                f"icy-name:{name}\r\nicy-genre:{genre}\r\nicy-pub:1\r\nicy-br:{br}\r\ncontent-type:audio/mpeg\r\n\r\n"
+            ).encode("utf-8", "ignore")
+            writer.write(headers)
+            await writer.drain()
+            return {"ok": True, "reached": True, "mode": "shoutcast", "writer": writer, "raw": raw}
+        try:
+            writer.close()
+        except Exception:
+            pass
+        return {"ok": False, "reached": True, "raw": raw}
+    except Exception:
+        try:
+            writer.close()
+        except Exception:
+            pass
+        return {"ok": False, "reached": True, "raw": ""}
+
+
+async def _try_icecast(host, port, pwd, name, genre, br):
+    """Icecast 2 SOURCE handshake (radio.co is Icecast-based). Returns HTTP code
+    so we can tell a wrong password (401) from an out-of-slot refusal (403)."""
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
+    except Exception:
+        return {"ok": False, "reached": False, "raw": "", "code": 0}
+    try:
+        auth = base64.b64encode(("source:" + pwd).encode("utf-8", "ignore")).decode("ascii")
+        req = (
+            "SOURCE / HTTP/1.0\r\n"
+            f"Authorization: Basic {auth}\r\n"
+            "User-Agent: HotLive95\r\n"
+            "Content-Type: audio/mpeg\r\n"
+            f"ice-name: {name}\r\n"
+            f"ice-genre: {genre}\r\n"
+            f"ice-bitrate: {br}\r\n"
+            "ice-public: 1\r\n"
+            "\r\n"
+        ).encode("utf-8", "ignore")
+        writer.write(req)
+        await writer.drain()
+        try:
+            resp = await asyncio.wait_for(reader.read(1024), 12)
+        except Exception:
+            resp = b""
+        raw = resp.decode("latin-1", "ignore").strip()[:160]
+        code = 0
+        if resp.startswith(b"HTTP/"):
+            try:
+                code = int(resp.split(b" ", 2)[1])
+            except Exception:
+                code = 0
+        if code == 200 or resp.startswith(b"OK"):
+            return {"ok": True, "reached": True, "mode": "icecast", "writer": writer, "raw": raw, "code": 200}
+        try:
+            writer.close()
+        except Exception:
+            pass
+        return {"ok": False, "reached": True, "raw": raw, "code": code}
+    except Exception:
+        try:
+            writer.close()
+        except Exception:
+            pass
+        return {"ok": False, "reached": True, "raw": "", "code": 0}
+
+
+async def _radioco_connect(host, port, pwd, name="Live", genre="Various", br="128"):
+    """Try SHOUTcast v1 first, then Icecast SOURCE. On ok, result['writer'] is
+    ready to receive MP3 bytes and must be closed by the caller."""
+    sc = await _try_shoutcast(host, port, pwd, name, genre, br)
+    if sc.get("ok"):
+        return sc
+    ic = await _try_icecast(host, port, pwd, name, genre, br)
+    if ic.get("ok"):
+        return ic
+    return {
+        "ok": False,
+        "reached": bool(sc.get("reached") or ic.get("reached")),
+        "code": ic.get("code", 0),
+        "raw": ic.get("raw") or sc.get("raw") or "",
+    }
+
+
 @api_router.post("/broadcast/test")
 async def broadcast_test(request: Request):
-    """Verify a radio.co source login (SHOUTcast v1) without streaming any audio."""
+    """Verify a radio.co source login (SHOUTcast v1 or Icecast) without streaming."""
     try:
         cfg = await request.json()
     except Exception:
@@ -1080,46 +1180,30 @@ async def broadcast_test(request: Request):
         return {"ok": False, "message": "Enter a valid source port."}
     if not host or not port or not pwd:
         return {"ok": False, "message": "Fill in the host, source port and password first."}
-    writer = None
-    try:
+    res = await _radioco_connect(host, port, pwd)
+    # Close the probe connection; a real go-live opens a fresh one.
+    w = res.get("writer")
+    if w:
         try:
-            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
+            w.close()
         except Exception:
-            return {"ok": False, "reachable": False, "status": "unreachable", "message": f"Couldn't reach {host}:{port}. Check the host and source port."}
-        writer.write(pwd.encode("utf-8", "ignore") + b"\r\n")
-        await writer.drain()
-        try:
-            resp = await asyncio.wait_for(reader.read(1024), 12)
-        except Exception:
-            resp = b""
-        ok = (
-            resp.startswith(b"OK2")
-            or resp.startswith(b"OK")
-            or resp.startswith(b"HTTP/1.0 200")
-            or resp.startswith(b"HTTP/1.1 200")
-            or b" 200 " in resp
-        )
-        if ok:
-            return {"ok": True, "reachable": True, "status": "ready", "message": "radio.co accepted your login — you're clear to go live."}
-        snippet = resp.decode("latin-1", "ignore").strip()[:120]
-        # We reached radio.co over TCP but it didn't accept a source. This is
-        # normal outside a booked slot / with Live Anytime off, and radio.co
-        # returns the same "Invalid password" reply in that case as for a truly
-        # wrong password — so we report reachability and guide the DJ.
-        msg = (
-            f"Reached radio.co at {host}:{port}, so your host and source port are correct. "
-            "It isn't accepting a live source right now — this is normal before your booked slot, or with Live Anytime off. "
-            "It should connect at your scheduled time. If it still refuses during your slot, re-check the broadcast (Live/DJ) password."
-        )
-        if snippet:
-            msg += f" (server replied: {snippet})"
-        return {"ok": False, "reachable": True, "status": "not_in_slot", "message": msg}
-    finally:
-        if writer:
-            try:
-                writer.close()
-            except Exception:
-                pass
+            pass
+    if res.get("ok"):
+        return {"ok": True, "reachable": True, "status": "ready", "message": "radio.co accepted your login — you're clear to go live."}
+    if not res.get("reached"):
+        return {"ok": False, "reachable": False, "status": "unreachable", "message": f"Couldn't reach {host}:{port}. Check the host and source port."}
+    code = res.get("code", 0)
+    raw = res.get("raw") or ""
+    if code == 401:
+        return {"ok": False, "reachable": True, "status": "bad_password", "message": "radio.co rejected the broadcast password (401 Unauthorized). Use your Live/DJ broadcasting password from the radio.co dashboard (Settings → Advanced → Live Broadcasting Details) — it's separate from your Studio login." + (f" (server: {raw})" if raw else "")}
+    msg = (
+        f"Reached radio.co at {host}:{port}, so your host and source port are correct. "
+        "It isn't accepting a live source right now. On radio.co only the station OWNER can go live anytime — every other DJ must have a SCHEDULED live event, and the slot has to be open. "
+        "Add your show on radio.co's calendar (or turn on Live Anytime if you're the owner), then it will connect at that time. If it still refuses inside your slot, re-check the broadcast password."
+    )
+    if raw:
+        msg += f" (server: {raw})"
+    return {"ok": False, "reachable": True, "status": "not_in_slot", "message": msg}
 
 
 @api_router.websocket("/broadcast/ws")
@@ -1138,44 +1222,19 @@ async def broadcast_ws(ws: WebSocket):
         genre = str(cfg.get("genre") or "Various")
         br = str(cfg.get("bitrate") or 128)
         base_port = port - 1
-        try:
-            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 12)
-        except Exception:
-            await ws.send_json({"type": "error", "error": f"Couldn't reach {host}:{port}. Check the host and source port."})
+        res = await _radioco_connect(host, port, pwd, name=name, genre=genre, br=br)
+        if not res.get("ok"):
+            if not res.get("reached"):
+                err = f"Couldn't reach {host}:{port}. Check the host and source port."
+            elif res.get("code") == 401:
+                err = "radio.co rejected the broadcast password (401). Use your Live/DJ broadcasting password from the radio.co dashboard — it's separate from your Studio login."
+            else:
+                raw = res.get("raw") or ""
+                err = "radio.co won't accept a live source right now. Only the station owner can go live anytime; other DJs need a scheduled live event with the slot open. Add your show on radio.co (or enable Live Anytime as owner), then reconnect." + (f" (server: {raw})" if raw else "")
+            await ws.send_json({"type": "error", "error": err})
             await ws.close()
             return
-        writer.write(pwd.encode("utf-8", "ignore") + b"\r\n")
-        await writer.drain()
-        try:
-            resp = await asyncio.wait_for(reader.read(1024), 12)
-        except Exception:
-            resp = b""
-        ok = (
-            resp.startswith(b"OK2")
-            or resp.startswith(b"OK")
-            or resp.startswith(b"HTTP/1.0 200")
-            or resp.startswith(b"HTTP/1.1 200")
-            or b" 200 " in resp
-        )
-        if not ok:
-            snippet = resp.decode("latin-1", "ignore").strip()[:120]
-            detail = (
-                f" (server replied: {snippet})"
-                if snippet
-                else " (no reply — usually a wrong source port, or you're not in a live slot yet)"
-            )
-            await ws.send_json({"type": "error", "error": "radio.co refused the source connection. Check the broadcast password, the source port, and that you're within a live slot / Live Anytime is on." + detail})
-            await ws.close()
-            return
-        headers = (
-            f"icy-name:{name}\r\n"
-            f"icy-genre:{genre}\r\n"
-            "icy-pub:1\r\n"
-            f"icy-br:{br}\r\n"
-            "content-type:audio/mpeg\r\n\r\n"
-        ).encode("utf-8", "ignore")
-        writer.write(headers)
-        await writer.drain()
+        writer = res["writer"]
         await ws.send_json({"type": "live"})
         while True:
             msg = await ws.receive()

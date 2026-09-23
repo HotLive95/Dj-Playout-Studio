@@ -308,13 +308,19 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     }
     setArmTesting(false);
     setTestResult(res);
-    // Block only when radio.co couldn't be reached at all (bad host/port).
-    if (res && res.reachable === false) return;
+    // Block only when radio.co is unreachable (bad host/port) or the password
+    // is definitively wrong (401). "Not in slot" still lets DJs schedule ahead.
+    if (res && (res.reachable === false || res.status === "bad_password")) return;
+    const label = (scheduleLabel.trim() || name.trim() || "Show");
     onAddSchedule({ at: ts, endAt: endTs && endTs > ts ? endTs : null, playlistId: schedulePlaylist || null, label: scheduleLabel, config: cfg });
     setScheduleInput("");
     setScheduleEndInput("");
     setScheduleLabel("");
     setSchedulePlaylist("");
+    setTestResult({
+      ok: true,
+      message: `Added "${label}" to your lineup — it goes on air at the set time (keep the studio open on this device).${res && !res.ok ? " radio.co will accept the connection once your slot opens." : ""}`,
+    });
   };
 
   const previewBroadcast = async (b) => {
@@ -752,14 +758,14 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                   className={`flex items-start gap-2 text-sm rounded-lg border px-3 py-2 ${
                     testResult.ok
                       ? "border-[#2ee5c4] text-[#2ee5c4] bg-[rgba(46,229,196,0.1)]"
-                      : testResult.reachable
+                      : testResult.status === "not_in_slot"
                       ? "border-[var(--hl-amber)] text-[var(--hl-amber)] bg-[rgba(255,171,0,0.1)]"
                       : "border-[var(--hl-onair)] text-[var(--hl-onair)] bg-[rgba(255,23,68,0.1)]"
                   }`}
                 >
                   {testResult.ok ? (
                     <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
-                  ) : testResult.reachable ? (
+                  ) : testResult.status === "not_in_slot" ? (
                     <Info size={15} className="mt-0.5 shrink-0" />
                   ) : (
                     <AlertTriangle size={15} className="mt-0.5 shrink-0" />
@@ -775,7 +781,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                 </div>
               )}
 
-              {((state === "error" && error) || (testResult && !testResult.ok && !testResult.reachable)) && (
+              {((state === "error" && error) || (testResult && !testResult.ok && testResult.status !== "not_in_slot")) && (
                 <div className="rounded-lg border border-[var(--hl-line)] bg-black/30 p-3 space-y-1.5" data-testid="go-live-checklist">
                   <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--hl-muted)]">
                     <ListChecks size={14} className="text-[var(--hl-cue)]" /> Before radio.co will accept you
