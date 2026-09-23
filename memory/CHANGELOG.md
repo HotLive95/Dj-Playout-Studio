@@ -163,3 +163,11 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Server package /app/broadcast-server/: docker-compose.yml (Icecast moul/icecast + Liquidsoap savonet/liquidsoap 2.2.5), radio.liq (AutoDJ /music + live harbor :8005 /live with shared HARBOR_PASSWORD + optional per-DJ DJS list + crossfade + fallback -> Icecast /stream), .env.example, README.md with full VPS deploy + studio setup steps.
 - CONSTRAINT: the always-on Icecast/Liquidsoap server MUST run on a dedicated VPS (cannot run in the Emergent app pod). Studio is the live client. radio.liq per-DJ auth is UNTESTED here (no Liquidsoap runtime); shared HARBOR_PASSWORD path is the safe default.
 - Verified in preview: own-server username/mount UI + test classification (bad_password/unreachable), no overflow.
+
+##  — Own-server extras: VPS guide, listener count, player, profiles
+- Backend GET /api/broadcast/icecast-status (host/port/mount OR stream=url) -> parses status-json.xsl, returns listeners for the mount (or total).
+- ListenLivePage (/live): stream URL now overridable via ?stream= (falls back to REACT_APP_STATION_STREAM_URL); shows live listener count via icecast-status; verified renders with a custom stream URL.
+- GoLiveModal: on-air listener count now works for own-server (isOwnServer poll of icecast-status), new Listener port field in the Own server section, listeners row shows for own-server too.
+- Server Profiles: existing saveable presets already switch full configs (incl username/mount/listenerPort) in one tap; added a radio.co vs own badge on each chip.
+- Files: /app/broadcast-server/VPS-SETUP.md (DigitalOcean + Hetzner tailored to hotlive95dj.com, firewall, DNS, deploy), Caddyfile (HTTPS reverse proxy for stream.hotlive95dj.com), plus append-caddy snippet in the guide.
+- Verified: icecast-status graceful on bad host; radio.co test intact; /live player renders with ?stream=.

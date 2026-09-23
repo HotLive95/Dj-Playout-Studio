@@ -1,0 +1,7 @@
+# Optional HTTPS + custom domain for your listener stream.
+# Gives you https://stream.hotlive95dj.com/stream and a valid SSL cert
+# automatically (Let's Encrypt). Run alongside docker compose (see VPS-SETUP.md).
+
+stream.hotlive95dj.com {
+	reverse_proxy icecast:8000
+}

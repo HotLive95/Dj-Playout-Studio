@@ -25,6 +25,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const [stationId, setStationId] = useState(saved.stationId || "");
   const [username, setUsername] = useState(saved.username || "");
   const [mount, setMount] = useState(saved.mount || "/");
+  const [listenerPort, setListenerPort] = useState(saved.listenerPort || 8000);
   const [showAdvanced, setShowAdvanced] = useState(!!(saved.username || (saved.mount && saved.mount !== "/")));
   const [alertSound, setAlertSound] = useState(saved.alertSound !== false);
   const [scheduleInput, setScheduleInput] = useState("");
@@ -184,7 +185,33 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     if (!live) setListenerHist([]);
   }, [live]);
 
-  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait, metaFormat, username: username.trim(), mount: mount.trim() || "/" });
+  const cfgObj = () => ({ host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), genre: "Various", includeMic, stationId: stationId.trim(), alertSound, autoWait, metaFormat, username: username.trim(), mount: mount.trim() || "/", listenerPort: Number(listenerPort) || 8000 });
+  const isOwnServer = !!(username.trim() || (mount.trim() && mount.trim() !== "/"));
+
+  // Own-server (Icecast) live listener count while on air.
+  useEffect(() => {
+    if (!live || !isOwnServer) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${BACKEND}/api/broadcast/icecast-status?host=${encodeURIComponent(host.trim())}&port=${Number(listenerPort) || 8000}&mount=${encodeURIComponent(mount.trim() || "/")}`);
+        const d = await r.json();
+        if (alive && d && d.ok && typeof d.listeners === "number") {
+          setListeners(d.listeners);
+          setListenerHist((h) => [...h, { t: Date.now(), n: d.listeners }].slice(-120));
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    poll();
+    const iv = setInterval(poll, 15000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, isOwnServer, host, listenerPort, mount]);
 
   const startMeter = async () => {
     if (!onStartMeter) return;
@@ -241,7 +268,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
   const savePreset = () => {
     const label = (presetName.trim() || host.trim()).slice(0, 40);
     if (!label) return;
-    const p = { id: Date.now().toString(36), label, host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), includeMic, stationId: stationId.trim(), alertSound, username: username.trim(), mount: mount.trim() || "/" };
+    const p = { id: Date.now().toString(36), label, host: host.trim(), port: Number(port), password, name: name.trim(), bitrate: Number(bitrate), includeMic, stationId: stationId.trim(), alertSound, username: username.trim(), mount: mount.trim() || "/", listenerPort: Number(listenerPort) || 8000 };
     setPresets((prev) => {
       const next = [p, ...prev.filter((x) => x.label.toLowerCase() !== label.toLowerCase())].slice(0, 12);
       localStorage.setItem("hotlive95_radioco_presets", JSON.stringify(next));
@@ -259,6 +286,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
     setStationId(p.stationId || "");
     setUsername(p.username || "");
     setMount(p.mount || "/");
+    setListenerPort(p.listenerPort || 8000);
     if (p.username || (p.mount && p.mount !== "/")) setShowAdvanced(true);
     if (typeof p.alertSound === "boolean") setAlertSound(p.alertSound);
     setTestResult(null);
@@ -287,6 +315,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
       metaFormat,
       username: p.username || "",
       mount: p.mount || "/",
+      listenerPort: p.listenerPort || 8000,
     };
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     stopMeter();
@@ -411,7 +440,7 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
               <p className="text-center text-sm text-[var(--hl-muted)]">
                 Broadcasting to <span className="text-[var(--hl-text)]">{host}</span>
               </p>
-              {stationId.trim() && (
+              {(stationId.trim() || isOwnServer) && (
                 <div className="flex items-center justify-center gap-2 text-sm" data-testid="go-live-listeners">
                   <Users size={15} className="text-[var(--hl-cue)]" />
                   <span className="text-[var(--hl-text)]">
@@ -512,6 +541,9 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                         >
                           {p.label}
                         </button>
+                        <span className="text-[9px] px-1 rounded bg-black/40 text-[var(--hl-muted)] uppercase tracking-wider">
+                          {p.username || (p.mount && p.mount !== "/") ? "own" : "radio.co"}
+                        </span>
                         <button
                           data-testid={`go-live-preset-golive-${p.id}`}
                           onClick={() => goPreset(p)}
@@ -682,6 +714,17 @@ export default function GoLiveModal({ state, error, reconnect, loginRetry, onCan
                           />
                         </label>
                       </div>
+                      <label className="block">
+                        <span className="text-xs text-[var(--hl-muted)]">Listener port (for live count)</span>
+                        <input
+                          data-testid="go-live-listener-port"
+                          type="number"
+                          value={listenerPort}
+                          onChange={(e) => setListenerPort(e.target.value)}
+                          placeholder="8000"
+                          className="mt-1 w-full bg-black/50 border border-[var(--hl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--hl-cue)]"
+                        />
+                      </label>
                     </div>
                   )}
                 </div>

@@ -1187,6 +1187,47 @@ async def _update_icecast_meta(host, port, user, pwd, mount, song):
         pass
 
 
+@api_router.get("/broadcast/icecast-status")
+async def icecast_status(host: str = "", port: int = 0, mount: str = "", stream: str = ""):
+    """Live listener count from an Icecast server's status-json.xsl. Accepts
+    either host/port/mount or a full stream URL."""
+    if stream:
+        parsed = urllib.parse.urlparse(stream)
+        base = f"{parsed.scheme or 'http'}://{parsed.netloc}"
+        mnt = parsed.path or "/"
+    elif host:
+        base = f"http://{host}:{port or 8000}"
+        mnt = mount if (mount or '').startswith('/') else '/' + (mount or '')
+    else:
+        return {"ok": False}
+    url = base.rstrip("/") + "/status-json.xsl"
+
+    def _fetch():
+        req = urllib.request.Request(url, headers={"User-Agent": "HotLive95"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read().decode("utf-8", "ignore"))
+
+    try:
+        data = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+    except Exception:
+        return {"ok": False}
+    src = (data.get("icestats") or {}).get("source")
+    sources = src if isinstance(src, list) else ([src] if isinstance(src, dict) else [])
+    total = 0
+    picked = None
+    for s in sources:
+        if not isinstance(s, dict):
+            continue
+        listenurl = str(s.get("listenurl") or "")
+        n = s.get("listeners")
+        n = int(n) if isinstance(n, (int, float)) else 0
+        if mnt and mnt != "/" and listenurl.endswith(mnt):
+            picked = n
+        total += n
+    listeners = picked if picked is not None else total
+    return {"ok": True, "listeners": listeners}
+
+
 @api_router.post("/broadcast/test")
 async def broadcast_test(request: Request):
     """Verify a radio.co source login (SHOUTcast v1 or Icecast) without streaming."""

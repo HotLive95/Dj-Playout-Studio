@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { Play, Pause, Volume2, VolumeX, Radio, ExternalLink, AlertCircle } from "lucide-react";
 import { api } from "../lib/api";
 
-const STREAM_URL = process.env.REACT_APP_STATION_STREAM_URL || "";
+const ENV_STREAM = process.env.REACT_APP_STATION_STREAM_URL || "";
 const WEBSITE_URL = process.env.REACT_APP_STATION_WEBSITE || "";
+const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+const qs = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+const STREAM_URL = qs.get("stream") || ENV_STREAM;
 
 // Public "Listen Live" landing page (route: /live). Point the domain here.
 export default function ListenLivePage() {
@@ -14,6 +17,28 @@ export default function ListenLivePage() {
   const [volume, setVolume] = useState(0.9);
   const [error, setError] = useState("");
   const [nowPlaying, setNowPlaying] = useState(null);
+  const [listeners, setListeners] = useState(null);
+
+  // Live listener count from the station's Icecast status.
+  useEffect(() => {
+    if (!STREAM_URL || !BACKEND) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${BACKEND}/api/broadcast/icecast-status?stream=${encodeURIComponent(STREAM_URL)}`);
+        const d = await r.json();
+        if (alive && d && d.ok && typeof d.listeners === "number") setListeners(d.listeners);
+      } catch {
+        /* ignore */
+      }
+    };
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   // Poll the station "now playing" feed (published by the studio when it's online).
   useEffect(() => {
@@ -120,6 +145,13 @@ export default function ListenLivePage() {
                 {playing ? "On Air — Live" : "Live Radio"}
               </span>
             </div>
+
+            {listeners != null && (
+              <div className="flex items-center gap-1.5 text-xs text-[var(--hl-muted)]" data-testid="live-listeners">
+                <Radio size={12} className="text-[var(--hl-cue)]" />
+                <span className="text-[var(--hl-text)]">{listeners}</span> listening now
+              </div>
+            )}
 
             {/* Play control */}
             <button
