@@ -461,6 +461,13 @@ export default function StationsModal({
     api.saveStation(stationPublic(s)).catch(() => {});
   };
 
+  // On open, mirror every existing station's public config to the backend once so
+  // /live?station=<id> resolves branding even before the DJ edits it.
+  useEffect(() => {
+    stations.forEach((s) => api.saveStation(stationPublic(s)).catch(() => {}));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const updateStation = (next) => {
     setStations((prev) => prev.map((s) => (s.id === next.id ? next : s)));
     publishPublic(next);

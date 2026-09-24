@@ -775,3 +775,44 @@ Root causes (two distinct offline-path bugs):
 ---
 ## 2026-06 Update pointer
 Latest shipped work (Voice DSP chain, Install button, 500MB chunked uploads, Export-in-parts, Stem Isolator + live Stem Record + send-to-pad, Voice FX presets, 12-pad/2-page jingle bar) is logged in CHANGELOG.md. All verified 100% (test_reports iteration_26 & 27). Deploy dispatched.
+
+## Update 27 (2026-06) — Multi-Station Support / Broadcast Center (verified 100%)
+- NEW: Simulcast the live program mix to MULTIPLE stations at once. One shared Web Audio
+  program graph + single MP3 encoder; encoded frames are fanned out to N WebSocket relays.
+  `lib/audioEngine.js`: `startBroadcast({stations:[{id,wsUrl,config}], mic, archive, onState, onArchive})`,
+  `addBroadcastStation`, `stopBroadcastStation`, `stopBroadcast`, per-station `getBroadcastHealth(id)`,
+  `isBroadcastingStation(id)`; `onState(stationId, state, info)`. Same-program simulcast (all targets
+  share the one encoded stream/bitrate). Per-connection reconnect (10 attempts).
+- NEW `lib/stations.js`: station model {id,name,tagline,color,logo,host,port,password,username,mount,
+  bitrate,includeMic,streamUrl,statusUrl} persisted in localStorage `hotlive95_stations`; migrates from
+  old `hotlive95_radioco_presets` + single `hotlive95_radioco`/stream/status. `stationWsConfig`,
+  `stationPublic`, `downscaleLogo` (≤256px PNG data URL).
+- NEW `components/StationsModal.js` = "Broadcast Center" (replaces the old single GoLiveModal at the
+  Go Live button). Station cards with: branding (name/tagline/color/logo upload), connection, public
+  stream/status URLs, per-station Go Live/Stop + status dot + kbps + listener count, Test connection,
+  copy `/live?station=<id>` link + QR + iframe embed. Global "Go live to all" / "Stop all", metadata
+  format, shared on-air level meter. Add/delete/import/export stations. On open, mirrors each station's
+  public config to the backend.
+- Backend `server.py`: station registry — `GET /api/stations`, `GET /api/stations/{id}`,
+  `POST /api/stations` (upsert), `DELETE /api/stations/{id}` (also clears its now-playing). Now-playing
+  keyed per station — `GET /api/nowplaying?station=<id>` + `POST /api/nowplaying {…, station}`; default
+  `current` feed unchanged (back-compat). New collection `stations`.
+- `ListenLivePage.js` is station-aware: `/live?station=<id>` fetches that station's branding
+  (name/tagline/accent color/logo) and polls its own now-playing; plain `/live` keeps Hot Live 95
+  defaults. App.js publishes now-playing to every LIVE station id (+ default feed).
+- App.js: `stations`/`bcStations` state, `airStation`/`airStations`/`stopStation`/`stopAllAir`,
+  per-station `onStationState` dispatcher; scheduled shows now carry a `stationId` (auto go-live/stop
+  that station). Old radio.co single-connection login-retry machinery removed.
+- Verified: testing agent iteration_33 — backend 9/9 pytest (stations CRUD + per-station now-playing
+  isolation), frontend 100% of flows (add/edit/delete station, global + per-station controls, test
+  connection graceful, QR/embed, station-aware /live branding). NOTE: no real Icecast/AzuraCast server
+  in preview, so real "live" can't be reached — verified graceful connecting→error, no crash, and
+  simulcast fan-out to a 2nd station doesn't throw.
+
+## Update 28 (2026-06) — Brand logo replaced with owner's HOT LIVE 95 / WHLD emblem
+- User supplied an animated 1080×1080 logo video (HOT LIVE 95 · DETROIT · A.I. RADIO · WHLD badge:
+  chrome mic + ON AIR + Detroit skyline + flames). Extracted the clean settled frame and regenerated
+  ALL brand assets from it: `frontend/public/logo.jpg` (header + gate), `hl-emblem.png` (/live +
+  watermark), `icon-192.png`/`icon-512.png`/`icon-maskable-512.png` (maskable = emblem in safe zone on
+  dark tile), `icon.jpg` favicon, and Electron `build-assets/icon.png` + multi-size `icon.ico`.
+  Verified rendering on the activation gate and the public /live player.
