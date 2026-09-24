@@ -73,6 +73,20 @@ body {
   background: linear-gradient(135deg, var(--hl-fire) 0%, var(--hl-fire-2) 100%);
 }
 
+.hl-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--hl-line);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--hl-text);
+  outline: none;
+}
+.hl-input:focus {
+  border-color: var(--hl-fire);
+}
+
 .hl-text-fire {
   background: linear-gradient(135deg, var(--hl-amber), var(--hl-fire), var(--hl-fire-2));
   -webkit-background-clip: text;

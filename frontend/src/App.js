@@ -21,7 +21,7 @@ import { LicenseStatus } from "@/components/LicenseStatus";
 import TakesVault from "@/components/TakesVault";
 import CloudHandoffModal from "@/components/CloudHandoffModal";
 import StemIsolator from "@/components/StemIsolator";
-import GoLiveModal from "@/components/GoLiveModal";
+import StationsModal from "@/components/StationsModal";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
@@ -31,6 +31,7 @@ import { decodeToBuffer, detectSilence, computePeaks } from "@/lib/audioProcessi
 import { camelotCompatible } from "@/lib/key";
 import { formatTime } from "@/lib/format";
 import { deriveNames, parseFilename } from "@/lib/id3";
+import { loadStations, saveStations, stationWsConfig } from "@/lib/stations";
 import { addHistory, loadHistory, loadDismissed, dismissExpiry as dismissExpiryCode, updateHistoryExpiry } from "@/lib/cloudHistory";
 
 const uid = () =>
@@ -276,9 +277,13 @@ function App() {
   const [stemsOpen, setStemsOpen] = useState(false);
   const [jinglePage, setJinglePage] = useState(0);
   const [goLiveOpen, setGoLiveOpen] = useState(false);
-  const [bcState, setBcState] = useState("idle");
-  const [bcError, setBcError] = useState("");
-  const [bcReconnect, setBcReconnect] = useState(null);
+  const [stations, setStations] = useState(loadStations);
+  useEffect(() => {
+    saveStations(stations);
+  }, [stations]);
+  const [bcStations, setBcStations] = useState({}); // station id -> { state, error, reconnect }
+  const liveIdsRef = useRef([]);
+  const onStationStateRef = useRef(() => {});
   const [schedules, setSchedules] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("hotlive95_schedules") || "[]");
@@ -291,16 +296,13 @@ function App() {
     localStorage.setItem("hotlive95_schedules", JSON.stringify(schedules));
   }, [schedules]);
   const addSchedule = (s) => {
-    const entry = { id: uid(), at: s.at, endAt: s.endAt || null, playlistId: s.playlistId || null, label: (s.label || "").slice(0, 60), config: s.config || {}, done: false };
+    const entry = { id: uid(), at: s.at, endAt: s.endAt || null, playlistId: s.playlistId || null, stationId: s.stationId || null, label: (s.label || "").slice(0, 60), done: false };
     setSchedules((prev) => [...prev, entry].sort((a, b) => a.at - b.at));
   };
   const removeSchedule = (id) => {
     scheduleFiredRef.current.delete(id);
     setSchedules((prev) => prev.filter((x) => x.id !== id));
   };
-  const [bcLoginRetry, setBcLoginRetry] = useState(null);
-  const bcRetryRef = useRef({ count: 0, timer: null, lastArgs: null, cancelled: false });
-  const MAX_LOGIN_RETRY = 3;
   const [metaFormat, setMetaFormat] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("hotlive95_radioco") || "{}").metaFormat || "artist-title";
@@ -714,16 +716,15 @@ function App() {
   useEffect(() => {
     if (!nowTrack) return;
     const next = standby.trackId ? tracks[standby.trackId] : null;
-    api
-      .setNowPlaying(
-        nowTrack.title || nowTrack.name,
-        nowTrack.artist || "",
-        nowTrack.art || null,
-        next ? { title: next.title || next.name, artist: next.artist || "", art: next.art || null } : null
-      )
-      .catch(() => {});
+    const nx = next ? { title: next.title || next.name, artist: next.artist || "", art: next.art || null } : null;
+    const title = nowTrack.title || nowTrack.name;
+    const artist = nowTrack.artist || "";
+    const art = nowTrack.art || null;
+    // Default feed (back-compat) + one feed per live station.
+    api.setNowPlaying(title, artist, art, nx).catch(() => {});
+    liveIdsRef.current.forEach((id) => api.setNowPlaying(title, artist, art, nx, id).catch(() => {}));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrackId, nowTrack?.title, nowTrack?.artist, nowTrack?.art, standby.trackId]);
+  }, [currentTrackId, nowTrack?.title, nowTrack?.artist, nowTrack?.art, standby.trackId, bcStations]);
 
   // ---- Persist ----
   useEffect(() => {
@@ -1862,36 +1863,32 @@ function App() {
   useEffect(() => {
     const iv = setInterval(() => {
       const now = Date.now();
-      if (bcState === "idle") {
-        const due = schedules.find(
-          (s) => !s.done && !scheduleFiredRef.current.has(s.id) && now >= s.at && now < (s.endAt || s.at + 6 * 3600000)
-        );
-        if (due) {
-          scheduleFiredRef.current.add(due.id);
-          const cfg = due.config || {};
-          if (due.playlistId) {
-            setCurrentPlaylistId(due.playlistId);
-            setTimeout(() => engineRef.current?.playIndex(0), 800);
-          }
-          if (!goLiveOpen) setGoLiveOpen(true);
-          if (cfg.password) {
-            setBanner(`Scheduled show "${due.label || "Live"}" is going on air…`);
-            startBroadcast(
-              { host: cfg.host, port: Number(cfg.port), password: cfg.password, name: cfg.name, bitrate: Number(cfg.bitrate), genre: "Various" },
-              cfg.includeMic !== false,
-              { autoWait: !!cfg.autoWait }
-            );
-          }
+      const due = schedules.find(
+        (s) => !s.done && !scheduleFiredRef.current.has(s.id) && now >= s.at && now < (s.endAt || s.at + 6 * 3600000)
+      );
+      if (due) {
+        scheduleFiredRef.current.add(due.id);
+        if (due.playlistId) {
+          setCurrentPlaylistId(due.playlistId);
+          setTimeout(() => engineRef.current?.playIndex(0), 800);
+        }
+        const st = due.stationId ? stations.find((x) => x.id === due.stationId) : null;
+        if (st && st.host && st.password) {
+          setBanner(`Scheduled show "${due.label || "Live"}" is going on air…`);
+          airStation(st, st.includeMic !== false);
+        } else if (!goLiveOpen) {
+          setGoLiveOpen(true);
         }
       }
       const toEnd = schedules.filter((s) => !s.done && s.endAt && now >= s.endAt);
       if (toEnd.length) {
-        const liveOne = toEnd.find((s) => scheduleFiredRef.current.has(s.id));
-        if (liveOne && (bcState === "live" || bcState === "connecting" || bcState === "reconnecting")) {
-          stopBroadcast();
-          setBanner("Scheduled show ended — broadcast stopped.");
-        }
+        toEnd.forEach((s) => {
+          if (s.stationId && engineRef.current?.isBroadcastingStation?.(s.stationId)) {
+            stopStation(s.stationId);
+          }
+        });
         setSchedules((prev) => prev.map((x) => (toEnd.some((t) => t.id === x.id) ? { ...x, done: true } : x)));
+        if (toEnd.some((s) => s.stationId)) setBanner("Scheduled show ended — broadcast stopped.");
       } else {
         const stale = schedules.filter((s) => s.done && now - (s.endAt || s.at) > 86400000);
         if (stale.length) setSchedules((prev) => prev.filter((x) => !stale.some((s) => s.id === x.id)));
@@ -1899,128 +1896,101 @@ function App() {
     }, 4000);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schedules, bcState, goLiveOpen]);
-  // Verify the radio.co login without going on air (one-tap credential check).
-  const testBroadcast = async (config) => {
+  }, [schedules, stations, goLiveOpen]);
+  // Verify a station source login without going on air (one-tap credential check).
+  const testBroadcast = async (station) => {
     const base = process.env.REACT_APP_BACKEND_URL || "";
     const r = await fetch(`${base}/api/broadcast/test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(config),
+      body: JSON.stringify(stationWsConfig(station)),
     });
     return await r.json();
   };
-  // Auto-retry a refused/unreachable login — the live slot may be starting.
-  const scheduleLoginRetry = (msg) => {
-    bcRetryRef.current.count += 1;
-    const attempt = bcRetryRef.current.count;
-    const autoWait = bcRetryRef.current.autoWait;
-    let left = autoWait ? 15 : 8;
-    setBcError("");
-    setBcState("connecting");
-    setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg, autoWait });
-    if (bcRetryRef.current.timer) clearInterval(bcRetryRef.current.timer);
-    bcRetryRef.current.timer = setInterval(() => {
-      if (bcRetryRef.current.cancelled) {
-        clearInterval(bcRetryRef.current.timer);
-        bcRetryRef.current.timer = null;
-        return;
-      }
-      left -= 1;
-      if (left <= 0) {
-        clearInterval(bcRetryRef.current.timer);
-        bcRetryRef.current.timer = null;
-        const args = bcRetryRef.current.lastArgs || {};
-        startBroadcast(args.config, args.mic, { isRetry: true });
+
+  // Per-station broadcast state dispatcher (kept fresh via a ref so the engine's
+  // single onState callback always sees the latest React state).
+  const onStationState = (id, s, info) => {
+    setBcStations((prev) => {
+      const n = { ...prev };
+      if (s === "stopped") {
+        delete n[id];
+      } else if (s === "reconnecting") {
+        n[id] = { ...(n[id] || {}), state: "reconnecting", reconnect: info || null };
+      } else if (s === "error") {
+        n[id] = { ...(n[id] || {}), state: "error", error: typeof info === "string" ? info : "Broadcast error.", reconnect: null };
+      } else if (s === "live") {
+        n[id] = { state: "live", error: "", reconnect: null };
       } else {
-        setBcLoginRetry({ attempt, max: MAX_LOGIN_RETRY, seconds: left, lastError: msg, autoWait });
+        n[id] = { ...(n[id] || {}), state: s };
       }
-    }, 1000);
-  };
-  const cancelLoginRetry = () => {
-    bcRetryRef.current.cancelled = true;
-    if (bcRetryRef.current.timer) {
-      clearInterval(bcRetryRef.current.timer);
-      bcRetryRef.current.timer = null;
+      liveIdsRef.current = Object.keys(n).filter((k) => n[k].state === "live");
+      return n;
+    });
+    if (s === "live") {
+      const t = currentTrackId ? tracks[currentTrackId] : null;
+      if (t) {
+        engineRef.current?.sendBroadcastMeta(formatTrackMeta(t), id);
+        const next = standby.trackId ? tracks[standby.trackId] : null;
+        const nx = next ? { title: next.title || next.name, artist: next.artist || "", art: next.art || null } : null;
+        api.setNowPlaying(t.title || t.name, t.artist || "", t.art || null, nx, id).catch(() => {});
+      }
     }
-    bcRetryRef.current.count = 0;
-    setBcLoginRetry(null);
-    engineRef.current?.stopBroadcast();
-    setBcState("idle");
   };
-  const startBroadcast = async (config, mic, opts = {}) => {
-    if (!opts.isRetry) {
-      bcRetryRef.current.count = 0;
-      bcRetryRef.current.cancelled = false;
-      bcRetryRef.current.autoWait = !!opts.autoWait;
+  onStationStateRef.current = onStationState;
+
+  // Simulcast: go live to one or more stations at once (shared program mix).
+  const airStations = async (list, mic) => {
+    const targets = (list || []).filter((s) => s && s.host && s.password);
+    if (!targets.length) {
+      setBanner("Fill in a station's host and password before going live.");
+      return;
     }
-    bcRetryRef.current.lastArgs = { config, mic };
     const base = process.env.REACT_APP_BACKEND_URL || "";
     const wsUrl = base.replace(/^http/, "ws") + "/api/broadcast/ws";
-    setBcError("");
-    setBcReconnect(null);
-    setBcLoginRetry(null);
-    setBcState("connecting");
-    const handleStartError = (msg) => {
-      const canRetry = !bcRetryRef.current.cancelled && (bcRetryRef.current.autoWait || bcRetryRef.current.count < MAX_LOGIN_RETRY);
-      if (canRetry) {
-        scheduleLoginRetry(msg);
-      } else {
-        setBcLoginRetry(null);
-        setBcState("error");
-        setBcError(msg);
-      }
-    };
-    try {
-      await engineRef.current.startBroadcast({
-        wsUrl,
-        config,
-        mic,
-        archive: true,
-        onArchive: onBroadcastArchive,
-        onState: (s, info) => {
-          if (s === "reconnecting") {
-            setBcState("reconnecting");
-            setBcReconnect(info || null);
-            return;
-          }
-          if (s === "error") {
-            handleStartError(typeof info === "string" ? info : "Broadcast error.");
-            return;
-          }
-          if (s === "live") {
-            bcRetryRef.current.count = 0;
-            setBcReconnect(null);
-            setBcLoginRetry(null);
-          }
-          setBcState(s === "stopped" ? "idle" : s);
-        },
+    const toStart = targets.map((s) => ({ id: s.id, wsUrl, config: stationWsConfig(s) }));
+    setBcStations((prev) => {
+      const n = { ...prev };
+      toStart.forEach((s) => {
+        n[s.id] = { state: "connecting", error: "", reconnect: null };
       });
-      const t = currentTrackId ? tracks[currentTrackId] : null;
-      if (t) engineRef.current.sendBroadcastMeta(formatTrackMeta(t));
+      return n;
+    });
+    const useMic = mic === undefined ? targets.some((s) => s.includeMic !== false) : mic !== false;
+    const running = (engineRef.current?.broadcastStationIds?.() || []).length > 0;
+    try {
+      if (!running) {
+        await engineRef.current.startBroadcast({
+          stations: toStart,
+          mic: useMic,
+          archive: true,
+          onArchive: onBroadcastArchive,
+          onState: (id, s, info) => onStationStateRef.current(id, s, info),
+        });
+      } else {
+        toStart.forEach((s) => engineRef.current.addBroadcastStation(s));
+      }
     } catch (e) {
-      handleStartError(e.message || "Couldn't start the broadcast.");
+      const msg = e.message || "Couldn't start the broadcast.";
+      setBcStations((prev) => {
+        const n = { ...prev };
+        toStart.forEach((s) => {
+          n[s.id] = { state: "error", error: msg, reconnect: null };
+        });
+        return n;
+      });
     }
   };
-  const stopBroadcast = () => {
-    bcRetryRef.current.cancelled = true;
-    if (bcRetryRef.current.timer) {
-      clearInterval(bcRetryRef.current.timer);
-      bcRetryRef.current.timer = null;
-    }
-    bcRetryRef.current.count = 0;
-    setBcLoginRetry(null);
-    engineRef.current?.stopBroadcast();
-    setBcState("idle");
-    setBcReconnect(null);
-  };
+  const airStation = (station, mic) => airStations([station], mic);
+  const stopStation = (id) => engineRef.current?.stopBroadcastStation(id);
+  const stopAllAir = () => engineRef.current?.stopBroadcast();
+
   useEffect(() => {
-    if (bcState === "live" && currentTrackId) {
-      const t = tracks[currentTrackId];
-      if (t) engineRef.current?.sendBroadcastMeta(formatTrackMeta(t));
-    }
+    if (!currentTrackId || !liveIdsRef.current.length) return;
+    const t = tracks[currentTrackId];
+    if (t) liveIdsRef.current.forEach((id) => engineRef.current?.sendBroadcastMeta(formatTrackMeta(t), id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrackId, bcState, metaFormat]);
+  }, [currentTrackId, metaFormat, bcStations]);
   const setFaderCurve = (c) => setSettings((s) => ({ ...s, faderCurve: c }));
   const toggleSyncLock = () => setSettings((s) => ({ ...s, syncLock: !s.syncLock }));
   const getBeat = useCallback(() => engineRef.current?.beatInfo(), []);
@@ -2476,7 +2446,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} onGoLive={() => setGoLiveOpen(true)} broadcasting={bcState === "live"} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} onGoLive={() => setGoLiveOpen(true)} broadcasting={Object.values(bcStations).some((s) => s && s.state === "live")} />
 
       {banner && (
         <div
@@ -2841,31 +2811,22 @@ function App() {
       )}
 
       {goLiveOpen && (
-        <GoLiveModal
-          state={bcState}
-          error={bcError}
-          reconnect={bcReconnect}
-          loginRetry={bcLoginRetry}
-          onCancelRetry={cancelLoginRetry}
+        <StationsModal
+          stations={stations}
+          setStations={setStations}
+          bcStations={bcStations}
+          onAir={airStation}
+          onAirAll={airStations}
+          onStop={stopStation}
+          onStopAll={stopAllAir}
           onTest={testBroadcast}
-          onStartMeter={(mic) => engineRef.current?.startInputMeter?.(mic)}
-          onStopMeter={() => engineRef.current?.stopInputMeter?.()}
-          getMeterLevel={() => engineRef.current?.getInputMeterLevel?.() || 0}
+          getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
+          getHealth={(id) => engineRef.current?.getBroadcastHealth?.(id) || null}
           metaFormat={metaFormat}
           onMetaFormat={changeMetaFormat}
-          schedules={schedules}
-          onAddSchedule={addSchedule}
-          onRemoveSchedule={removeSchedule}
-          playlists={playlists}
           broadcasts={broadcasts}
-          nowPlaying={currentTrack ? formatTrackMeta(currentTrack) : ""}
-          getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
-          getHealth={() => engineRef.current?.getBroadcastHealth?.() || null}
-          onStart={startBroadcast}
-          onStop={stopBroadcast}
           onDownloadBroadcast={downloadBroadcast}
           onDeleteBroadcast={deleteBroadcast}
-          onGetBroadcastUrl={getBroadcastUrl}
           onArchiveToPlaylist={archiveToPlaylist}
           onClose={() => setGoLiveOpen(false)}
         />

@@ -21,12 +21,13 @@ export const api = {
   validate: (key, deviceId) => post("/api/validate", { key, device_id: deviceId }),
   status: (key, deviceId) => post("/api/status", { key, device_id: deviceId || null }),
 
-  getNowPlaying: async () => {
-    const res = await fetch(`${BASE}/api/nowplaying`);
+  getNowPlaying: async (station) => {
+    const q = station ? `?station=${encodeURIComponent(station)}` : "";
+    const res = await fetch(`${BASE}/api/nowplaying${q}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
-  setNowPlaying: (title, artist, art, next) =>
+  setNowPlaying: (title, artist, art, next, station) =>
     post("/api/nowplaying", {
       title,
       artist,
@@ -34,7 +35,26 @@ export const api = {
       next_title: next?.title || null,
       next_artist: next?.artist || null,
       next_art: next?.art || null,
+      station: station || null,
     }),
+
+  // Multi-station registry (public branding + stream config for /live players).
+  listStations: async () => {
+    const res = await fetch(`${BASE}/api/stations`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  getStation: async (id) => {
+    const res = await fetch(`${BASE}/api/stations/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  saveStation: (station) => post("/api/stations", station),
+  deleteStation: async (id) => {
+    const res = await fetch(`${BASE}/api/stations/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
 
   transcribe: async (blob, filename = "take.webm") => {
     const fd = new FormData();

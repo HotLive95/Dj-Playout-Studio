@@ -875,31 +875,45 @@ export default class AudioEngine {
   }
 
   // ---- LIVE BROADCAST (program mix -> MP3 -> WSS relay -> radio.co) ----
+  // Simulcast: one shared program mix + MP3 encoder fanned out to N station relays.
   isBroadcasting() {
-    return !!this._bcWs && this._bcWs.readyState === WebSocket.OPEN;
+    return (this._bcConns || []).some((c) => c.ws && c.ws.readyState === WebSocket.OPEN && c.ready);
+  }
+
+  isBroadcastingStation(id) {
+    const c = (this._bcConns || []).find((x) => x.id === id);
+    return !!(c && c.ws && c.ws.readyState === WebSocket.OPEN && c.ready);
+  }
+
+  broadcastStationIds() {
+    return (this._bcConns || []).map((c) => c.id);
   }
 
   getBroadcastLevel() {
     return this._bcLevel || 0;
   }
 
-  getBroadcastHealth() {
-    const ws = this._bcWs;
+  getBroadcastHealth(id) {
+    const conns = this._bcConns || [];
+    const c = id ? conns.find((x) => x.id === id) : conns[0];
+    if (!c) return { kbps: 0, buffered: 0, drops: 0, status: "idle" };
     const now = performance.now();
-    const win = (this._bcSentSamples || []).filter((s) => now - s[0] < 3000);
-    this._bcSentSamples = win;
+    const win = (c.sent || []).filter((s) => now - s[0] < 3000);
+    c.sent = win;
     const bytes = win.reduce((a, s) => a + s[1], 0);
     const kbps = win.length ? Math.round((bytes * 8) / 3 / 1000) : 0;
-    const buffered = ws ? ws.bufferedAmount : 0;
+    const buffered = c.ws ? c.ws.bufferedAmount : 0;
     let status = "good";
-    if (this._bcReconnectTimer) status = "reconnecting";
-    else if (!this._bcReady) status = "connecting";
+    if (c.reconnectTimer) status = "reconnecting";
+    else if (!c.ready) status = "connecting";
     else if (buffered > 200000) status = "buffering";
-    else if (this._bcLastDrop && now - this._bcLastDrop < 4000) status = "unstable";
-    return { kbps, buffered, drops: this._bcDrops || 0, status };
+    else if (c.lastDrop && now - c.lastDrop < 4000) status = "unstable";
+    return { kbps, buffered, drops: c.drops || 0, status };
   }
 
-  async startBroadcast({ wsUrl, config, mic = true, archive = true, onState, onArchive }) {
+  async startBroadcast({ stations, mic = true, archive = true, onState, onArchive }) {
+    const list = Array.isArray(stations) ? stations.filter(Boolean) : [];
+    if (!list.length) throw new Error("No station selected to broadcast to.");
     const ctx = this._ensureProgramGraph();
     if (!ctx) throw new Error("Live audio is not supported here.");
     if (ctx.state === "suspended") {
@@ -911,109 +925,146 @@ export default class AudioEngine {
     }
     this._bcOnState = onState || (() => {});
     this._bcOnArchive = onArchive || (() => {});
-    this._bcParams = { wsUrl, config, mic, archive };
     this._bcSampleRate = Math.round(ctx.sampleRate);
-    this._bcBitrate = Number(config.bitrate) || 128;
-    this._bcReady = false;
-    this._bcStop = false;
-    this._bcAttempt = 0;
+    // All simulcast targets share ONE encoded MP3 stream (first station's bitrate).
+    this._bcBitrate = Number(list[0].config && list[0].config.bitrate) || 128;
     this._bcLevel = 0;
-    this._bcDrops = 0;
-    this._bcLastDrop = 0;
-    this._bcSentSamples = [];
-    if (this._bcReconnectTimer) clearInterval(this._bcReconnectTimer);
+    this._bcConns = this._bcConns || [];
 
-    // Broadcast sub-mix: program master (+ optional mic) -> encoder tap.
-    const mix = ctx.createGain();
-    this._recMaster.connect(mix);
-    this._bcMix = mix;
-    this._bcMic = null;
-    this._bcMicStream = null;
-    if (mic) {
-      try {
-        this._bcMicStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        });
-        this._bcMic = ctx.createMediaStreamSource(this._bcMicStream);
-        this._bcMic.connect(mix); // into the broadcast mix only (never to speakers)
-      } catch {
-        this._bcMicStream = null; // graceful: music-only broadcast
-      }
-    }
-
-    this._bcEnc = new Mp3Encoder(2, this._bcSampleRate, this._bcBitrate);
-    const proc = ctx.createScriptProcessor(4096, 2, 2);
-    const silent = ctx.createGain();
-    silent.gain.value = 0;
-    mix.connect(proc);
-    proc.connect(silent);
-    silent.connect(ctx.destination); // pulls the processor without adding audible output
-    this._bcProc = proc;
-    this._bcSilent = silent;
-
-    proc.onaudioprocess = (ev) => {
-      const inb = ev.inputBuffer;
-      const l = inb.getChannelData(0);
-      const r = inb.numberOfChannels > 1 ? inb.getChannelData(1) : l;
-      const n = l.length;
-      const li = new Int16Array(n);
-      const ri = new Int16Array(n);
-      let sum = 0;
-      for (let i = 0; i < n; i++) {
-        const lv = Math.max(-1, Math.min(1, l[i]));
-        const rv = Math.max(-1, Math.min(1, r[i]));
-        li[i] = lv * 32767;
-        ri[i] = rv * 32767;
-        sum += lv * lv;
-      }
-      this._bcLevel = Math.sqrt(sum / n);
-      const ws = this._bcWs;
-      if (!this._bcReady || !ws || ws.readyState !== WebSocket.OPEN) return;
-      const mp3 = this._bcEnc.encodeBuffer(li, ri);
-      if (mp3.length) {
-        if (ws.bufferedAmount < 512000) {
-          ws.send(mp3.buffer);
-          this._bcSentSamples.push([performance.now(), mp3.length]);
-        } else {
-          this._bcLastDrop = performance.now();
-          this._bcDrops = (this._bcDrops || 0) + 1;
+    if (!this._bcGraphUp) {
+      // Broadcast sub-mix: program master (+ optional mic) -> encoder tap.
+      const mix = ctx.createGain();
+      this._recMaster.connect(mix);
+      this._bcMix = mix;
+      this._bcMic = null;
+      this._bcMicStream = null;
+      if (mic) {
+        try {
+          this._bcMicStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          });
+          this._bcMic = ctx.createMediaStreamSource(this._bcMicStream);
+          this._bcMic.connect(mix); // into the broadcast mix only (never to speakers)
+        } catch {
+          this._bcMicStream = null; // graceful: music-only broadcast
         }
       }
-    };
 
-    // Archive: record the whole broadcast to a file for reposting later.
-    this._bcArchiveChunks = [];
-    this._bcArchiveDest = null;
-    this._bcArchiveRec = null;
-    if (archive) {
-      try {
-        const dest = ctx.createMediaStreamDestination();
-        mix.connect(dest);
-        this._bcArchiveDest = dest;
-        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/webm";
-        const rec = new MediaRecorder(dest.stream, { mimeType: mime });
-        rec.ondataavailable = (e) => e.data && e.data.size && this._bcArchiveChunks.push(e.data);
-        rec.start(2000);
-        this._bcArchiveRec = rec;
-      } catch {
-        this._bcArchiveDest = null;
+      this._bcEnc = new Mp3Encoder(2, this._bcSampleRate, this._bcBitrate);
+      const proc = ctx.createScriptProcessor(4096, 2, 2);
+      const silent = ctx.createGain();
+      silent.gain.value = 0;
+      mix.connect(proc);
+      proc.connect(silent);
+      silent.connect(ctx.destination); // pulls the processor without adding audible output
+      this._bcProc = proc;
+      this._bcSilent = silent;
+
+      proc.onaudioprocess = (ev) => {
+        const inb = ev.inputBuffer;
+        const l = inb.getChannelData(0);
+        const r = inb.numberOfChannels > 1 ? inb.getChannelData(1) : l;
+        const n = l.length;
+        const li = new Int16Array(n);
+        const ri = new Int16Array(n);
+        let sum = 0;
+        for (let i = 0; i < n; i++) {
+          const lv = Math.max(-1, Math.min(1, l[i]));
+          const rv = Math.max(-1, Math.min(1, r[i]));
+          li[i] = lv * 32767;
+          ri[i] = rv * 32767;
+          sum += lv * lv;
+        }
+        this._bcLevel = Math.sqrt(sum / n);
+        const conns = this._bcConns || [];
+        if (!conns.length || !this._bcEnc) return;
+        const mp3 = this._bcEnc.encodeBuffer(li, ri);
+        if (!mp3.length) return;
+        // Fan the same encoded frames out to every live station connection.
+        for (let ci = 0; ci < conns.length; ci++) {
+          const c = conns[ci];
+          const ws = c.ws;
+          if (!c.ready || !ws || ws.readyState !== WebSocket.OPEN) continue;
+          if (ws.bufferedAmount < 512000) {
+            try {
+              ws.send(mp3.buffer);
+            } catch {
+              /* ignore */
+            }
+            c.sent = c.sent || [];
+            c.sent.push([performance.now(), mp3.length]);
+          } else {
+            c.lastDrop = performance.now();
+            c.drops = (c.drops || 0) + 1;
+          }
+        }
+      };
+
+      // Archive: record the whole broadcast to a file for reposting later.
+      this._bcArchiveChunks = [];
+      this._bcArchiveDest = null;
+      this._bcArchiveRec = null;
+      if (archive) {
+        try {
+          const dest = ctx.createMediaStreamDestination();
+          mix.connect(dest);
+          this._bcArchiveDest = dest;
+          const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : "audio/webm";
+          const rec = new MediaRecorder(dest.stream, { mimeType: mime });
+          rec.ondataavailable = (e) => e.data && e.data.size && this._bcArchiveChunks.push(e.data);
+          rec.start(2000);
+          this._bcArchiveRec = rec;
+        } catch {
+          this._bcArchiveDest = null;
+        }
       }
+      this._bcGraphUp = true;
     }
 
-    this._connectWs();
+    for (const st of list) this.addBroadcastStation(st);
   }
 
-  _connectWs() {
-    const { wsUrl, config } = this._bcParams;
-    this._bcReady = false;
-    const ws = new WebSocket(wsUrl);
+  addBroadcastStation({ id, wsUrl, config }) {
+    if (!this._bcGraphUp) return;
+    this._bcConns = this._bcConns || [];
+    if (this._bcConns.some((c) => c.id === id)) return;
+    const conn = {
+      id,
+      wsUrl,
+      config,
+      ws: null,
+      ready: false,
+      stop: false,
+      attempt: 0,
+      reconnectTimer: null,
+      sent: [],
+      drops: 0,
+      lastDrop: 0,
+    };
+    this._bcConns.push(conn);
+    this._connectConn(conn);
+  }
+
+  _connectConn(conn) {
+    conn.ready = false;
+    let ws;
+    try {
+      ws = new WebSocket(conn.wsUrl);
+    } catch {
+      this._bcOnState(conn.id, "error", "Couldn't open the broadcast connection.");
+      return;
+    }
     ws.binaryType = "arraybuffer";
-    this._bcWs = ws;
+    conn.ws = ws;
     ws.onopen = () => {
-      this._bcOnState("connecting");
-      ws.send(JSON.stringify(config));
+      this._bcOnState(conn.id, "connecting");
+      try {
+        ws.send(JSON.stringify(conn.config));
+      } catch {
+        /* ignore */
+      }
     };
     ws.onmessage = (e) => {
       let m = {};
@@ -1023,75 +1074,126 @@ export default class AudioEngine {
         return;
       }
       if (m.type === "live") {
-        this._bcAttempt = 0;
-        this._bcReady = true;
-        this._bcOnState("live");
+        conn.attempt = 0;
+        conn.ready = true;
+        this._bcOnState(conn.id, "live");
       } else if (m.type === "error") {
-        this.stopBroadcast(true);
-        this._bcOnState("error", m.error || "Broadcast failed.");
+        conn.stop = true;
+        conn.ready = false;
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+        this._bcOnState(conn.id, "error", m.error || "Broadcast failed.");
+        this._pruneConns();
       }
     };
     ws.onclose = () => {
-      if (this._bcStop) return;
-      this._scheduleReconnect();
+      if (conn.stop) return;
+      this._scheduleConnReconnect(conn);
     };
     ws.onerror = () => {
       /* onclose will follow and trigger reconnect */
     };
   }
 
-  _scheduleReconnect() {
-    this._bcReady = false;
-    this._bcAttempt = (this._bcAttempt || 0) + 1;
-    if (this._bcAttempt > 10) {
-      this.stopBroadcast(true);
-      this._bcOnState("error", "Lost the radio.co connection and couldn't reconnect. Check your internet / slot.");
+  _scheduleConnReconnect(conn) {
+    conn.ready = false;
+    conn.attempt = (conn.attempt || 0) + 1;
+    if (conn.attempt > 10) {
+      conn.stop = true;
+      this._bcOnState(conn.id, "error", "Lost the connection and couldn't reconnect. Check your internet / slot.");
+      this._pruneConns();
       return;
     }
-    // Fresh encoder each attempt to avoid stale partial frames.
-    try {
-      this._bcEnc = new Mp3Encoder(2, this._bcSampleRate, this._bcBitrate);
-    } catch {
-      /* ignore */
-    }
-    const delay = Math.min(30, 2 ** Math.min(this._bcAttempt, 5));
+    const delay = Math.min(30, 2 ** Math.min(conn.attempt, 5));
     let left = delay;
-    this._bcOnState("reconnecting", { seconds: left, attempt: this._bcAttempt });
-    if (this._bcReconnectTimer) clearInterval(this._bcReconnectTimer);
-    this._bcReconnectTimer = setInterval(() => {
-      if (this._bcStop) {
-        clearInterval(this._bcReconnectTimer);
+    this._bcOnState(conn.id, "reconnecting", { seconds: left, attempt: conn.attempt });
+    if (conn.reconnectTimer) clearInterval(conn.reconnectTimer);
+    conn.reconnectTimer = setInterval(() => {
+      if (conn.stop) {
+        clearInterval(conn.reconnectTimer);
+        conn.reconnectTimer = null;
         return;
       }
       left -= 1;
       if (left <= 0) {
-        clearInterval(this._bcReconnectTimer);
-        this._bcReconnectTimer = null;
-        this._connectWs();
+        clearInterval(conn.reconnectTimer);
+        conn.reconnectTimer = null;
+        this._connectConn(conn);
       } else {
-        this._bcOnState("reconnecting", { seconds: left, attempt: this._bcAttempt });
+        this._bcOnState(conn.id, "reconnecting", { seconds: left, attempt: conn.attempt });
       }
     }, 1000);
   }
 
-  sendBroadcastMeta(title) {
-    if (this.isBroadcasting() && this._bcReady && title) {
-      try {
-        this._bcWs.send(JSON.stringify({ type: "meta", title: String(title) }));
-      } catch {
-        /* ignore */
+  sendBroadcastMeta(title, stationId) {
+    if (!title) return;
+    const payload = JSON.stringify({ type: "meta", title: String(title) });
+    for (const c of this._bcConns || []) {
+      if (stationId && c.id !== stationId) continue;
+      if (c.ready && c.ws && c.ws.readyState === WebSocket.OPEN) {
+        try {
+          c.ws.send(payload);
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
 
-  stopBroadcast(silent = false) {
-    this._bcStop = true;
-    this._bcReady = false;
-    this._bcLevel = 0;
-    if (this._bcReconnectTimer) {
-      clearInterval(this._bcReconnectTimer);
-      this._bcReconnectTimer = null;
+  _pruneConns() {
+    this._bcConns = (this._bcConns || []).filter((c) => !c.stop || (c.ws && c.ws.readyState <= 1));
+    if (this._bcGraphUp && !(this._bcConns || []).some((c) => !c.stop)) {
+      this._teardownBroadcastGraph();
     }
+  }
+
+  stopBroadcastStation(id, silent = false) {
+    const conn = (this._bcConns || []).find((c) => c.id === id);
+    if (!conn) return;
+    conn.stop = true;
+    conn.ready = false;
+    if (conn.reconnectTimer) {
+      clearInterval(conn.reconnectTimer);
+      conn.reconnectTimer = null;
+    }
+    try {
+      if (conn.ws && conn.ws.readyState <= 1) conn.ws.close();
+    } catch {
+      /* ignore */
+    }
+    conn.ws = null;
+    this._bcConns = (this._bcConns || []).filter((c) => c.id !== id);
+    if (!silent && this._bcOnState) this._bcOnState(id, "stopped");
+    if (!this._bcConns.length) this._teardownBroadcastGraph();
+  }
+
+  stopBroadcast(silent = false) {
+    for (const c of this._bcConns || []) {
+      c.stop = true;
+      c.ready = false;
+      if (c.reconnectTimer) {
+        clearInterval(c.reconnectTimer);
+        c.reconnectTimer = null;
+      }
+      try {
+        if (c.ws && c.ws.readyState <= 1) c.ws.close();
+      } catch {
+        /* ignore */
+      }
+      c.ws = null;
+      if (!silent && this._bcOnState) this._bcOnState(c.id, "stopped");
+    }
+    this._bcConns = [];
+    this._teardownBroadcastGraph();
+  }
+
+  _teardownBroadcastGraph() {
+    if (!this._bcGraphUp) return;
+    this._bcGraphUp = false;
+    this._bcLevel = 0;
     try {
       if (this._bcProc) this._bcProc.onaudioprocess = null;
     } catch {
@@ -1130,19 +1232,13 @@ export default class AudioEngine {
     } catch {
       /* ignore */
     }
-    try {
-      if (this._bcWs && this._bcWs.readyState <= 1) this._bcWs.close();
-    } catch {
-      /* ignore */
-    }
     this._bcProc = null;
     this._bcSilent = null;
     this._bcMix = null;
     this._bcMic = null;
     this._bcMicStream = null;
     this._bcArchiveDest = null;
-    this._bcWs = null;
-    if (this._bcOnState && !silent) this._bcOnState("stopped");
+    this._bcEnc = null;
   }
 
   // ---- Input level meter (for the "Test connection" check; no streaming) ----

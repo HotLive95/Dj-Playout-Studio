@@ -625,11 +625,13 @@ class NowPlaying(BaseModel):
     next_title: Optional[str] = None
     next_artist: Optional[str] = None
     next_art: Optional[str] = None
+    station: Optional[str] = None
 
 
 @api_router.get("/nowplaying")
-async def get_now_playing():
-    doc = await db.nowplaying.find_one({"_id": "current"})
+async def get_now_playing(station: str = ""):
+    sid = (station or "").strip() or "current"
+    doc = await db.nowplaying.find_one({"_id": sid})
     if not doc:
         return {"title": None, "artist": None, "art": None, "updated_at": None,
                 "next_title": None, "next_artist": None, "next_art": None}
@@ -646,6 +648,7 @@ async def get_now_playing():
 
 @api_router.post("/nowplaying")
 async def set_now_playing(payload: NowPlaying):
+    sid = (payload.station or "").strip() or "current"
     doc = {
         "title": payload.title,
         "artist": payload.artist,
@@ -655,7 +658,61 @@ async def set_now_playing(payload: NowPlaying):
         "next_art": payload.next_art,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    await db.nowplaying.update_one({"_id": "current"}, {"$set": doc}, upsert=True)
+    await db.nowplaying.update_one({"_id": sid}, {"$set": doc}, upsert=True)
+    return {"ok": True}
+
+
+# ---------- Multi-station registry (public branding + stream config) ----------
+class Station(BaseModel):
+    id: str
+    name: Optional[str] = None
+    tagline: Optional[str] = None
+    color: Optional[str] = None
+    logo: Optional[str] = None  # small (downscaled) data URL
+    stream_url: Optional[str] = None
+    status_url: Optional[str] = None
+
+
+_STATION_FIELDS = ("id", "name", "tagline", "color", "logo", "stream_url", "status_url")
+
+
+def _station_public(doc):
+    out = {k: doc.get(k) for k in _STATION_FIELDS}
+    if not out.get("id"):
+        out["id"] = doc.get("_id")
+    return out
+
+
+@api_router.get("/stations")
+async def list_stations():
+    docs = await db.stations.find().sort("updated_at", 1).to_list(100)
+    return {"stations": [_station_public(d) for d in docs]}
+
+
+@api_router.get("/stations/{station_id}")
+async def get_station(station_id: str):
+    doc = await db.stations.find_one({"_id": station_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Station not found")
+    return _station_public(doc)
+
+
+@api_router.post("/stations")
+async def upsert_station(payload: Station):
+    sid = (payload.id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="Station id required")
+    doc = {k: getattr(payload, k) for k in ("name", "tagline", "color", "logo", "stream_url", "status_url")}
+    doc["id"] = sid
+    doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.stations.update_one({"_id": sid}, {"$set": doc}, upsert=True)
+    return {"ok": True, "id": sid}
+
+
+@api_router.delete("/stations/{station_id}")
+async def delete_station(station_id: str):
+    await db.stations.delete_one({"_id": station_id})
+    await db.nowplaying.delete_one({"_id": station_id})
     return {"ok": True}
 
 

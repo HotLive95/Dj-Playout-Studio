@@ -5,25 +5,26 @@ import { api } from "../lib/api";
 const ENV_STREAM = process.env.REACT_APP_STATION_STREAM_URL || "";
 const WEBSITE_URL = process.env.REACT_APP_STATION_WEBSITE || "";
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+const PUBLIC = process.env.PUBLIC_URL || "";
 const qs = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-const LS_STREAM = (() => {
+const STATION_ID = qs.get("station") || "";
+const ls = (k) => {
   try {
-    return (typeof window !== "undefined" && localStorage.getItem("hotlive95_stream_url")) || "";
+    return (typeof window !== "undefined" && localStorage.getItem(k)) || "";
   } catch {
     return "";
   }
-})();
-const LS_STATUS = (() => {
-  try {
-    return (typeof window !== "undefined" && localStorage.getItem("hotlive95_status_url")) || "";
-  } catch {
-    return "";
-  }
-})();
-const STREAM_URL = qs.get("stream") || LS_STREAM || ENV_STREAM;
-const STATUS_URL = qs.get("status") || LS_STATUS || "";
+};
+const DEFAULTS = {
+  name: "HOT LIVE 95",
+  tagline: "Detroit · A.I. Radio",
+  color: "#ff5a1f",
+  logo: `${PUBLIC}/hl-emblem.png`,
+  streamUrl: qs.get("stream") || ls("hotlive95_stream_url") || ENV_STREAM,
+  statusUrl: qs.get("status") || ls("hotlive95_status_url") || "",
+};
 
-// Public "Listen Live" landing page (route: /live). Point the domain here.
+// Public "Listen Live" landing page (route: /live[?station=<id>]).
 export default function ListenLivePage() {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -34,9 +35,36 @@ export default function ListenLivePage() {
   const [nowPlaying, setNowPlaying] = useState(null);
   const [stationLive, setStationLive] = useState(null);
   const [listeners, setListeners] = useState(null);
+  const [st, setSt] = useState(DEFAULTS);
 
-  // Live listener count + now-playing. Prefer AzuraCast stats API if set,
-  // else fall back to the Icecast status of the stream URL.
+  const STREAM_URL = st.streamUrl;
+  const STATUS_URL = st.statusUrl;
+
+  // Resolve station branding/config from the backend when ?station=<id> is set.
+  useEffect(() => {
+    if (!STATION_ID || !BACKEND) return;
+    let alive = true;
+    api
+      .getStation(STATION_ID)
+      .then((s) => {
+        if (!alive || !s) return;
+        setSt((prev) => ({
+          name: s.name || prev.name,
+          tagline: s.tagline || prev.tagline,
+          color: s.color || prev.color,
+          logo: s.logo || prev.logo,
+          // query params still win (explicit share links) then backend, then defaults.
+          streamUrl: qs.get("stream") || s.stream_url || prev.streamUrl,
+          statusUrl: qs.get("status") || s.status_url || prev.statusUrl,
+        }));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Live listener count + on-air status (AzuraCast stats API, else Icecast).
   useEffect(() => {
     if (!BACKEND || (!STATUS_URL && !STREAM_URL)) return;
     let alive = true;
@@ -61,14 +89,14 @@ export default function ListenLivePage() {
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [STATUS_URL, STREAM_URL]);
 
   // Poll the station "now playing" feed (published by the studio when it's online).
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
-        const np = await api.getNowPlaying();
+        const np = await api.getNowPlaying(STATION_ID || undefined);
         if (alive) setNowPlaying(np && np.title ? np : null);
       } catch {
         /* offline / not set — leave as generic live radio */
@@ -123,7 +151,6 @@ export default function ListenLivePage() {
     }
     setLoading(true);
     setError("");
-    // reload the live stream from the live edge each time
     a.src = STREAM_URL;
     a.load();
     try {
@@ -142,28 +169,42 @@ export default function ListenLivePage() {
     setMuted(a.muted);
   };
 
+  const accent = st.color || "#ff5a1f";
+
   return (
     <div className="min-h-screen bg-[var(--hl-bg)] text-[var(--hl-text)] relative overflow-hidden" data-testid="listen-live-page">
-      {/* ambient glow */}
-      <div className="pointer-events-none absolute inset-0 opacity-70" style={{ background: "radial-gradient(900px 500px at 50% -10%, rgba(255,90,31,0.20), transparent 60%)" }} />
+      {/* ambient glow tinted with the station's accent */}
+      <div className="pointer-events-none absolute inset-0 opacity-70" style={{ background: `radial-gradient(900px 500px at 50% -10%, ${accent}33, transparent 60%)` }} />
 
       <div className="relative z-10 min-h-screen grid place-items-center p-5">
         <div className="w-full max-w-md hl-panel rounded-3xl p-7 text-center">
           <div className="flex flex-col items-center gap-4">
             <img
-              src={`${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
-              alt="Hot Live 95"
-              className="h-24 w-auto drop-shadow-[0_0_24px_rgba(255,90,31,0.35)]"
+              src={st.logo}
+              alt={st.name}
+              className="h-24 w-auto max-w-[70%] object-contain"
+              style={{ filter: `drop-shadow(0 0 24px ${accent}59)` }}
               data-testid="live-logo"
+              onError={(e) => {
+                e.currentTarget.src = `${PUBLIC}/hl-emblem.png`;
+              }}
             />
             <div>
-              <h1 className="font-display text-3xl sm:text-4xl tracking-wide leading-none">HOT LIVE 95</h1>
-              <p className="text-[11px] uppercase tracking-[0.35em] text-[var(--hl-muted)] mt-1">Detroit · A.I. Radio</p>
+              <h1 className="font-display text-3xl sm:text-4xl tracking-wide leading-none" data-testid="live-station-name">
+                {st.name}
+              </h1>
+              <p className="text-[11px] uppercase tracking-[0.35em] text-[var(--hl-muted)] mt-1">{st.tagline}</p>
             </div>
 
             {/* Live badge — reflects the station's real on-air status */}
             <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--hl-line)] bg-black/40" data-testid="live-badge">
-              <span className={`h-2.5 w-2.5 rounded-full ${stationLive ? "bg-[#2ee5c4] animate-pulse" : stationLive === false ? "bg-[var(--hl-muted)]" : playing ? "bg-[var(--hl-onair)] animate-pulse" : "bg-[var(--hl-muted)]"}`} />
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{
+                  background: stationLive ? "#2ee5c4" : stationLive === false ? "var(--hl-muted)" : playing ? accent : "var(--hl-muted)",
+                  animation: (stationLive || (stationLive == null && playing)) ? "pulse 1.5s ease-in-out infinite" : "none",
+                }}
+              />
               <span className="text-xs font-600 uppercase tracking-wider" data-testid="live-status">
                 {stationLive === true ? "🟢 Live" : stationLive === false ? "⚪ Offline" : playing ? "On Air — Live" : "Live Radio"}
               </span>
@@ -171,7 +212,7 @@ export default function ListenLivePage() {
 
             {listeners != null && (
               <div className="flex items-center gap-1.5 text-xs text-[var(--hl-muted)]" data-testid="live-listeners">
-                <Radio size={12} className="text-[var(--hl-cue)]" />
+                <Radio size={12} style={{ color: accent }} />
                 <span className="text-[var(--hl-text)]">{listeners}</span> listening now
               </div>
             )}
@@ -181,34 +222,26 @@ export default function ListenLivePage() {
               data-testid="live-play-button"
               onClick={toggle}
               disabled={!STREAM_URL || loading}
-              className="mt-2 h-20 w-20 grid place-items-center rounded-full hl-fire-gradient text-white shadow-[0_10px_40px_rgba(255,23,68,0.4)] hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:hover:scale-100"
+              className="mt-2 h-20 w-20 grid place-items-center rounded-full text-white shadow-[0_10px_40px_rgba(255,23,68,0.4)] hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:hover:scale-100"
+              style={{ background: `linear-gradient(135deg, ${accent}, #ff2d0e)` }}
               aria-label={playing ? "Pause" : "Play"}
             >
-              {loading ? (
-                <Radio size={30} className="animate-pulse" />
-              ) : playing ? (
-                <Pause size={34} />
-              ) : (
-                <Play size={34} className="ml-1" />
-              )}
+              {loading ? <Radio size={30} className="animate-pulse" /> : playing ? <Pause size={34} /> : <Play size={34} className="ml-1" />}
             </button>
             <div className="text-sm text-[var(--hl-muted)]">{playing ? "Tap to pause" : "Tap to listen live"}</div>
 
             {nowPlaying && (
-              <div
-                className="mt-3 w-full flex items-center gap-3 rounded-2xl border border-[var(--hl-line)] bg-black/40 px-3 py-2.5 text-left"
-                data-testid="live-now-playing"
-              >
+              <div className="mt-3 w-full flex items-center gap-3 rounded-2xl border border-[var(--hl-line)] bg-black/40 px-3 py-2.5 text-left" data-testid="live-now-playing">
                 <img
-                  src={nowPlaying.art || `${process.env.PUBLIC_URL || ""}/hl-emblem.png`}
+                  src={nowPlaying.art || st.logo}
                   alt=""
                   className="h-12 w-12 shrink-0 rounded-md object-cover bg-black/40 border border-[var(--hl-line)]"
                   onError={(e) => {
-                    e.currentTarget.src = `${process.env.PUBLIC_URL || ""}/hl-emblem.png`;
+                    e.currentTarget.src = `${PUBLIC}/hl-emblem.png`;
                   }}
                 />
                 <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--hl-fire)]">
+                  <div className="text-[10px] uppercase tracking-[0.25em]" style={{ color: accent }}>
                     Now Playing
                   </div>
                   <div className="truncate font-600 text-sm" data-testid="live-np-title">
@@ -220,10 +253,7 @@ export default function ListenLivePage() {
                     </div>
                   )}
                   {nowPlaying.next_title && (
-                    <div
-                      className="mt-1 flex items-center gap-1.5 text-[11px] text-[var(--hl-cue)]"
-                      data-testid="live-coming-up"
-                    >
+                    <div className="mt-1 flex items-center gap-1.5 text-[11px] text-[var(--hl-cue)]" data-testid="live-coming-up">
                       <Radio size={11} className="shrink-0" />
                       <span className="uppercase tracking-[0.2em] text-[10px] opacity-80">Up next</span>
                       <span className="truncate text-[var(--hl-text)]" data-testid="live-next-title">
@@ -268,13 +298,7 @@ export default function ListenLivePage() {
             )}
 
             {WEBSITE_URL && (
-              <a
-                data-testid="live-website-link"
-                href={WEBSITE_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 text-xs text-[var(--hl-muted)] hover:text-[var(--hl-fire)]"
-              >
+              <a data-testid="live-website-link" href={WEBSITE_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-[var(--hl-muted)] hover:text-[var(--hl-fire)]">
                 Visit our website <ExternalLink size={12} />
               </a>
             )}
@@ -283,7 +307,7 @@ export default function ListenLivePage() {
           <audio ref={audioRef} preload="none" />
         </div>
 
-        <div className="absolute bottom-4 text-[11px] text-[var(--hl-muted)]">© Hot Live 95 Detroit · A.I. Radio</div>
+        <div className="absolute bottom-4 text-[11px] text-[var(--hl-muted)]">© {st.name} · Powered by Hot Live 95</div>
       </div>
     </div>
   );
