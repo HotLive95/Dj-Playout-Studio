@@ -55,6 +55,9 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
   const [health, setHealth] = useState(null);
   const [listeners, setListeners] = useState(null);
   const fileRef = useRef(null);
+  const [azuraUrl, setAzuraUrl] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [resolveMsg, setResolveMsg] = useState(null);
 
   const state = bc?.state || "idle";
   const meta = STATE_META[state] || STATE_META.idle;
@@ -96,6 +99,51 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
   }, [station.statusUrl, station.streamUrl]);
 
   const set = (patch) => onChange({ ...station, ...patch });
+
+  // One-paste AzuraCast setup: resolve host / listen URL / now-playing / name.
+  const autoFillAzura = async () => {
+    const url = azuraUrl.trim();
+    if (!url) {
+      setResolveMsg({ ok: false, message: "Paste your AzuraCast URL first." });
+      return;
+    }
+    setResolving(true);
+    setResolveMsg(null);
+    try {
+      const r = await fetch(`${BACKEND}/api/broadcast/azuracast-resolve?url=${encodeURIComponent(url)}`);
+      const d = await r.json();
+      if (!d.ok) {
+        setResolveMsg({ ok: false, message: d.message || "Couldn't read that AzuraCast URL." });
+      } else {
+        const listen = d.listenUrl || "";
+        let mount = station.mount || "/radio.mp3";
+        try {
+          const pu = new URL(listen);
+          const last = (pu.pathname || "").split("/").filter(Boolean).pop();
+          if (last && last.includes(".")) mount = "/" + last;
+        } catch {
+          /* keep default */
+        }
+        set({
+          name: !station.name || station.name === "Hot Live 95" ? d.name || station.name : station.name,
+          host: d.host || station.host,
+          streamUrl: listen || station.streamUrl,
+          statusUrl: d.nowPlayingUrl || station.statusUrl,
+          mount,
+          port: station.port || 8005,
+          username: station.username || "source",
+        });
+        setResolveMsg({
+          ok: true,
+          message: `Filled from “${d.name || d.shortcode}”. Now add your DJ username, password & confirm the source port below.`,
+        });
+      }
+    } catch {
+      setResolveMsg({ ok: false, message: "Couldn't reach the server. Check the URL and that the station is public." });
+    } finally {
+      setResolving(false);
+    }
+  };
 
   const copyText = (text, tag) => {
     navigator.clipboard?.writeText(text).then(() => {
@@ -251,6 +299,42 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
                 </button>
               )}
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickLogo} />
+            </div>
+          </div>
+
+          {/* AzuraCast one-paste setup */}
+          <div className="rounded-lg border border-[var(--hl-fire)]/40 bg-[var(--hl-fire)]/5 p-2.5">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--hl-fire)] mb-1.5">
+              <Zap size={12} /> AzuraCast quick setup
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                data-testid={`station-azura-url-${station.id}`}
+                value={azuraUrl}
+                onChange={(e) => setAzuraUrl(e.target.value)}
+                placeholder="Paste your AzuraCast URL (public page or now-playing)"
+                className="hl-input flex-1"
+              />
+              <button
+                data-testid={`station-azura-fill-${station.id}`}
+                onClick={autoFillAzura}
+                disabled={resolving}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg hl-fire-gradient px-3 py-2 text-xs font-600 text-white disabled:opacity-60"
+              >
+                {resolving ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+                {resolving ? "Reading…" : "Auto-fill"}
+              </button>
+            </div>
+            {resolveMsg && (
+              <div
+                data-testid={`station-azura-msg-${station.id}`}
+                className={`mt-1.5 text-[11px] ${resolveMsg.ok ? "text-[#2ee5c4]" : "text-[var(--hl-onair)]"}`}
+              >
+                {resolveMsg.message}
+              </div>
+            )}
+            <div className="mt-1 text-[10px] text-[var(--hl-muted)]">
+              Fills host, stream URL, now-playing & name. Your DJ username/password come from AzuraCast → Station → Streamers/DJs.
             </div>
           </div>
 
