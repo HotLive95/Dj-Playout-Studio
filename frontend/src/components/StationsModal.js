@@ -109,8 +109,10 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
     }
     setResolving(true);
     setResolveMsg(null);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 10000);
     try {
-      const r = await fetch(`${BACKEND}/api/broadcast/azuracast-resolve?url=${encodeURIComponent(url)}`);
+      const r = await fetch(`${BACKEND}/api/broadcast/azuracast-resolve?url=${encodeURIComponent(url)}`, { signal: ctl.signal });
       const d = await r.json();
       if (!d.ok) {
         setResolveMsg({ ok: false, message: d.message || "Couldn't read that AzuraCast URL." });
@@ -139,8 +141,9 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
         });
       }
     } catch {
-      setResolveMsg({ ok: false, message: "Couldn't reach the server. Check the URL and that the station is public." });
+      setResolveMsg({ ok: false, message: "Couldn't reach the server (timed out). Check the URL and that the station is public." });
     } finally {
+      clearTimeout(timer);
       setResolving(false);
     }
   };

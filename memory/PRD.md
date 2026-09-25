@@ -809,7 +809,16 @@ Latest shipped work (Voice DSP chain, Install button, 500MB chunked uploads, Exp
   in preview, so real "live" can't be reached — verified graceful connecting→error, no crash, and
   simulcast fan-out to a 2nd station doesn't throw.
 
-## Update 28 (2026-06) — Brand logo replaced with owner's HOT LIVE 95 / WHLD emblem
+## Update 29 (2026-06) — AzuraCast one-paste setup (verified 100%)
+- Added "AzuraCast quick setup" to each station card in the Broadcast Center: paste your AzuraCast
+  public/now-playing URL + click Auto-fill → resolves and populates Host, Public stream (listen) URL,
+  now-playing Status URL, station Name, mount (from listen path) and sensible defaults (port 8005,
+  username `source`); leaves only DJ username/password for the user. Uses GET /api/broadcast/azuracast-resolve
+  (fetch has a 10s AbortController timeout so it never hangs). `components/StationsModal.js`.
+- Verified against AzuraCast's real public demo (demo.azuracast.com/azuratest_radio): resolve + live
+  status both return correct data; testing agent iteration_34 = 100% frontend (positive + negative path,
+  no crash). NOTE: the user's own AzuraCast values were still placeholders (your-domain.com), so a real
+  go-live test against their server is pending their real domain + DJ credentials + server online.
 - User supplied an animated 1080×1080 logo video (HOT LIVE 95 · DETROIT · A.I. RADIO · WHLD badge:
   chrome mic + ON AIR + Detroit skyline + flames). Extracted the clean settled frame and regenerated
   ALL brand assets from it: `frontend/public/logo.jpg` (header + gate), `hl-emblem.png` (/live +
