@@ -527,6 +527,7 @@ export default function StationsModal({
   onDownloadBroadcast,
   onDeleteBroadcast,
   onArchiveToPlaylist,
+  onOpenMultiChannel,
   onClose,
 }) {
   const [level, setLevel] = useState(0);
@@ -629,9 +630,21 @@ export default function StationsModal({
               <p className="text-[11px] text-[var(--hl-muted)] mt-0.5">Simulcast your show to multiple stations at once</p>
             </div>
           </div>
-          <button data-testid="stations-close" onClick={onClose} className="h-9 w-9 grid place-items-center rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)]">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            {onOpenMultiChannel && (
+              <button
+                data-testid="open-multichannel"
+                onClick={onOpenMultiChannel}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--hl-fire)]/50 text-[var(--hl-fire)] px-3 h-9 text-xs font-600 hover:bg-[var(--hl-fire)]/10"
+                title="Air a different live program on each channel at the same time"
+              >
+                <Radio size={14} /> Multi-Channel
+              </button>
+            )}
+            <button data-testid="stations-close" onClick={onClose} className="h-9 w-9 grid place-items-center rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)]">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-4">

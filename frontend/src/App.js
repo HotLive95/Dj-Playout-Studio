@@ -22,6 +22,7 @@ import TakesVault from "@/components/TakesVault";
 import CloudHandoffModal from "@/components/CloudHandoffModal";
 import StemIsolator from "@/components/StemIsolator";
 import StationsModal from "@/components/StationsModal";
+import MultiChannelStudio from "@/components/MultiChannelStudio";
 import { IdCard, X } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
@@ -277,6 +278,7 @@ function App() {
   const [stemsOpen, setStemsOpen] = useState(false);
   const [jinglePage, setJinglePage] = useState(0);
   const [goLiveOpen, setGoLiveOpen] = useState(false);
+  const [mcOpen, setMcOpen] = useState(false);
   const [stations, setStations] = useState(loadStations);
   useEffect(() => {
     saveStations(stations);
@@ -2828,7 +2830,19 @@ function App() {
           onDownloadBroadcast={downloadBroadcast}
           onDeleteBroadcast={deleteBroadcast}
           onArchiveToPlaylist={archiveToPlaylist}
+          onOpenMultiChannel={() => {
+            setGoLiveOpen(false);
+            setMcOpen(true);
+          }}
           onClose={() => setGoLiveOpen(false)}
+        />
+      )}
+      {mcOpen && (
+        <MultiChannelStudio
+          stations={stations}
+          playlists={playlists}
+          tracks={tracks}
+          onClose={() => setMcOpen(false)}
         />
       )}
 
