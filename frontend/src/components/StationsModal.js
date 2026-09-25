@@ -118,13 +118,15 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
         setResolveMsg({ ok: false, message: d.message || "Couldn't read that AzuraCast URL." });
       } else {
         const listen = d.listenUrl || "";
-        let mount = station.mount || "/radio.mp3";
-        try {
-          const pu = new URL(listen);
-          const last = (pu.pathname || "").split("/").filter(Boolean).pop();
-          if (last && last.includes(".")) mount = "/" + last;
-        } catch {
-          /* keep default */
+        let mount = d.mount || station.mount || "/radio.mp3";
+        if (!d.mount) {
+          try {
+            const pu = new URL(listen);
+            const last = (pu.pathname || "").split("/").filter(Boolean).pop();
+            if (last && last.includes(".")) mount = "/" + last;
+          } catch {
+            /* keep default */
+          }
         }
         set({
           name: !station.name || station.name === "Hot Live 95" ? d.name || station.name : station.name,
@@ -132,6 +134,7 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
           streamUrl: listen || station.streamUrl,
           statusUrl: d.nowPlayingUrl || station.statusUrl,
           mount,
+          bitrate: d.bitrate || station.bitrate,
           port: station.port || 8005,
           username: station.username || "source",
         });

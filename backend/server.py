@@ -9,6 +9,7 @@ import asyncio
 import logging
 import random
 import json
+import re
 import secrets
 import hashlib
 import hmac
@@ -1305,19 +1306,34 @@ async def azuracast_status(url: str = "", base: str = "", station: str = ""):
     if not npurl:
         return {"ok": False}
 
-    def _fetch():
-        req = urllib.request.Request(npurl, headers={"User-Agent": "HotLive95"})
+    def _fetch(u):
+        req = urllib.request.Request(u, headers={"User-Agent": "HotLive95"})
         with urllib.request.urlopen(req, timeout=8) as r:
             return json.loads(r.read().decode("utf-8", "ignore"))
 
     try:
-        data = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        data = await asyncio.get_event_loop().run_in_executor(None, _fetch, npurl)
     except Exception:
-        return {"ok": False}
+        data = None
     if isinstance(data, list):
         data = data[0] if data else {}
-    if not isinstance(data, dict):
-        return {"ok": False}
+    # Now-playing 404s while the station is offline -> report offline gracefully
+    # using the station API (still returns mounts/listeners).
+    if not isinstance(data, dict) or data.get("success") is False or not data.get("station"):
+        staturl = re.sub(r"/api/nowplaying/", "/api/station/", npurl)
+        try:
+            sdata = await asyncio.get_event_loop().run_in_executor(None, _fetch, staturl)
+        except Exception:
+            return {"ok": True, "live": False, "listeners": 0, "nowPlaying": ""}
+        listeners = 0
+        if isinstance(sdata, dict):
+            for m in sdata.get("mounts") or []:
+                lc = (m.get("listeners") or {}) if isinstance(m, dict) else {}
+                try:
+                    listeners += int(lc.get("total") or 0)
+                except Exception:
+                    pass
+        return {"ok": True, "live": False, "listeners": listeners, "nowPlaying": ""}
     live = bool(data.get("is_online"))
     listeners = 0
     l = data.get("listeners")
@@ -1358,19 +1374,45 @@ async def azuracast_resolve(url: str = ""):
     if not shortcode:
         return {"ok": False, "message": "Couldn't find the station code in that URL. Paste your AzuraCast public page or now-playing URL."}
     npurl = f"{base}/api/nowplaying/{shortcode}"
+    staturl = f"{base}/api/station/{shortcode}"
 
-    def _fetch():
-        req = urllib.request.Request(npurl, headers={"User-Agent": "HotLive95"})
+    def _get(u):
+        req = urllib.request.Request(u, headers={"User-Agent": "HotLive95"})
         with urllib.request.urlopen(req, timeout=8) as r:
             return json.loads(r.read().decode("utf-8", "ignore"))
 
+    loop = asyncio.get_event_loop()
+    st = {}
+    # Prefer now-playing (works while live); fall back to the station API, which
+    # is available even when the station is offline (now-playing 404s then).
     try:
-        data = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        data = await loop.run_in_executor(None, _get, npurl)
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        if isinstance(data, dict) and data.get("success") is not False and data.get("station"):
+            st = data.get("station") or {}
     except Exception:
-        return {"ok": False, "message": f"Couldn't reach {npurl}. Check the URL and that the station is public."}
-    if isinstance(data, list):
-        data = data[0] if data else {}
-    st = (data.get("station") or {}) if isinstance(data, dict) else {}
+        st = {}
+    if not st:
+        try:
+            data = await loop.run_in_executor(None, _get, staturl)
+            if isinstance(data, dict) and data.get("shortcode"):
+                st = data
+        except Exception:
+            return {"ok": False, "message": f"Couldn't reach {staturl}. Check the URL and that the station exists / is public."}
+    if not st:
+        return {"ok": False, "message": f"Couldn't read station '{shortcode}' from {base}. Check the shortcode."}
+
+    # Default mount + bitrate from the station's mount list.
+    mount, bitrate = "", 0
+    mounts = st.get("mounts") if isinstance(st.get("mounts"), list) else []
+    dm = next((m for m in mounts if m.get("is_default")), (mounts[0] if mounts else None))
+    if dm:
+        mount = str(dm.get("path") or "")
+        try:
+            bitrate = int(dm.get("bitrate") or 0)
+        except Exception:
+            bitrate = 0
     return {
         "ok": True,
         "host": p.netloc.split(":")[0],
@@ -1379,6 +1421,10 @@ async def azuracast_resolve(url: str = ""):
         "name": str(st.get("name") or ""),
         "listenUrl": str(st.get("listen_url") or ""),
         "nowPlayingUrl": npurl,
+        "mount": mount,
+        "bitrate": bitrate,
+        "frontend": str(st.get("frontend") or ""),
+        "backend": str(st.get("backend") or ""),
     }
 
 
@@ -1408,21 +1454,31 @@ async def broadcast_test(request: Request):
         except Exception:
             pass
     if res.get("ok"):
-        return {"ok": True, "reachable": True, "status": "ready", "message": "radio.co accepted your login — you're clear to go live."}
+        return {"ok": True, "reachable": True, "status": "ready", "message": "Your server accepted the login — you're clear to go live."}
     if not res.get("reached"):
-        return {"ok": False, "reachable": False, "status": "unreachable", "message": f"Couldn't reach {host}:{port}. Check the host and source port."}
+        return {"ok": False, "reachable": False, "status": "unreachable", "message": f"Couldn't reach {host}:{port}. Check the host and source/DJ port."}
     code = res.get("code", 0)
     raw = res.get("raw") or ""
+    harbor = "harbor" in raw.lower() or "liquidsoap" in raw.lower()
     if code == 401:
-        return {"ok": False, "reachable": True, "status": "bad_password", "message": "radio.co rejected the broadcast password (401 Unauthorized). Use your Live/DJ broadcasting password from the radio.co dashboard (Settings → Advanced → Live Broadcasting Details) — it's separate from your Studio login." + (f" (server: {raw})" if raw else "")}
+        tip = (
+            "The server reached you but rejected the login (401 Unauthorized). "
+            "Use your exact DJ/Streamer Username and Password from AzuraCast → your station → Streamers/DJs "
+            "(the Streamer Username is a login handle — usually lowercase, no spaces — not the display name). "
+            "Also make sure 'Allow Streamers/DJs to Broadcast' is ON."
+        )
+        return {"ok": False, "reachable": True, "status": "bad_password", "message": tip + (f" (server: {raw})" if raw else "")}
+    if code == 404:
+        return {"ok": False, "reachable": True, "status": "bad_mount", "message": f"Reached {host}:{port} but that mount doesn't exist (404). For an AzuraCast Liquidsoap DJ/Streamer connection the mount is usually '/'." + (f" (server: {raw})" if raw else "")}
     msg = (
-        f"Reached radio.co at {host}:{port}, so your host and source port are correct. "
-        "It isn't accepting a live source right now. On radio.co only the station OWNER can go live anytime — every other DJ must have a SCHEDULED live event, and the slot has to be open. "
-        "Add your show on radio.co's calendar (or turn on Live Anytime if you're the owner), then it will connect at that time. If it still refuses inside your slot, re-check the broadcast password."
+        f"Reached {host}:{port}, so your host and port are correct. "
+        "The server isn't accepting your source right now. "
+        + ("This is the Liquidsoap DJ harbor — confirm 'Allow Streamers/DJs' is enabled and, if your station uses scheduled DJ slots, that your slot is open. " if harbor else "")
+        + "Double-check the DJ/Streamer username, password and mount (usually '/')."
     )
     if raw:
         msg += f" (server: {raw})"
-    return {"ok": False, "reachable": True, "status": "not_in_slot", "message": msg}
+    return {"ok": False, "reachable": True, "status": "not_ready", "message": msg}
 
 
 @api_router.websocket("/broadcast/ws")

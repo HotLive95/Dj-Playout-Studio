@@ -809,7 +809,22 @@ Latest shipped work (Voice DSP chain, Install button, 500MB chunked uploads, Exp
   in preview, so real "live" can't be reached — verified graceful connecting→error, no crash, and
   simulcast fan-out to a 2nd station doesn't throw.
 
-## Update 29 (2026-06) — AzuraCast one-paste setup (verified 100%)
+## Update 30 (2026-06) — Real station wired: Hot Live 95 on s2.ssl-stream.com (AzuraCast)
+- User's server is a shared AzuraCast host `s2.ssl-stream.com`. Their station: name "Hot Live 95 Detroit
+  A.I. Radio LLC.", shortcode `hotlive95` (id 65), frontend=icecast, backend=liquidsoap, listen
+  `https://s2.ssl-stream.com/listen/hotlive95/radio.mp3`, mount `/radio.mp3` @128k, public.
+- Hardened backend AzuraCast helpers (`server.py`): `azuracast-resolve` now falls back to
+  `/api/station/<shortcode>` when `/api/nowplaying/<shortcode>` 404s (offline) and returns mount +
+  bitrate + frontend/backend; `azuracast-status` degrades gracefully to live:false + listener totals
+  from the station API when now-playing 404s. Auto-fill (StationsModal) consumes the returned
+  mount/bitrate. Verified against the real station (resolve ok, status offline-graceful) and the public
+  /live player renders against the real listen URL.
+- Downscaled `public/hl-emblem.png` 1080→512 (1.4MB→~310KB) — fixes slow-decode logo flash on /live and
+  speeds up the public player for mobile listeners.
+- PENDING (needs user): source PORT + DJ streamer username + password (from AzuraCast → Broadcasting /
+  Streamers) to run the real go-live source test. Everything else auto-fills from the public URL.
+
+
 - Added "AzuraCast quick setup" to each station card in the Broadcast Center: paste your AzuraCast
   public/now-playing URL + click Auto-fill → resolves and populates Host, Public stream (listen) URL,
   now-playing Status URL, station Name, mount (from listen path) and sensible defaults (port 8005,
