@@ -6,6 +6,7 @@ import "@/index.css";
 import App from "@/App";
 import LicenseStatusPage from "@/components/LicenseStatusPage";
 import ListenLivePage from "@/components/ListenLivePage";
+import BroadcastPreview from "@/components/BroadcastPreview";
 import KeyGenPage from "@/components/KeyGenPage";
 import AdminPage from "@/components/AdminPage";
 
@@ -27,6 +28,7 @@ root.render(
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/keygen" element={<KeyGenPage />} />
           <Route path="/live" element={<ListenLivePage />} />
+          <Route path="/broadcast-preview" element={<BroadcastPreview />} />
           <Route path="/license" element={<LicenseStatusPage />} />
           <Route path="*" element={<App />} />
         </Routes>
