@@ -242,3 +242,15 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   uninstall — DJs must use the per-playlist Save button to export .hl95playlist files (which re-import
   via Load). Large playlists split into "part X of N" — all parts must be loaded together to restore.
 - Deployed to production.
+
+## Update 40 (2026-06) — Single-file save toggle + Import-all-parts warning (verified 100%, iteration_39)
+- Single-File Save: new settings.singleFileSave (default ON) + Sidebar footer toggle
+  (data-testid single-file-save-toggle). When ON, savePlaylistFile keeps the whole playlist in ONE
+  .hl95playlist up to a generous ~300MB base64 cap (was 40MB) so DJs rarely get "part X of N"; OFF keeps
+  the smaller 40MB split. Persisted in app state settings.
+- Import All Parts Warning: loading a single part of a multi-part saved playlist now opens a modal
+  (data-testid parts-needed-modal) — shows loaded X of N + which parts are missing, with a Browse button
+  (parts-needed-browse -> parts-needed-input) to add the remaining parts, plus Later (parts-needed-dismiss)
+  and close (parts-needed-close). Modal auto-closes and the playlist restores once all parts load.
+  handlePlaylistPart sets/clears partsNeeded state.
+- Verified: testing agent iteration_39, frontend 100%, no regressions.

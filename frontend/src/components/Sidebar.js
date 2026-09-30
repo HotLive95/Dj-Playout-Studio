@@ -14,6 +14,7 @@ import {
   DownloadCloud,
   Save,
   Upload,
+  CloudUpload,
 } from "lucide-react";
 import { formatTotal } from "../lib/format";
 import InstallButton from "./InstallButton";
@@ -36,6 +37,7 @@ export default function Sidebar({
   onToggleShuffleAll,
   singleFileSave = true,
   onToggleSingleFileSave,
+  onOpenBackup,
 }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -350,6 +352,14 @@ export default function Sidebar({
         <div className="mt-2">
           <InstallButton variant="sidebar" />
         </div>
+        <button
+          data-testid="open-backup-button"
+          onClick={onOpenBackup}
+          className="mt-2 w-full flex items-center justify-center gap-2 h-9 rounded-lg text-xs font-700 border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] hover:border-[var(--hl-fire)] transition"
+          title="Back up all playlists (to a folder or iCloud Drive) so they survive a reinstall"
+        >
+          <CloudUpload size={15} /> Backup Playlists
+        </button>
         <div className="mt-2 text-center text-[10px] text-[var(--hl-muted)] tracking-wide">
           HOT LIVE 95 · A.I. RADIO · DETROIT
         </div>

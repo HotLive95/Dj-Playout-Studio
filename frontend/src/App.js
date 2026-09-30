@@ -23,6 +23,7 @@ import CloudHandoffModal from "@/components/CloudHandoffModal";
 import StemIsolator from "@/components/StemIsolator";
 import StationsModal from "@/components/StationsModal";
 import MultiChannelStudio from "@/components/MultiChannelStudio";
+import BackupModal from "@/components/BackupModal";
 import { IdCard, X, FolderDown, Upload } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
@@ -34,6 +35,7 @@ import { formatTime } from "@/lib/format";
 import { deriveNames, parseFilename } from "@/lib/id3";
 import { loadStations, saveStations, stationWsConfig } from "@/lib/stations";
 import { micConstraints } from "@/lib/mic";
+import { fsaSupported, pickBackupDir, getBackupDir, forgetBackupDir, writeFileToDir } from "@/lib/backup";
 import { addHistory, loadHistory, loadDismissed, dismissExpiry as dismissExpiryCode, updateHistoryExpiry } from "@/lib/cloudHistory";
 
 const uid = () =>
@@ -231,8 +233,14 @@ const blobToB64 = (blob) =>
 
 const b64ToBlob = (b64, type) => {
   const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  const len = bin.length;
+  const arr = new Uint8Array(len);
+  // Decode in chunks — avoids a huge single allocation/loop stall on big files (iPad).
+  const CH = 32768;
+  for (let o = 0; o < len; o += CH) {
+    const end = Math.min(o + CH, len);
+    for (let i = o; i < end; i++) arr[i] = bin.charCodeAt(i);
+  }
   return new Blob([arr], { type });
 };
 
@@ -1396,6 +1404,57 @@ function App() {
     }
   };
 
+  // Build the downloadable file object(s) for one playlist (single file when it
+  // fits, else size-capped "part X of N" pieces). Shared by Save + Backup.
+  const buildPlaylistFiles = async (pl) => {
+    const out = await buildStudioExport([pl], false, true);
+    out.kind = "playlist";
+    const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
+    const stamp = new Date().toISOString().slice(0, 10);
+    const MAX_PART_BYTES = (settings.singleFileSave ? 300 : 40) * 1024 * 1024;
+    const sizeOf = (t) => (t.data ? t.data.length : 0) + 400;
+    const groups = [];
+    let cur = [];
+    let curBytes = 0;
+    for (const t of out.tracks) {
+      const s = sizeOf(t);
+      if (cur.length && curBytes + s > MAX_PART_BYTES) {
+        groups.push(cur);
+        cur = [];
+        curBytes = 0;
+      }
+      cur.push(t);
+      curBytes += s;
+    }
+    if (cur.length) groups.push(cur);
+    const voiceCount = out.tracks.filter((t) => t.voice).length;
+    const expected = (pl.trackIds || []).length;
+    const missing = Math.max(0, expected - out.tracks.length);
+    if (groups.length <= 1) {
+      return { files: [{ filename: `${safe} ${stamp}.hl95playlist`, obj: out }], parts: 1, voiceCount, trackCount: out.tracks.length, missing };
+    }
+    const partGroup = uid();
+    const N = groups.length;
+    const files = groups.map((g, i) => ({
+      filename: `${safe} ${stamp} — part ${i + 1} of ${N}.hl95playlist`,
+      obj: {
+        app: "hotlive95",
+        kind: "playlist",
+        version: 2,
+        exportedAt: out.exportedAt,
+        partGroup,
+        part: i + 1,
+        parts: N,
+        name: pl.name,
+        playlists: out.playlists,
+        tracks: g,
+        jingles: [],
+        vault: [],
+      },
+    }));
+    return { files, parts: N, voiceCount, trackCount: out.tracks.length, missing };
+  };
+
   // Save a SINGLE playlist → .hl95playlist (song order + embedded wave files)
   const savePlaylistFile = async (id) => {
     const pl = playlists.find((p) => p.id === id);
@@ -1406,77 +1465,36 @@ function App() {
     }
     setBanner(`Saving playlist "${pl.name}"…`);
     try {
-      const out = await buildStudioExport([pl], false, true);
-      out.kind = "playlist";
-      const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
-      const stamp = new Date().toISOString().slice(0, 10);
-
-      // Auto-split into re-uploadable parts so big playlists never exceed a
-      // single saveable file size. When "single-file save" is on (default) we
-      // keep the whole playlist in ONE file up to a generous local cap (~300MB
-      // base64) so DJs rarely see "part X of N"; only genuinely huge playlists
-      // split. Turn the toggle off to force the smaller ~40MB parts.
-      const MAX_PART_BYTES = (settings.singleFileSave ? 300 : 40) * 1024 * 1024;
-      const sizeOf = (t) => (t.data ? t.data.length : 0) + 400;
-      const groups = [];
-      let cur = [];
-      let curBytes = 0;
-      for (const t of out.tracks) {
-        const s = sizeOf(t);
-        if (cur.length && curBytes + s > MAX_PART_BYTES) {
-          groups.push(cur);
-          cur = [];
-          curBytes = 0;
-        }
-        cur.push(t);
-        curBytes += s;
+      const { files, parts, voiceCount, trackCount, missing } = await buildPlaylistFiles(pl);
+      if (trackCount === 0) {
+        setBanner("Couldn't read the audio for this playlist's songs, so nothing was saved. Re-add any songs marked 'File missing', then Save again.");
+        return;
       }
-      if (cur.length) groups.push(cur);
-      const voiceCount = out.tracks.filter((t) => t.voice).length;
-
-      if (groups.length <= 1) {
-        downloadJson(out, `${safe} ${stamp}.hl95playlist`);
+      if (parts <= 1) {
+        downloadJson(files[0].obj, files[0].filename);
         setDirty(false);
         setBanner(
-          `Saved "${pl.name}" — ${out.tracks.length} track${out.tracks.length === 1 ? "" : "s"} in order` +
+          `Saved "${pl.name}" — ${trackCount} track${trackCount === 1 ? "" : "s"} in order` +
             (voiceCount ? ` (${voiceCount} voice take${voiceCount === 1 ? "" : "s"})` : "") +
+            (missing ? ` — ⚠ ${missing} song(s) skipped (audio missing)` : "") +
             ". Reload this file anytime to restore it exactly."
         );
         return;
       }
-
-      // Multi-part: each file is self-describing (carries playlist order) and
-      // holds a slice of the audio. Re-upload ALL parts to restore the playlist.
-      const partGroup = uid();
-      const N = groups.length;
-      for (let i = 0; i < N; i++) {
-        const part = {
-          app: "hotlive95",
-          kind: "playlist",
-          version: 2,
-          exportedAt: out.exportedAt,
-          partGroup,
-          part: i + 1,
-          parts: N,
-          name: pl.name,
-          playlists: out.playlists,
-          tracks: groups[i],
-          jingles: [],
-          vault: [],
-        };
-        // Stagger the downloads so browsers don't drop rapid successive saves.
+      // Stagger the downloads so browsers don't drop rapid successive saves.
+      files.forEach((f, i) => {
         setTimeout(() => {
           try {
-            downloadJson(part, `${safe} ${stamp} — part ${i + 1} of ${N}.hl95playlist`);
+            downloadJson(f.obj, f.filename);
           } catch {
             /* ignore a single failed part; user can re-save */
           }
         }, i * 400);
-      }
+      });
       setDirty(false);
       setBanner(
-        `Saved "${pl.name}" in ${N} parts (playlist too large for one file). ` +
-          `Keep all ${N} “part X of ${N}” files together — re-upload them all to restore the full playlist.`
+        `Saved "${pl.name}" in ${parts} parts (playlist too large for one file). ` +
+          `Keep all ${parts} “part X of ${parts}” files together — re-upload them all to restore the full playlist.`
       );
     } catch (e) {
       setBanner(e.message || "Couldn't save that playlist. Please try again.");
@@ -1502,10 +1520,153 @@ function App() {
     setBanner(`Saved all ${withTracks.length} playlists to files — large ones split into “part X of N”. Re-upload them anytime to reload.`);
   };
 
+  // ---- iCloud / folder backup ----
+  const backupDirRef = useRef(null);
+  const [backupFolderName, setBackupFolderName] = useState("");
+  const [lastBackupAt, setLastBackupAt] = useState(() => {
+    try {
+      return localStorage.getItem("hotlive95_last_backup") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+  const backupSupported = fsaSupported();
+
+  // Restore a previously-connected backup folder on launch.
+  useEffect(() => {
+    if (!backupSupported) return;
+    (async () => {
+      const res = await getBackupDir();
+      if (res && res.name) {
+        backupDirRef.current = res;
+        setBackupFolderName(res.name);
+      } else if (res && res.needsPermission) {
+        setBackupFolderName(res.handle.name + " (reconnect)");
+      }
+    })();
+  }, [backupSupported]);
+
+  const stampBackup = () => {
+    const now = new Date().toISOString();
+    setLastBackupAt(now);
+    try {
+      localStorage.setItem("hotlive95_last_backup", now);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Write every playlist (with tracks) into the connected folder.
+  const backupToFolder = async (dir, { silent = false } = {}) => {
+    const withTracks = playlists.filter((p) => (p.trackIds || []).length);
+    if (!withTracks.length) {
+      if (!silent) setBanner("No playlists with tracks to back up yet.");
+      return false;
+    }
+    if (!silent) setBanner(`Backing up ${withTracks.length} playlist${withTracks.length === 1 ? "" : "s"} to “${dir.name}”…`);
+    let ok = 0;
+    for (const pl of withTracks) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const { files } = await buildPlaylistFiles(pl);
+        for (const f of files) {
+          // eslint-disable-next-line no-await-in-loop
+          await writeFileToDir(dir, f.filename, new Blob([JSON.stringify(f.obj)], { type: "application/json" }));
+        }
+        ok += 1;
+      } catch {
+        /* skip a bad playlist; keep going */
+      }
+    }
+    stampBackup();
+    setDirty(false);
+    if (!silent) setBanner(`Backed up ${ok} playlist${ok === 1 ? "" : "s"} to “${dir.name}”. Auto-backup keeps them fresh.`);
+    return true;
+  };
+
+  const chooseBackupFolder = async () => {
+    if (!backupSupported) {
+      // No File System Access (iPad/iOS) — one-tap download instead.
+      await saveAllPlaylists();
+      stampBackup();
+      return;
+    }
+    try {
+      const handle = await pickBackupDir();
+      if (!handle) return;
+      backupDirRef.current = handle;
+      setBackupFolderName(handle.name);
+      await backupToFolder(handle);
+    } catch {
+      setBanner("Couldn't open that folder. Try again or use “Back up all” to download instead.");
+    }
+  };
+
+  const disconnectBackupFolder = async () => {
+    await forgetBackupDir();
+    backupDirRef.current = null;
+    setBackupFolderName("");
+    setBanner("Auto-backup folder disconnected. Your playlists are untouched.");
+  };
+
+  // One tap: write to the connected folder if there is one, else download all
+  // (on iPad this opens the share sheet so you can pick iCloud Drive).
+  const backupAllNow = async () => {
+    setBackupBusy(true);
+    try {
+      const dir = backupDirRef.current;
+      if (dir) {
+        // Make sure we still hold permission (a fresh gesture may be needed).
+        const res = await getBackupDir({ prompt: true });
+        const usable = res && res.name ? res : dir;
+        await backupToFolder(usable);
+      } else {
+        await saveAllPlaylists();
+        stampBackup();
+      }
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  // Auto-backup to the connected folder shortly after playlists change.
+  const autoBackupTimerRef = useRef(null);
+  useEffect(() => {
+    if (!backupDirRef.current || !loaded || !dirtyReadyRef.current) return;
+    if (autoBackupTimerRef.current) clearTimeout(autoBackupTimerRef.current);
+    autoBackupTimerRef.current = setTimeout(() => {
+      const dir = backupDirRef.current;
+      if (dir) backupToFolder(dir, { silent: true });
+    }, 6000);
+    return () => autoBackupTimerRef.current && clearTimeout(autoBackupTimerRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playlists, tracks, loaded]);
+
+  // Periodic backup / reminder every few hours while the studio is open.
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const dir = backupDirRef.current;
+      if (dir) {
+        backupToFolder(dir, { silent: true });
+      } else if (playlists.some((p) => (p.trackIds || []).length)) {
+        setBanner("Reminder: tap Backup to save your playlists (pick iCloud Drive) so they survive a reinstall.");
+      }
+    }, 3 * 60 * 60 * 1000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playlists]);
+
   // Rebuild a shared track (with all its settings) into local storage.
   const materializeTrack = async (t) => {
     const blob = b64ToBlob(t.data, t.type || "audio/mpeg");
-    const derived = await deriveNames(blob, t.name);
+    let derived = { title: "", artist: "", art: null };
+    try {
+      derived = await deriveNames(blob, t.name);
+    } catch {
+      // ID3 parsing failed — keep the track using its stored names.
+    }
     const common = {
       name: t.name,
       title: t.title || derived.title,
@@ -1787,10 +1948,17 @@ function App() {
     parsed.sort((a, b) => (a.part || 0) - (b.part || 0));
     setBanner("Importing shared show…");
     for (const data of parsed) {
-      if (data && data.partGroup && (data.parts || 1) > 1) {
-        await handlePlaylistPart(data);
-      } else {
-        await applyImport(data);
+      try {
+        if (data && data.partGroup && (data.parts || 1) > 1) {
+          await handlePlaylistPart(data);
+        } else {
+          await applyImport(data);
+        }
+      } catch (e) {
+        setBanner(
+          "Something went wrong loading that file — your current playlists are unchanged. " +
+            "If it's a large playlist, try loading on a computer or re-saving with 'Save as single file' off."
+        );
       }
     }
   };
@@ -1819,10 +1987,21 @@ function App() {
     if (data.kind === "studio" || Array.isArray(data.playlists)) {
       const refMap = {};
       const newTracks = {};
+      let failedTracks = 0;
       for (const t of data.tracks || []) {
-        const meta = await materializeTrack(t);
-        newTracks[meta.id] = meta;
-        if (t.refId != null) refMap[t.refId] = meta.id;
+        try {
+          const meta = await materializeTrack(t);
+          newTracks[meta.id] = meta;
+          if (t.refId != null) refMap[t.refId] = meta.id;
+        } catch {
+          // Skip a single track that can't be rebuilt instead of losing the
+          // whole playlist. (Large base64 decode / bad audio on some devices.)
+          failedTracks += 1;
+        }
+      }
+      if ((data.tracks || []).length && Object.keys(newTracks).length === 0) {
+        setBanner("Couldn't rebuild the audio from that file — it may be corrupted or too large for this device. Your current playlists are unchanged.");
+        return;
       }
       const newPlaylists = (data.playlists || []).map((p) => ({
         id: uid(),
@@ -1861,7 +2040,8 @@ function App() {
         setBanner(
           `Replaced studio — loaded ${newPlaylists.length} playlist(s), ${Object.keys(newTracks).length} tracks` +
             (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
-            (newVault.length ? `, ${newVault.length} vault take(s)` : "")
+            (newVault.length ? `, ${newVault.length} vault take(s)` : "") +
+            (failedTracks ? ` — ${failedTracks} track(s) couldn't be rebuilt and were skipped` : "")
         );
         return;
       }
@@ -1908,7 +2088,8 @@ function App() {
           (voiceCount ? ` (${voiceCount} voice drop-in${voiceCount === 1 ? "" : "s"})` : "") +
           (replCount ? `, ${replCount} replaced` : "") +
           (importedJingles.length ? `, ${importedJingles.length} jingles` : "") +
-          (newVault.length ? `, ${newVault.length} vault take(s)` : "")
+          (newVault.length ? `, ${newVault.length} vault take(s)` : "") +
+          (failedTracks ? ` — ${failedTracks} track(s) couldn't be rebuilt and were skipped` : "")
       );
       return;
     }
@@ -2718,6 +2899,7 @@ function App() {
           onToggleShuffleAll={toggleShuffleAll}
           singleFileSave={settings.singleFileSave !== false}
           onToggleSingleFileSave={() => setSettings((s) => ({ ...s, singleFileSave: !(s.singleFileSave !== false) }))}
+          onOpenBackup={() => setBackupOpen(true)}
         />
         <main className="flex-1 flex flex-col min-w-0 min-h-[38vh] md:min-h-0">
           <TrackList
@@ -3061,6 +3243,19 @@ function App() {
           value={settings.customFx}
           onClose={() => setCustomFxOpen(false)}
           onSave={saveCustomFx}
+        />
+      )}
+
+      {backupOpen && (
+        <BackupModal
+          supported={backupSupported}
+          folderName={backupFolderName}
+          lastBackupAt={lastBackupAt}
+          busy={backupBusy}
+          onBackupNow={backupAllNow}
+          onChooseFolder={chooseBackupFolder}
+          onDisconnect={disconnectBackupFolder}
+          onClose={() => setBackupOpen(false)}
         />
       )}
 
