@@ -284,3 +284,20 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   resilience + fast recovery; the desktop/Electron build is the reliable path for 24/7 uninterrupted air.
 - Verified: testing agent iteration_41 — backup modal + download + last-backup update 100%; background-audio
   code causes no regressions/console errors.
+
+## Update 43 (2026-06) — Desktop auto-backup, Backup Health badge, Restore, Air guide (verified iteration_42)
+- Desktop Auto-Backup (Electron): new IPC save-backup/list-backups/read-backup write to
+  HotLive95Data/backups on the flash drive. App treats the desktop as an always-connected backup target
+  (backupDirRef electron sentinel) and auto-writes every playlist ~6s after any change + every 3h — zero
+  taps. (Wired; exercised in the packaged desktop build, not the web harness.)
+- Backup Health Badge (Header): backup-health-badge shows green "Backed up" when clean, amber
+  "Needs backup" when there are unsaved changes (dirty); tooltip shows last-backup time; click opens the
+  Backup modal. Clears back to green after a backup.
+- Restore latest backup (BackupModal): backup-restore-button (shown when a folder/desktop is connected)
+  reloads every .hl95playlist from the connected folder — Electron via list/read IPC, web via
+  listBackupFilesFSA — and imports them in one tap. Great for post-reinstall recovery.
+- Uninterrupted Air Guide (StationsModal): uninterrupted-air-note in the Broadcast Center (web only)
+  explains that phone/tablet browsers can pause a live broadcast on lock/app-switch and the desktop build
+  keeps streaming until you stop it.
+- Verified: testing agent iteration_42 — web-testable parts 100% (badge states + click, one-tap backup
+  clears badge, restore button correctly absent with no folder, air note present); no regressions.
