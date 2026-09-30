@@ -1,0 +1,29 @@
+{
+  "summary": "Verified the SAVE -> RELOAD round-trip regression fix for Hot Live 95 / DJ Playout Studio. Bypassed license via localStorage, created playlist 'Round Trip A', uploaded 2 real audio files (Test Song A.wav, Test Song B.wav) via add-files-input, saved the playlist via save-playlist-<id> which produced a downloaded .hl95playlist file (22,142 bytes), created a new empty playlist to switch context, then imported the captured file via import-playlist-input. The imported playlist appeared as a new entry and, when opened, showed BOTH tracks (Test Song A and Test Song B) with track-count reading '2 tracks'. Header renders, no console errors or page errors during save/import. Primary user regression ('none of my songs loaded back up after I saved and re-loaded') is resolved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Save / Import feedback", "issues": ["No visible success toast/banner text found after Save action or after Import action via common toast selectors ([class*='toast'], [role='status'], [class*='banner'], [class*='notif']). The 'Save-time guard' spec mentioned a banner like 'Saved ... 2 tracks' — this wording was not detected in the DOM. Round-trip still works functionally, but the user-facing confirmation for save/import success is not prominent. Consider adding a visible toast with track count after both operations."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_40.json"],
+  "action_items": [
+    "(Optional) Add explicit success toast/banner for save action showing track count (e.g. 'Saved Round Trip A · 2 tracks') using a testable selector like data-testid='save-success-banner'.",
+    "(Optional) Add explicit success toast for import action showing '<name> · N tracks imported' using data-testid='import-success-banner'."
+  ],
+  "critical_code_review_comments": [
+    "applyImport per-track try/catch + save-time trackCount===0 guard are working as intended: 2/2 tracks round-tripped without loss.",
+    "No console errors or pageerrors captured during upload, save (with download), or import.",
+    "save-playlist-<id> button click also seems to briefly render a 'Save Playlist / Save as MP3' export modal in a screenshot taken later — the .hl95playlist download itself succeeded, but verify there is no duplicate/adjacent button confusion between the file-save action and the MP3 export modal near the sidebar item action row."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "100% for primary round-trip regression"},
+  "test_credentials": "License key Q61VK-G819N-40K1B-H226T set via localStorage key 'hotlive95_license' = {activated:true, legalAccepted:true, key:'...'}.",
+  "seed_data_creation": "Used /app/test_assets/Test Song A.wav and Test Song B.wav. Generated /tmp/'Round Trip A 2026-09-30.hl95playlist' (22142 bytes) during test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Round-trip regression is fixed. Selectors used: sidebar new-playlist-button/new-playlist-input/confirm-create-playlist, playlist-item-<id>, add-files-input in TrackList for uploading audio, save-playlist-<id> triggers a Playwright download of a .hl95playlist file, import-playlist-input takes that same file via set_input_files and creates a new playlist with restored tracks. Track rows use data-testid='track-row-<i>' and names use 'track-name-<i>'. Track count element is data-testid='track-count'.",
+  "rca of the issue": "Original bug: on reload, importPlaylist -> materializeTrack could throw on a single malformed track (e.g. deriveNames on missing fields) and abort the entire playlist restore, leaving 0 tracks. Fix in App.js applyImport (~1957) now wraps each track's materializeTrack in try/catch and only aborts if ALL tracks fail; save-side guard in buildPlaylistFiles/savePlaylistFile (~1400) prevents saving an empty payload when tracks exist. Verified end-to-end: 2 real WAVs → save → new empty playlist → import saved file → 2 tracks restored with correct titles."
+}

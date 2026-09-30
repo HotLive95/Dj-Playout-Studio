@@ -2645,6 +2645,84 @@ function App() {
   const cueTrackObj = cue.trackId ? tracks[cue.trackId] : null;
   const standbyTrackObj = standby.trackId ? tracks[standby.trackId] : null;
   const onAir = playback.isPlaying;
+  const isBroadcasting = Object.values(bcStations).some((s) => s && (s.state === "live" || s.state === "connecting" || s.state === "reconnecting"));
+
+  // ---- Keep audio alive in the background / standby (never cut the broadcast) ----
+  const wakeLockRef = useRef(null);
+  useEffect(() => {
+    const active = onAir || isBroadcasting;
+    let cancelled = false;
+    const acquire = async () => {
+      if (!active || wakeLockRef.current) return;
+      try {
+        if (navigator.wakeLock?.request) {
+          const wl = await navigator.wakeLock.request("screen");
+          if (cancelled) {
+            wl.release().catch(() => {});
+            return;
+          }
+          wakeLockRef.current = wl;
+          wl.addEventListener?.("release", () => {
+            if (wakeLockRef.current === wl) wakeLockRef.current = null;
+          });
+        }
+      } catch {
+        /* wake lock unavailable — non-fatal */
+      }
+    };
+    const release = () => {
+      try {
+        wakeLockRef.current?.release?.();
+      } catch {
+        /* ignore */
+      }
+      wakeLockRef.current = null;
+    };
+    if (active) acquire();
+    else release();
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        engineRef.current?.resumeContexts?.();
+        if (active) acquire();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [onAir, isBroadcasting]);
+
+  // Lock-screen / OS media session so iOS keeps the audio session alive in the
+  // background and shows now-playing + transport controls.
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    try {
+      if (currentTrack) {
+        const art = currentTrack.art || `${process.env.PUBLIC_URL || ""}/hl-emblem.png`;
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: currentTrack.title || currentTrack.name || "Hot Live 95",
+          artist: currentTrack.artist || "Hot Live 95",
+          album: "Hot Live 95 · A.I. Radio",
+          artwork: [96, 192, 512].map((s) => ({ src: art, sizes: `${s}x${s}`, type: "image/png" })),
+        });
+      }
+      navigator.mediaSession.playbackState = onAir ? "playing" : "paused";
+      const set = (action, handler) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch {
+          /* unsupported action */
+        }
+      };
+      set("play", () => engineRef.current?.togglePlay());
+      set("pause", () => engineRef.current?.togglePlay());
+      set("nexttrack", () => engineRef.current?.next());
+      set("previoustrack", () => engineRef.current?.prev());
+    } catch {
+      /* ignore */
+    }
+  }, [currentTrack, onAir]);
 
   // ---- Loop-roll pads (beat-synced stutter of the pad sample) ----
   const stopRoll = (index) => {

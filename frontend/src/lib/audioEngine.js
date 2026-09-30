@@ -640,6 +640,26 @@ export default class AudioEngine {
     return this._actx;
   }
 
+  // Resume any suspended audio contexts + keep the on-air deck playing. Called
+  // when the tab becomes visible again so playout/broadcast recover fast after
+  // the device was in standby or another app was in the foreground.
+  resumeContexts() {
+    [this._actx, this._recCtx].forEach((ctx) => {
+      try {
+        if (ctx && ctx.state === "suspended") ctx.resume();
+      } catch {
+        /* ignore */
+      }
+    });
+    try {
+      if (this.active && this.active.paused && !this.active.ended && this._wasPlaying) {
+        this.active.play().catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   async bpmFor(track) {
     if (!track) return null;
     if (this._analyzed[track.id]) return this._bpmCache[track.id] ?? null;
@@ -1474,6 +1494,7 @@ export default class AudioEngine {
 
   _emit() {
     if (!this.onUpdate) return;
+    this._wasPlaying = !this.active.paused;
     this.onUpdate({
       index: this.index,
       isPlaying: !this.active.paused,
