@@ -1,5 +1,6 @@
 import { Mp3Encoder } from "@breezystack/lamejs";
 import { getBlob } from "@/lib/db";
+import { micConstraints } from "@/lib/mic";
 
 // Independent multi-channel playout: each channel is its own program (its own
 // playlist, player, mic routing and MP3 encoder) streaming to its own station.
@@ -37,7 +38,7 @@ export class MultiChannelEngine {
     if (this.micSource) return this.micSource;
     try {
       this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        audio: micConstraints(),
       });
       this.micSource = this.ctx.createMediaStreamSource(this.micStream);
     } catch {

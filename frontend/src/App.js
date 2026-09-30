@@ -33,6 +33,7 @@ import { camelotCompatible } from "@/lib/key";
 import { formatTime } from "@/lib/format";
 import { deriveNames, parseFilename } from "@/lib/id3";
 import { loadStations, saveStations, stationWsConfig } from "@/lib/stations";
+import { micConstraints } from "@/lib/mic";
 import { addHistory, loadHistory, loadDismissed, dismissExpiry as dismissExpiryCode, updateHistoryExpiry } from "@/lib/cloudHistory";
 
 const uid = () =>
@@ -559,7 +560,7 @@ function App() {
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          audio: micConstraints(),
         });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -1401,13 +1402,70 @@ function App() {
       out.kind = "playlist";
       const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
       const stamp = new Date().toISOString().slice(0, 10);
-      downloadJson(out, `${safe} ${stamp}.hl95playlist`);
-      setDirty(false);
+
+      // Auto-split into re-uploadable parts so big playlists never exceed a
+      // single saveable file size. ~40MB of base64 per part (~30MB audio).
+      const MAX_PART_BYTES = 40 * 1024 * 1024;
+      const sizeOf = (t) => (t.data ? t.data.length : 0) + 400;
+      const groups = [];
+      let cur = [];
+      let curBytes = 0;
+      for (const t of out.tracks) {
+        const s = sizeOf(t);
+        if (cur.length && curBytes + s > MAX_PART_BYTES) {
+          groups.push(cur);
+          cur = [];
+          curBytes = 0;
+        }
+        cur.push(t);
+        curBytes += s;
+      }
+      if (cur.length) groups.push(cur);
       const voiceCount = out.tracks.filter((t) => t.voice).length;
+
+      if (groups.length <= 1) {
+        downloadJson(out, `${safe} ${stamp}.hl95playlist`);
+        setDirty(false);
+        setBanner(
+          `Saved "${pl.name}" — ${out.tracks.length} track${out.tracks.length === 1 ? "" : "s"} in order` +
+            (voiceCount ? ` (${voiceCount} voice take${voiceCount === 1 ? "" : "s"})` : "") +
+            ". Reload this file anytime to restore it exactly."
+        );
+        return;
+      }
+
+      // Multi-part: each file is self-describing (carries playlist order) and
+      // holds a slice of the audio. Re-upload ALL parts to restore the playlist.
+      const partGroup = uid();
+      const N = groups.length;
+      for (let i = 0; i < N; i++) {
+        const part = {
+          app: "hotlive95",
+          kind: "playlist",
+          version: 2,
+          exportedAt: out.exportedAt,
+          partGroup,
+          part: i + 1,
+          parts: N,
+          name: pl.name,
+          playlists: out.playlists,
+          tracks: groups[i],
+          jingles: [],
+          vault: [],
+        };
+        // Stagger the downloads so browsers don't drop rapid successive saves.
+        setTimeout(() => {
+          try {
+            downloadJson(part, `${safe} ${stamp} — part ${i + 1} of ${N}.hl95playlist`);
+          } catch {
+            /* ignore a single failed part; user can re-save */
+          }
+        }, i * 400);
+      }
+      setDirty(false);
       setBanner(
-        `Saved "${pl.name}" — ${out.tracks.length} track${out.tracks.length === 1 ? "" : "s"} in order` +
-          (voiceCount ? ` (${voiceCount} voice take${voiceCount === 1 ? "" : "s"})` : "") +
-          ". Reload this file anytime to restore it exactly."
+        `Saved "${pl.name}" in ${N} parts (playlist too large for one file). ` +
+          `Keep all ${N} “part X of ${N}” files together — re-upload them all to restore the full playlist.`
       );
     } catch (e) {
       setBanner(e.message || "Couldn't save that playlist. Please try again.");
@@ -1641,16 +1699,66 @@ function App() {
     }
   };
 
-  const importPlaylist = async (file) => {
-    setBanner("Importing shared show…");
-    let data;
-    try {
-      data = JSON.parse(await file.text());
-    } catch {
-      setBanner("That file isn't a valid Hot Live 95 show.");
+  const partBufferRef = useRef({});
+  const handlePlaylistPart = async (data) => {
+    const key = data.partGroup;
+    const g =
+      partBufferRef.current[key] || { name: data.name, parts: data.parts, playlists: data.playlists, got: {}, tracks: [] };
+    if (!g.got[data.part]) {
+      g.got[data.part] = true;
+      g.tracks.push(...(data.tracks || []));
+      if (data.playlists) g.playlists = data.playlists;
+    }
+    partBufferRef.current[key] = g;
+    const have = Object.keys(g.got).length;
+    if (have < g.parts) {
+      const missing = [];
+      for (let i = 1; i <= g.parts; i++) if (!g.got[i]) missing.push(i);
+      setBanner(
+        `Loaded ${have} of ${g.parts} parts for "${g.name}". Still need part ${missing.join(", ")} — add ${
+          missing.length === 1 ? "that file" : "those files"
+        } to finish restoring it.`
+      );
       return;
     }
-    await applyImport(data);
+    delete partBufferRef.current[key];
+    setBanner(`All ${g.parts} parts loaded — restoring "${g.name}"…`);
+    await applyImport({
+      app: "hotlive95",
+      kind: "playlist",
+      version: 2,
+      playlists: g.playlists,
+      tracks: g.tracks,
+      jingles: [],
+      vault: [],
+    });
+  };
+
+  const importPlaylist = async (fileOrList) => {
+    const files =
+      fileOrList instanceof FileList
+        ? Array.from(fileOrList)
+        : Array.isArray(fileOrList)
+        ? fileOrList
+        : [fileOrList];
+    // Load part files in order so progress reads naturally.
+    const parsed = [];
+    for (const file of files) {
+      try {
+        parsed.push(JSON.parse(await file.text()));
+      } catch {
+        setBanner(`"${file.name}" isn't a valid Hot Live 95 file.`);
+      }
+    }
+    parsed.sort((a, b) => (a.part || 0) - (b.part || 0));
+    setBanner("Importing shared show…");
+    for (const data of parsed) {
+      if (data && data.partGroup && (data.parts || 1) > 1) {
+        await handlePlaylistPart(data);
+      } else {
+        await applyImport(data);
+      }
+    }
   };
 
   // Restore vault takes from an import bundle (returns the new vault entries).

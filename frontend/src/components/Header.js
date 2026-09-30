@@ -1,6 +1,7 @@
 import React from "react";
 import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud, Layers, Podcast } from "lucide-react";
 import InstallButton from "./InstallButton";
+import MicSelector from "./MicSelector";
 
 export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems, onGoLive, broadcasting }) {
   const fmtRec = (s) => {
@@ -57,6 +58,7 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
+        <div className="hidden md:flex"><MicSelector /></div>
         <InstallButton variant="header" />
         <button
           data-testid="go-live-button"

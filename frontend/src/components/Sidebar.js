@@ -92,11 +92,12 @@ export default function Sidebar({
           <input
             ref={importRef}
             type="file"
+            multiple
             accept=".hl95playout,.hl95playlist,.hlp.json,.json,application/json"
             className="hidden"
             data-testid="import-playlist-input"
             onChange={(e) => {
-              if (e.target.files?.[0]) onImportPlaylist(e.target.files[0]);
+              if (e.target.files?.length) onImportPlaylist(e.target.files);
               e.target.value = "";
             }}
           />

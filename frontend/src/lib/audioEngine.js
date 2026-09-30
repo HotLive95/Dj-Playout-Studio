@@ -1,6 +1,7 @@
 // Dual-element audio engine with crossfade / gapless auto-play for live playout,
 // plus an independent CUE (headphone pre-listen) channel and audio-output routing.
 import { Mp3Encoder } from "@breezystack/lamejs";
+import { micConstraints } from "@/lib/mic";
 
 export default class AudioEngine {
   constructor(onUpdate, onCue, onStandby, onBpm, onCommit) {
@@ -804,7 +805,7 @@ export default class AudioEngine {
     if (mic) {
       try {
         this._micStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          audio: micConstraints(),
         });
         this._micSrc = ctx.createMediaStreamSource(this._micStream);
         this._micSrc.connect(this._recDest); // recorder only — never to speakers
@@ -941,7 +942,7 @@ export default class AudioEngine {
       if (mic) {
         try {
           this._bcMicStream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+            audio: micConstraints(),
           });
           this._bcMic = ctx.createMediaStreamSource(this._bcMicStream);
           this._bcMic.connect(mix); // into the broadcast mix only (never to speakers)
@@ -1267,7 +1268,7 @@ export default class AudioEngine {
     if (mic) {
       try {
         this._meterMicStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          audio: micConstraints(),
         });
         this._meterMic = ctx.createMediaStreamSource(this._meterMicStream);
         this._meterMic.connect(an);
