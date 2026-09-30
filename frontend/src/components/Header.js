@@ -15,7 +15,7 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
     >
       <div className="flex items-center gap-3">
         <img
-          src="/logo.jpg"
+          src="/flame-play-logo.png"
           alt="Hot Live 95 Detroit A.I. Radio"
           className="h-[120px] w-auto rounded-lg object-contain"
           data-testid="app-logo"

@@ -287,6 +287,7 @@ function App() {
   const [bcStations, setBcStations] = useState({}); // station id -> { state, error, reconnect }
   const liveIdsRef = useRef([]);
   const onStationStateRef = useRef(() => {});
+  const airAllRef = useRef(() => {});
   const [schedules, setSchedules] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("hotlive95_schedules") || "[]");
@@ -1470,6 +1471,25 @@ function App() {
     } catch (e) {
       setBanner(e.message || "Couldn't save that playlist. Please try again.");
     }
+  };
+
+  // Save EVERY playlist to disk as (auto-split) re-loadable files — handy right
+  // after a Cloud Handoff transfer so DJs can keep/reload the received show.
+  const saveAllPlaylists = async () => {
+    const withTracks = playlists.filter((p) => (p.trackIds || []).length);
+    if (!withTracks.length) {
+      setBanner("No playlists with tracks to save yet.");
+      return;
+    }
+    setBanner(`Saving ${withTracks.length} playlist${withTracks.length === 1 ? "" : "s"} to files…`);
+    for (let i = 0; i < withTracks.length; i++) {
+      // stagger so the browser doesn't drop back-to-back downloads
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, i === 0 ? 0 : 700));
+      // eslint-disable-next-line no-await-in-loop
+      await savePlaylistFile(withTracks[i].id);
+    }
+    setBanner(`Saved all ${withTracks.length} playlists to files — large ones split into “part X of N”. Re-upload them anytime to reload.`);
   };
 
   // Rebuild a shared track (with all its settings) into local storage.

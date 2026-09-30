@@ -31,7 +31,7 @@ export default function LicenseGate({ license, onActivate, onAcceptLegal }) {
     <div className="h-screen w-screen hl-app-bg grid place-items-center p-6" data-testid="license-gate">
       <div className="w-full max-w-lg hl-panel rounded-2xl overflow-hidden">
         <div className="flex items-center gap-3 px-6 py-4 border-b border-[var(--hl-line)]">
-          <img src="/logo.jpg" alt="Hot Live 95" className="h-12 w-auto rounded-md object-contain" />
+          <img src="/flame-play-logo.png" alt="Hot Live 95" className="h-12 w-auto rounded-md object-contain" />
           <div>
             <div className="font-display text-lg font-700">DJ PLAYOUT STUDIO</div>
             <div className="text-[10px] tracking-[0.2em] uppercase text-[var(--hl-muted)]">
