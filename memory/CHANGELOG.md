@@ -197,3 +197,34 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - ListenLivePage /live: live badge now reflects real station status (stationLive from azuracast/icecast status): green LIVE / grey OFFLINE; also shows listeners + now-playing from AzuraCast. Verified badge=LIVE, 1 listener, now-playing from demo.
 - /app/broadcast-server/DIGITALOCEAN-AZURACAST.md: end-to-end droplet command sheet (create, DNS, ufw, docker.sh install, HTTPS via LetsEncrypt, station/DJ setup, studio connect, update cmds).
 - Verified in preview (mobile 390): auto-fill, QR canvas, player live badge all working against AzuraCast demo API.
+
+## Update 38 (2026-06) — 5 broadcast features + Flame-Play logo (verified 100%, iteration_38)
+- Brand: header + LicenseGate logo swapped from the mic/city logo to the user's Flame Play button
+  emblem, background+drop-shadow removed via PIL flood-fill (only the rounded dark tile kept, transparent
+  corners). New asset /app/frontend/public/flame-play-logo.png (used in Header.js + LicenseGate.js).
+- Task 1 — Live-to-All Hotkey (Ctrl+Shift+L): App.js airAllRef.current toggles simulcast to EVERY
+  configured station at once (or stops all if already on air); prompts + opens Broadcast Center if no
+  station is set up. Keydown branch added before the input guard so it works globally. StationsModal
+  global bar shows a 'Ctrl+Shift+L' kbd hint (data-testid broadcast-hotkey-hint).
+- Task 2 — Ducking (Multi-Channel, GLOBAL level): lib/multiChannel.js adds a duckable `musicGain` node
+  (src -> musicGain -> gain) so the mic is never ducked; setDuckLevel(level) + setMic ramp musicGain to
+  the global level (setTargetAtTime 0.08s) the moment a channel's mic opens. MultiChannelStudio header
+  has a global 'Mic Ducking' dip slider (mc-duck-bar/mc-duck-slider/mc-duck-value, 0-95%, persisted in
+  localStorage hotlive95_mc_duck; music gain = 1 - dip). Channel shows 'Music ducked for mic' indicator
+  (mc-ducking-<id>) while its mic is open.
+- Task 3 — Per-Channel Schedule: each MultiChannelStudio channel has an Auto-start section
+  (mc-sched-enable-<id> toggle -> mc-sched-time-<id> HH:MM + mc-sched-golive-<id> 'Live' toggle). A 10s
+  interval per channel starts that channel's program from the top (engine.playIndex(id,0)) at the set
+  time daily, and optionally takes it live. Persisted in localStorage hotlive95_mc_schedules.
+- Task 4 — Player Themes (/live): ListenLivePage supports ?theme=compact|full + an on-page toggle
+  (live-theme-toggle: live-theme-full 'Card' / live-theme-compact 'Bar'), persisted in
+  hotlive95_live_theme. Compact = slim horizontal player bar (live-compact-bar). StationsModal share
+  row has a per-station Skin toggle (station-skin-full/-compact-<id>) that appends &theme=compact to the
+  copied /live link + embed (embed sizes adjust to 640x120 for the bar).
+- Task 5 — Listener CSV Export: StationCard records listener samples ({t,listeners,nowPlaying}) each
+  status poll into listenerLogRef; 'Listener CSV' button (station-export-listeners-<id>) downloads
+  <station>_listeners_<stamp>.csv (disabled until samples exist — stays disabled in preview since there
+  is no real status server).
+- Verified: testing agent iteration_38 — frontend 100%, all 5 tasks pass, no crashes. Real Icecast/
+  AzuraCast live still can't be reached in preview (no server) — connecting/error is expected. The
+  <span> in <option> hydration warning is preview-tooling injected, not our source.
