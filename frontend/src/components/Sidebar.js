@@ -93,7 +93,7 @@ export default function Sidebar({
             ref={importRef}
             type="file"
             multiple
-            accept=".hl95playout,.hl95playlist,.hlp.json,.json,application/json"
+            accept="*/*"
             className="hidden"
             data-testid="import-playlist-input"
             onChange={(e) => {

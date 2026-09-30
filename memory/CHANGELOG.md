@@ -228,3 +228,17 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Verified: testing agent iteration_38 — frontend 100%, all 5 tasks pass, no crashes. Real Icecast/
   AzuraCast live still can't be reached in preview (no server) — connecting/error is expected. The
   <span> in <option> hydration warning is preview-tooling injected, not our source.
+
+## Fix (2026-06) — Saved playlist files greyed-out in Load picker after reinstall (iPad/iOS)
+- Root cause: Sidebar.js Load <input type=file> used accept=".hl95playout,.hl95playlist,.hlp.json,
+  .json,application/json". iOS/iPadOS (and some desktop) file pickers grey out files whose custom
+  extension (.hl95playlist / .hl95playout) they don't recognize, so DJs couldn't select their own
+  saved files after reinstalling. Confirmed on user's iPad (Files picker showed the .hl95playlist
+  greyed until fix, selectable after).
+- Fix: changed the Load input accept to "*/*" so the saved files are always selectable on every
+  platform. The importPlaylist/applyImport handler already validates JSON content and shows a friendly
+  error for wrong files, so widening accept is safe. Import format unchanged (single + multi-part).
+- Note for support: web/PWA auto-saved playlists live in IndexedDB+localStorage and are wiped on
+  uninstall — DJs must use the per-playlist Save button to export .hl95playlist files (which re-import
+  via Load). Large playlists split into "part X of N" — all parts must be loaded together to restore.
+- Deployed to production.
