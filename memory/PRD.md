@@ -809,7 +809,30 @@ Latest shipped work (Voice DSP chain, Install button, 500MB chunked uploads, Exp
   in preview, so real "live" can't be reached — verified graceful connecting→error, no crash, and
   simulcast fan-out to a 2nd station doesn't throw.
 
-## Update 30 (2026-06) — Real station wired: Hot Live 95 on s2.ssl-stream.com (AzuraCast)
+## Update 31 (2026-06) — Multi-Channel Studio: different LIVE program per channel, same hour
+- Big new capability: air a DIFFERENT live program on each station/channel simultaneously (not just
+  simulcast). New `lib/multiChannel.js` `MultiChannelEngine`: each channel is its own program —
+  independent `<audio>` -> MediaElementSource -> per-channel gain -> per-channel `Mp3Encoder`
+  (ScriptProcessor) -> its own WebSocket relay to that station. Per-channel playlist/cue/play/pause/
+  next/prev, per-channel mic routing + headphone "Cue" monitor, per-channel go-live/reconnect/meta.
+  Shared mic stream fanned to whichever channels enable Mic.
+- New `components/MultiChannelStudio.js` (full-screen overlay): a column per station with its own
+  Program (playlist) picker, now-playing + up-next, level meter, transport, Mic/Cue toggles, and
+  Go live/Stop. Opened from the Broadcast Center via a new "Multi-Channel" button
+  (data-testid open-multichannel). App.js wires `mcOpen` + renders `<MultiChannelStudio stations
+  playlists tracks/>`.
+- Demo: bundled distinct audio (`public/demo/ch1..4.mp3`) + gate-free route `/multichannel-preview`
+  (temporary) so the owner can see/hear 4 channels each on a different program at once.
+- Verified (testing agent iteration_35 + self-test): 4 channels each cue a DIFFERENT program
+  simultaneously; program-switch/next/prev update the cued track; Mic/Cue toggles; Go live transitions
+  connecting->error gracefully on a fake host; no crashes. Fixed the tester's HIGH bug — `setPlaylist`
+  now always reloads + fires onTrack so switching a channel's Program immediately updates its track
+  (previously `cue()` early-returned). NOTE: headless browsers block audio autoplay, so audible output
+  can't be shown in automation — it plays on a real click. Real streaming to the user's AzuraCast is
+  still gated by their server-side DJ login (401).
+- Temporary demo routes added this session: `/broadcast-preview`, `/multichannel-preview` (safe to remove).
+
+
 - User's server is a shared AzuraCast host `s2.ssl-stream.com`. Their station: name "Hot Live 95 Detroit
   A.I. Radio LLC.", shortcode `hotlive95` (id 65), frontend=icecast, backend=liquidsoap, listen
   `https://s2.ssl-stream.com/listen/hotlive95/radio.mp3`, mount `/radio.mp3` @128k, public.

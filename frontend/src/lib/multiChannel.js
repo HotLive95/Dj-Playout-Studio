@@ -112,7 +112,18 @@ export class MultiChannelEngine {
     const ch = this.channels.get(id);
     if (!ch) return;
     ch.playlist = (items || []).slice();
-    if (ch.index >= ch.playlist.length) ch.index = 0;
+    ch.index = 0;
+    // Load the new program's first track immediately (fires onTrack for the UI),
+    // and keep playing if the channel was already on air.
+    this._loadIndex(ch).then((ok) => {
+      if (ok && ch.playing) {
+        try {
+          ch.audio.play();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
   }
 
   getState(id) {
