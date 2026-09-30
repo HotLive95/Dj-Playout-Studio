@@ -901,6 +901,12 @@ function App() {
   // ---- Live hotkeys ----
   useEffect(() => {
     const onKey = (e) => {
+      // Global "Live to All" simulcast toggle — works even from inputs.
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyL") {
+        e.preventDefault();
+        airAllRef.current && airAllRef.current();
+        return;
+      }
       const tag = (e.target?.tagName || "").toLowerCase();
       if (tag === "input" || tag === "select" || tag === "textarea" || e.target?.isContentEditable)
         return;
@@ -2138,6 +2144,27 @@ function App() {
   const airStation = (station, mic) => airStations([station], mic);
   const stopStation = (id) => engineRef.current?.stopBroadcastStation(id);
   const stopAllAir = () => engineRef.current?.stopBroadcast();
+
+  // One-press "simulcast everywhere" toggle (Ctrl+Shift+L): go live to every
+  // configured station at once, or stop all if already on air.
+  airAllRef.current = () => {
+    const anyOn = Object.values(bcStations).some(
+      (s) => s && (s.state === "live" || s.state === "connecting" || s.state === "reconnecting")
+    );
+    if (anyOn) {
+      stopAllAir();
+      setBanner("⏹ Stopped broadcasting to all stations.");
+      return;
+    }
+    const ready = stations.filter((s) => s && s.host && s.password);
+    if (!ready.length) {
+      setBanner("Set up a station (host + password) in the Broadcast Center first.");
+      setGoLiveOpen(true);
+      return;
+    }
+    airStations(ready);
+    setBanner(`🔴 Going live to all ${ready.length} station${ready.length > 1 ? "s" : ""}…`);
+  };
 
   useEffect(() => {
     if (!currentTrackId || !liveIdsRef.current.length) return;

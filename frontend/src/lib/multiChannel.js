@@ -11,6 +11,22 @@ export class MultiChannelEngine {
     this.channels = new Map();
     this.micStream = null;
     this.micSource = null;
+    this.duckLevel = 0.2; // global: music gain while a channel's mic is open
+  }
+
+  setDuckLevel(level) {
+    this.duckLevel = Math.max(0, Math.min(1, level));
+    // Re-assert the duck on any channel currently talking.
+    this.channels.forEach((ch) => {
+      if (ch.musicGain) {
+        const target = ch.micOn ? this.duckLevel : 1;
+        try {
+          ch.musicGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.08);
+        } catch {
+          ch.musicGain.gain.value = target;
+        }
+      }
+    });
   }
 
   _ensureCtx() {
@@ -54,11 +70,14 @@ export class MultiChannelEngine {
     audio.preload = "auto";
     audio.crossOrigin = "anonymous";
     const src = ctx.createMediaElementSource(audio);
+    const musicGain = ctx.createGain(); // duckable — music only, never the mic
+    musicGain.gain.value = 1;
     const gain = ctx.createGain();
     gain.gain.value = 1;
     const monitor = ctx.createGain();
     monitor.gain.value = 0; // headphone monitor off by default (avoid a wall of sound)
-    src.connect(gain);
+    src.connect(musicGain);
+    musicGain.connect(gain);
     gain.connect(monitor);
     monitor.connect(ctx.destination);
     const enc = new Mp3Encoder(2, Math.round(ctx.sampleRate), bitrate);
@@ -70,7 +89,7 @@ export class MultiChannelEngine {
     silent.connect(ctx.destination);
 
     const ch = {
-      id, audio, src, gain, monitor, enc, proc, silent, bitrate,
+      id, audio, src, musicGain, gain, monitor, enc, proc, silent, bitrate,
       playlist: [], index: 0, playing: false, curUrl: null, micOn: false, level: 0,
       ws: null, wsUrl: "", config: null, ready: false, stop: false, attempt: 0, reconnectTimer: null,
       onState: onState || (() => {}), onTrack: onTrack || (() => {}), onLevel: onLevel || (() => {}),
@@ -272,6 +291,15 @@ export class MultiChannelEngine {
       }
       ch.micOn = false;
     }
+    // Auto-duck this channel's music the moment its mic opens (global level).
+    if (ch.musicGain) {
+      const target = ch.micOn ? this.duckLevel : 1;
+      try {
+        ch.musicGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.08);
+      } catch {
+        ch.musicGain.gain.value = target;
+      }
+    }
   }
 
   // ---- Live streaming (per channel, its own WSS relay -> its own station) ----
@@ -404,7 +432,7 @@ export class MultiChannelEngine {
     } catch {
       /* ignore */
     }
-    [ch.proc, ch.silent, ch.gain, ch.monitor, ch.src].forEach((node) => {
+    [ch.proc, ch.silent, ch.gain, ch.musicGain, ch.monitor, ch.src].forEach((node) => {
       try {
         node && node.disconnect();
       } catch {

@@ -37,11 +37,12 @@ const STATE_META = {
   idle: { label: "Offline", dot: "bg-[var(--hl-muted)]", text: "text-[var(--hl-muted)]" },
 };
 
-function liveLink(s) {
+function liveLink(s, theme) {
   const params = new URLSearchParams();
   params.set("station", s.id);
   if (s.streamUrl) params.set("stream", s.streamUrl);
   if (s.statusUrl) params.set("status", s.statusUrl);
+  if (theme && theme !== "full") params.set("theme", theme);
   return `${appOrigin}/live?${params.toString()}`;
 }
 
@@ -49,11 +50,13 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
   const [edit, setEdit] = useState(!station.host && !station.streamUrl);
   const [showQr, setShowQr] = useState(false);
   const [showEmbed, setShowEmbed] = useState(false);
+  const [shareTheme, setShareTheme] = useState("full");
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
   const [copied, setCopied] = useState("");
   const [health, setHealth] = useState(null);
   const [listeners, setListeners] = useState(null);
+  const listenerLogRef = useRef([]);
   const fileRef = useRef(null);
   const [azuraUrl, setAzuraUrl] = useState("");
   const [resolving, setResolving] = useState(false);
@@ -85,7 +88,16 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
           : `${BACKEND}/api/broadcast/icecast-status?stream=${encodeURIComponent(station.streamUrl)}`;
         const r = await fetch(url);
         const d = await r.json();
-        if (alive && d && d.ok && typeof d.listeners === "number") setListeners(d.listeners);
+        if (alive && d && d.ok && typeof d.listeners === "number") {
+          setListeners(d.listeners);
+          // Record a listener sample for the per-show CSV export.
+          listenerLogRef.current.push({
+            t: new Date().toISOString(),
+            listeners: d.listeners,
+            nowPlaying: d.nowPlaying || "",
+          });
+          if (listenerLogRef.current.length > 5000) listenerLogRef.current.shift();
+        }
       } catch {
         /* ignore */
       }
@@ -158,6 +170,27 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
     });
   };
 
+  // Download this station's live listener graph for the current show as CSV.
+  const exportListenersCsv = () => {
+    const log = listenerLogRef.current;
+    if (!log.length) return;
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const rows = [["timestamp", "listeners", "now_playing"]].concat(
+      log.map((s) => [s.t, s.listeners, s.nowPlaying])
+    );
+    const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = `${(station.name || "station").replace(/[^\w-]+/g, "_")}_listeners_${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const pickLogo = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -182,8 +215,10 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
     setTesting(false);
   };
 
-  const link = liveLink(station);
-  const embedCode = `<iframe src="${link}" width="360" height="640" style="border:0;border-radius:16px;overflow:hidden" allow="autoplay" title="${(station.name || "Radio").replace(/"/g, "'")}"></iframe>`;
+  const link = liveLink(station, shareTheme);
+  const embedH = shareTheme === "compact" ? 120 : 640;
+  const embedW = shareTheme === "compact" ? 640 : 360;
+  const embedCode = `<iframe src="${link}" width="${embedW}" height="${embedH}" style="border:0;border-radius:16px;overflow:hidden" allow="autoplay" title="${(station.name || "Radio").replace(/"/g, "'")}"></iframe>`;
 
   return (
     <div
@@ -482,6 +517,35 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
         >
           &lt;/&gt; Embed
         </button>
+        <button
+          data-testid={`station-export-listeners-${station.id}`}
+          onClick={exportListenersCsv}
+          disabled={!listenerLogRef.current.length}
+          title={listenerLogRef.current.length ? "Download this station's listener graph as CSV" : "No listener data recorded yet"}
+          className="inline-flex items-center gap-1 text-[11px] text-[var(--hl-muted)] hover:text-[var(--hl-fire)] disabled:opacity-40"
+        >
+          <Download size={12} /> Listener CSV
+        </button>
+        {/* Player skin for the shared link / embed */}
+        <div className="inline-flex items-center gap-1 ml-auto">
+          <span className="text-[10px] text-[var(--hl-muted)]">Skin</span>
+          <div className="inline-flex rounded-full border border-[var(--hl-line)] p-0.5">
+            <button
+              data-testid={`station-skin-full-${station.id}`}
+              onClick={() => setShareTheme("full")}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-600 ${shareTheme === "full" ? "hl-fire-gradient text-white" : "text-[var(--hl-muted)]"}`}
+            >
+              Card
+            </button>
+            <button
+              data-testid={`station-skin-compact-${station.id}`}
+              onClick={() => setShareTheme("compact")}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-600 ${shareTheme === "compact" ? "hl-fire-gradient text-white" : "text-[var(--hl-muted)]"}`}
+            >
+              Bar
+            </button>
+          </div>
+        </div>
         {showQr && (
           <div className="w-full mt-2 flex justify-center bg-white rounded-lg p-3" data-testid={`station-qr-canvas-${station.id}`}>
             <QRCodeCanvas value={link} size={140} includeMargin={false} level="M" />
@@ -659,6 +723,9 @@ export default function StationsModal({
               >
                 <Zap size={15} /> Go live to all ({readyStations.length})
               </button>
+              <kbd className="hidden sm:inline-flex items-center rounded-md border border-[var(--hl-line)] bg-black/40 px-2 py-1 text-[10px] font-mono text-[var(--hl-muted)]" data-testid="broadcast-hotkey-hint">
+                Ctrl+Shift+L
+              </kbd>
               <button
                 data-testid="broadcast-stop-all"
                 onClick={onStopAll}

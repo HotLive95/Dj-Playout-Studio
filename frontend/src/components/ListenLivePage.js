@@ -36,6 +36,19 @@ export default function ListenLivePage() {
   const [stationLive, setStationLive] = useState(null);
   const [listeners, setListeners] = useState(null);
   const [st, setSt] = useState(DEFAULTS);
+  const [theme, setTheme] = useState(() => {
+    const q = (qs.get("theme") || "").toLowerCase();
+    if (q === "compact" || q === "full") return q;
+    return ls("hotlive95_live_theme") || "full";
+  });
+  const setThemePref = (t) => {
+    setTheme(t);
+    try {
+      localStorage.setItem("hotlive95_live_theme", t);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const STREAM_URL = st.streamUrl;
   const STATUS_URL = st.statusUrl;
@@ -171,10 +184,103 @@ export default function ListenLivePage() {
 
   const accent = st.color || "#ff5a1f";
 
+  const ThemeToggle = () => (
+    <div className="absolute top-4 right-4 z-20 flex items-center gap-1 rounded-full border border-[var(--hl-line)] bg-black/50 p-1" data-testid="live-theme-toggle">
+      <button
+        onClick={() => setThemePref("full")}
+        className={`px-2.5 py-1 rounded-full text-[10px] font-600 transition ${theme === "full" ? "text-white" : "text-[var(--hl-muted)] hover:text-[var(--hl-text)]"}`}
+        style={theme === "full" ? { background: accent } : {}}
+        data-testid="live-theme-full"
+      >
+        Card
+      </button>
+      <button
+        onClick={() => setThemePref("compact")}
+        className={`px-2.5 py-1 rounded-full text-[10px] font-600 transition ${theme === "compact" ? "text-white" : "text-[var(--hl-muted)] hover:text-[var(--hl-text)]"}`}
+        style={theme === "compact" ? { background: accent } : {}}
+        data-testid="live-theme-compact"
+      >
+        Bar
+      </button>
+    </div>
+  );
+
+  // Compact skin — a slim horizontal player bar for embedding in a page strip.
+  if (theme === "compact") {
+    return (
+      <div className="min-h-screen bg-[var(--hl-bg)] text-[var(--hl-text)] relative overflow-hidden grid place-items-center p-4" data-testid="listen-live-page">
+        <div className="pointer-events-none absolute inset-0 opacity-70" style={{ background: `radial-gradient(700px 360px at 50% -10%, ${accent}33, transparent 60%)` }} />
+        <ThemeToggle />
+        <div className="relative z-10 w-full max-w-2xl hl-panel rounded-2xl p-3 flex items-center gap-3" data-testid="live-compact-bar">
+          <img
+            src={nowPlaying?.art || st.logo}
+            alt={st.name}
+            className="h-14 w-14 shrink-0 rounded-lg object-cover bg-black/40 border border-[var(--hl-line)]"
+            data-testid="live-logo"
+            onError={(e) => { e.currentTarget.src = `${PUBLIC}/hl-emblem.png`; }}
+          />
+          <button
+            data-testid="live-play-button"
+            onClick={toggle}
+            disabled={!STREAM_URL || loading}
+            className="h-12 w-12 shrink-0 grid place-items-center rounded-full text-white shadow-[0_6px_20px_rgba(255,23,68,0.35)] hover:scale-105 active:scale-95 transition disabled:opacity-40"
+            style={{ background: `linear-gradient(135deg, ${accent}, #ff2d0e)` }}
+            aria-label={playing ? "Pause" : "Play"}
+          >
+            {loading ? <Radio size={20} className="animate-pulse" /> : playing ? <Pause size={22} /> : <Play size={22} className="ml-0.5" />}
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate font-display text-base tracking-wide" data-testid="live-station-name">{st.name}</span>
+              <span className="inline-flex items-center gap-1 shrink-0" data-testid="live-badge">
+                <span className="h-2 w-2 rounded-full" style={{ background: stationLive || playing ? accent : "var(--hl-muted)", animation: (stationLive || playing) ? "pulse 1.5s ease-in-out infinite" : "none" }} />
+                <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)]" data-testid="live-status">
+                  {stationLive === true ? "Live" : stationLive === false ? "Offline" : playing ? "On Air" : "Live"}
+                </span>
+              </span>
+            </div>
+            <div className="truncate text-xs text-[var(--hl-muted)]" data-testid="live-now-playing">
+              {nowPlaying ? (
+                <>
+                  <span className="text-[var(--hl-text)]" data-testid="live-np-title">{nowPlaying.title}</span>
+                  {nowPlaying.artist && <span data-testid="live-np-artist"> — {nowPlaying.artist}</span>}
+                </>
+              ) : (
+                st.tagline
+              )}
+            </div>
+          </div>
+          {listeners != null && (
+            <div className="hidden sm:flex items-center gap-1 shrink-0 text-xs text-[var(--hl-muted)]" data-testid="live-listeners">
+              <Radio size={12} style={{ color: accent }} /> <span className="text-[var(--hl-text)]">{listeners}</span>
+            </div>
+          )}
+          {STREAM_URL && (
+            <button data-testid="live-mute" onClick={toggleMute} className="shrink-0 text-[var(--hl-muted)] hover:text-[var(--hl-fire)]">
+              {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
+          )}
+          <audio ref={audioRef} preload="none" />
+        </div>
+        {error && (
+          <div className="relative z-10 mt-2 text-[var(--hl-onair)] text-xs flex items-center gap-2" data-testid="live-error">
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+        {!STREAM_URL && (
+          <div className="relative z-10 mt-2 text-xs text-[var(--hl-amber)]" data-testid="live-not-configured">
+            Stream link not set yet.
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[var(--hl-bg)] text-[var(--hl-text)] relative overflow-hidden" data-testid="listen-live-page">
       {/* ambient glow tinted with the station's accent */}
       <div className="pointer-events-none absolute inset-0 opacity-70" style={{ background: `radial-gradient(900px 500px at 50% -10%, ${accent}33, transparent 60%)` }} />
+      <ThemeToggle />
 
       <div className="relative z-10 min-h-screen grid place-items-center p-5">
         <div className="w-full max-w-md hl-panel rounded-3xl p-7 text-center">
