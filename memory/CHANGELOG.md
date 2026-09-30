@@ -254,3 +254,33 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   and close (parts-needed-close). Modal auto-closes and the playlist restores once all parts load.
   handlePlaylistPart sets/clears partsNeeded state.
 - Verified: testing agent iteration_39, frontend 100%, no regressions.
+
+## CRITICAL FIX (2026-06) — Save→Reload lost ALL songs (verified iteration_40)
+- Root cause: applyImport awaited materializeTrack per track with NO try/catch — a single track that
+  failed to rebuild (large base64 atob memory on iPad, or an ID3 parse throw in deriveNames) threw and
+  aborted the ENTIRE import, so zero songs loaded. importPlaylist had no catch either.
+- Fixes (App.js): (1) per-track try/catch in applyImport (failedTracks counter) so one bad track is
+  skipped, not the whole playlist; abort only if EVERY track fails (clear banner, current playlists kept).
+  (2) materializeTrack wraps deriveNames so ID3 failure keeps the track. (3) b64ToBlob decodes in 32KB
+  chunks (less memory spike on large files/iPad). (4) importPlaylist wrapped in try/catch with a friendly
+  error. (5) Save guard: savePlaylistFile aborts with a clear message if 0 tracks' audio could be read
+  (no more silently-empty saves) and warns when some songs were skipped (audio missing).
+- Verified: testing agent iteration_40 — real 2-song WAV round trip (add → Save → switch playlist →
+  Load) restores both tracks (track-count '2 tracks'); 100%.
+
+## Update 42 (2026-06) — iCloud/folder Backup + background-audio resilience (verified iteration_41)
+- Backup (lib/backup.js + components/BackupModal.js): Sidebar 'Backup Playlists' (open-backup-button)
+  opens a modal. 'Back Up All Playlists' (backup-now-button) saves every playlist as its own file —
+  downloads on iPad (pick iCloud Drive) or writes into a connected folder. On desktop Chromium the DJ can
+  'Connect a backup folder' (File System Access showDirectoryPicker, handle persisted in IndexedDB); the
+  studio then auto-writes playlists to it ~6s after any change + every 3h; a reminder nudges when no folder
+  is connected. 'Last backup' timestamp shown. Unsupported (iPad/Safari) shows a clear note + relies on the
+  one-tap download. All playlists at once (user choice).
+- Background audio / uninterrupted broadcast: wake-lock (screen) held while playing or broadcasting +
+  re-acquired on visibilitychange; MediaSession metadata + play/pause/next/prev handlers (lock-screen
+  controls, keeps iOS audio session alive); engine.resumeContexts() resumes suspended AudioContexts and
+  resumes the on-air deck when the tab returns to foreground. NOTE: iOS/Safari still cannot GUARANTEE a
+  Web-Audio broadcast keeps encoding when the tab is fully backgrounded/suspended — these measures maximize
+  resilience + fast recovery; the desktop/Electron build is the reliable path for 24/7 uninterrupted air.
+- Verified: testing agent iteration_41 — backup modal + download + last-backup update 100%; background-audio
+  code causes no regressions/console errors.
