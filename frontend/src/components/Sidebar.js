@@ -22,6 +22,7 @@ export default function Sidebar({
   playlists,
   currentPlaylistId,
   onSelect,
+  onDropTracks,
   onCreate,
   onRename,
   onDelete,
@@ -38,7 +39,32 @@ export default function Sidebar({
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
+  const [dropTargetId, setDropTargetId] = useState(null);
   const importRef = useRef(null);
+
+  const hasTrackDrag = (e) => Array.from(e.dataTransfer?.types || []).includes("application/x-hl-tracks");
+  const onPlDragOver = (e, plId) => {
+    if (!hasTrackDrag(e)) return;
+    e.preventDefault();
+    try {
+      e.dataTransfer.dropEffect = e.ctrlKey || e.metaKey ? "copy" : "move";
+    } catch {
+      /* ignore */
+    }
+    if (dropTargetId !== plId) setDropTargetId(plId);
+  };
+  const onPlDrop = (e, plId) => {
+    if (!hasTrackDrag(e)) return;
+    e.preventDefault();
+    setDropTargetId(null);
+    let ids = [];
+    try {
+      ids = JSON.parse(e.dataTransfer.getData("application/x-hl-tracks") || "[]");
+    } catch {
+      ids = [];
+    }
+    if (ids.length && onDropTracks) onDropTracks(plId, ids, e.ctrlKey || e.metaKey);
+  };
 
   const submitCreate = () => {
     const name = newName.trim() || "New Playlist";
@@ -150,8 +176,13 @@ export default function Sidebar({
               key={pl.id}
               data-testid={`playlist-item-${pl.id}`}
               onClick={() => onSelect(pl.id)}
+              onDragOver={(e) => onPlDragOver(e, pl.id)}
+              onDragLeave={() => setDropTargetId((cur) => (cur === pl.id ? null : cur))}
+              onDrop={(e) => onPlDrop(e, pl.id)}
               className={`group rounded-lg px-3 py-2.5 cursor-pointer border transition ${
-                active
+                dropTargetId === pl.id && pl.id !== currentPlaylistId
+                  ? "border-[var(--hl-fire)] bg-[rgba(255,90,31,0.18)] ring-2 ring-[var(--hl-fire)]"
+                  : active
                   ? "bg-[rgba(255,90,31,0.12)] border-[var(--hl-fire)] hl-glow"
                   : "bg-transparent border-transparent hover:bg-white/5"
               }`}

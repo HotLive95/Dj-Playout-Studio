@@ -54,6 +54,7 @@ export default function TrackList({
   onRescan,
   onBulkEdit,
   onEnergySort,
+  onMoveTracks,
 }) {
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -62,6 +63,8 @@ export default function TrackList({
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [fileDragging, setFileDragging] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const lastSelRef = useRef(null);
   const [editInfoIndex, setEditInfoIndex] = useState(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [artistDraft, setArtistDraft] = useState("");
@@ -136,13 +139,43 @@ export default function TrackList({
 
   const onRowDragStart = (e, index, trackId) => {
     setDragIndex(index);
+    // If the dragged row is part of a multi-selection, carry the whole set;
+    // otherwise just this track. Enables single + bulk cross-playlist drops.
+    const ids = selected.size && selected.has(trackId) ? Array.from(selected) : [trackId];
     try {
       if (trackId) e.dataTransfer.setData("application/x-hl-track", trackId);
+      e.dataTransfer.setData("application/x-hl-tracks", JSON.stringify(ids));
       e.dataTransfer.effectAllowed = "copyMove";
     } catch {
       /* ignore */
     }
   };
+
+  const toggleSelect = (index, trackId, e) => {
+    e.stopPropagation();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (e.shiftKey && lastSelRef.current != null) {
+        const [a, b] = [lastSelRef.current, index].sort((x, y) => x - y);
+        for (let i = a; i <= b; i++) {
+          const it = items[i];
+          if (it) next.add(it.track.id);
+        }
+      } else if (next.has(trackId)) {
+        next.delete(trackId);
+      } else {
+        next.add(trackId);
+      }
+      return next;
+    });
+    lastSelRef.current = index;
+  };
+  const clearSelection = () => setSelected(new Set());
+  const selectAllVisible = () => setSelected(new Set(items.map((x) => x.track.id)));
+  useEffect(() => {
+    setSelected(new Set());
+    lastSelRef.current = null;
+  }, [playlist?.id]);
   const onRowDragOver = (e, index) => {
     if (dragIndex === null) return; // let file-drag pass through
     e.preventDefault();
@@ -363,6 +396,48 @@ export default function TrackList({
           </div>
         ) : (
           <div className="space-y-1.5">
+            {selected.size > 0 && (
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(255,90,31,0.12)] border border-[var(--hl-fire)]/50 sticky top-0 z-20 backdrop-blur"
+                data-testid="selection-bar"
+              >
+                <span className="text-sm font-600 text-[var(--hl-fire)]" data-testid="selection-count">
+                  {selected.size} selected
+                </span>
+                <span className="text-[11px] text-[var(--hl-muted)] hidden md:inline">
+                  Drag onto a playlist to move · hold Ctrl/⌘ to copy
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  {onMoveTracks && playlists && playlists.filter((p) => p.id !== playlist.id).length > 0 && (
+                    <select
+                      data-testid="move-target-select"
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (id) {
+                          onMoveTracks(id, Array.from(selected), false);
+                          clearSelection();
+                        }
+                      }}
+                      className="hl-input !w-auto !py-1 text-xs"
+                    >
+                      <option value="">Move to…</option>
+                      {playlists
+                        .filter((p) => p.id !== playlist.id)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                    </select>
+                  )}
+                  <button data-testid="selection-selectall" onClick={selectAllVisible} className="text-xs text-[var(--hl-muted)] hover:text-white">
+                    Select all
+                  </button>
+                  <button data-testid="selection-clear" onClick={clearSelection} className="text-xs text-[var(--hl-muted)] hover:text-white">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
             {items.map(({ track, index }, pos) => {
               const active = track.id === currentTrackId;
               const rowPlaying = active && isPlaying;
@@ -400,9 +475,22 @@ export default function TrackList({
                       : ""
                   }`}
                 >
+                  <button
+                    data-testid={`select-track-${index}`}
+                    onClick={(e) => toggleSelect(index, track.id, e)}
+                    className={`h-5 w-5 shrink-0 grid place-items-center rounded border transition ${
+                      selected.has(track.id)
+                        ? "hl-fire-gradient border-transparent text-white"
+                        : "border-[var(--hl-line)] text-transparent hover:border-white/40"
+                    }`}
+                    title="Select track (Shift-click for a range)"
+                  >
+                    <Check size={13} />
+                  </button>
+
                   <span
                     className="cursor-grab active:cursor-grabbing text-[var(--hl-muted)] hover:text-white"
-                    title="Drag to reorder"
+                    title="Drag to reorder — or onto a playlist to move"
                     data-testid={`drag-handle-${index}`}
                   >
                     <GripVertical size={18} />

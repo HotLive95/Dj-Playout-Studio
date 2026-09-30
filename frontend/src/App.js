@@ -1117,6 +1117,30 @@ function App() {
     );
   };
 
+  // Move (or copy with Ctrl/⌘) one or more tracks from the current playlist into another.
+  const moveTracksToPlaylist = (targetId, trackIds, copy = false) => {
+    if (!targetId || !trackIds || !trackIds.length) return;
+    const sourceId = currentPlaylistId;
+    if (targetId === sourceId) return;
+    const target = playlists.find((p) => p.id === targetId);
+    setPlaylists((prev) =>
+      prev.map((p) => {
+        if (p.id === targetId) {
+          const existing = new Set(p.trackIds);
+          const add = trackIds.filter((id) => !existing.has(id));
+          return { ...p, trackIds: [...p.trackIds, ...add] };
+        }
+        if (!copy && p.id === sourceId) {
+          const rm = new Set(trackIds);
+          return { ...p, trackIds: p.trackIds.filter((id) => !rm.has(id)) };
+        }
+        return p;
+      })
+    );
+    const n = trackIds.length;
+    setBanner(`${copy ? "Copied" : "Moved"} ${n} track${n === 1 ? "" : "s"} to "${target?.name || "playlist"}".`);
+  };
+
   const removeTrack = (index) => {
     if (!currentPlaylist) return;
     const removedId = currentPlaylist.trackIds[index];
@@ -2517,6 +2541,7 @@ function App() {
           playlists={playlists}
           currentPlaylistId={currentPlaylistId}
           onSelect={setCurrentPlaylistId}
+          onDropTracks={moveTracksToPlaylist}
           onCreate={createPlaylist}
           onRename={renamePlaylist}
           onDelete={deletePlaylist}
@@ -2546,6 +2571,7 @@ function App() {
             onImportDialog={addDialogFiles}
             onDropFiles={handleDropFiles}
             onReorder={reorder}
+            onMoveTracks={moveTracksToPlaylist}
             onRemove={removeTrack}
             onReplaceFiles={replaceBrowserFile}
             onReplaceDialog={replaceDialogFile}
