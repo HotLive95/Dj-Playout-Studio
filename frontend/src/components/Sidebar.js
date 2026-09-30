@@ -34,6 +34,8 @@ export default function Sidebar({
   durationOf,
   shuffleAll,
   onToggleShuffleAll,
+  singleFileSave = true,
+  onToggleSingleFileSave,
 }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -328,6 +330,23 @@ export default function Sidebar({
           <Shuffle size={15} />
           {shuffleAll ? "Shuffling All Playlists" : "Shuffle All Playlists"}
         </button>
+        <label
+          className="mt-2 w-full flex items-center justify-between gap-2 h-9 px-3 rounded-lg text-[11px] font-600 border border-[var(--hl-line)] text-[var(--hl-muted)] cursor-pointer select-none"
+          title="Save each playlist as ONE file when it fits (no “part X of N” split). Turn off to split large playlists into smaller parts."
+        >
+          <span className="flex items-center gap-1.5">
+            <Save size={14} /> Save as single file
+          </span>
+          <button
+            type="button"
+            data-testid="single-file-save-toggle"
+            onClick={onToggleSingleFileSave}
+            aria-pressed={singleFileSave}
+            className={`relative h-4 w-8 rounded-full transition ${singleFileSave ? "bg-[var(--hl-fire)]" : "bg-white/15"}`}
+          >
+            <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${singleFileSave ? "left-4" : "left-0.5"}`} />
+          </button>
+        </label>
         <div className="mt-2">
           <InstallButton variant="sidebar" />
         </div>

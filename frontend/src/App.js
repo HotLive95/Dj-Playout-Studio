@@ -23,7 +23,7 @@ import CloudHandoffModal from "@/components/CloudHandoffModal";
 import StemIsolator from "@/components/StemIsolator";
 import StationsModal from "@/components/StationsModal";
 import MultiChannelStudio from "@/components/MultiChannelStudio";
-import { IdCard, X } from "lucide-react";
+import { IdCard, X, FolderDown, Upload } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob, getBlob, deleteBlob } from "@/lib/db";
@@ -61,6 +61,7 @@ const defaultSettings = {
   syncLock: false,
   autoCueNext: false,
   rollDiv: 0.25,
+  singleFileSave: true,
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -1411,8 +1412,11 @@ function App() {
       const stamp = new Date().toISOString().slice(0, 10);
 
       // Auto-split into re-uploadable parts so big playlists never exceed a
-      // single saveable file size. ~40MB of base64 per part (~30MB audio).
-      const MAX_PART_BYTES = 40 * 1024 * 1024;
+      // single saveable file size. When "single-file save" is on (default) we
+      // keep the whole playlist in ONE file up to a generous local cap (~300MB
+      // base64) so DJs rarely see "part X of N"; only genuinely huge playlists
+      // split. Turn the toggle off to force the smaller ~40MB parts.
+      const MAX_PART_BYTES = (settings.singleFileSave ? 300 : 40) * 1024 * 1024;
       const sizeOf = (t) => (t.data ? t.data.length : 0) + 400;
       const groups = [];
       let cur = [];
@@ -1726,6 +1730,8 @@ function App() {
   };
 
   const partBufferRef = useRef({});
+  const [partsNeeded, setPartsNeeded] = useState(null);
+  const morePartsInputRef = useRef(null);
   const handlePlaylistPart = async (data) => {
     const key = data.partGroup;
     const g =
@@ -1740,6 +1746,7 @@ function App() {
     if (have < g.parts) {
       const missing = [];
       for (let i = 1; i <= g.parts; i++) if (!g.got[i]) missing.push(i);
+      setPartsNeeded({ name: g.name, have, parts: g.parts, missing });
       setBanner(
         `Loaded ${have} of ${g.parts} parts for "${g.name}". Still need part ${missing.join(", ")} — add ${
           missing.length === 1 ? "that file" : "those files"
@@ -1748,6 +1755,7 @@ function App() {
       return;
     }
     delete partBufferRef.current[key];
+    setPartsNeeded(null);
     setBanner(`All ${g.parts} parts loaded — restoring "${g.name}"…`);
     await applyImport({
       app: "hotlive95",
@@ -2708,6 +2716,8 @@ function App() {
           durationOf={durationOf}
           shuffleAll={settings.shuffleAll}
           onToggleShuffleAll={toggleShuffleAll}
+          singleFileSave={settings.singleFileSave !== false}
+          onToggleSingleFileSave={() => setSettings((s) => ({ ...s, singleFileSave: !(s.singleFileSave !== false) }))}
         />
         <main className="flex-1 flex flex-col min-w-0 min-h-[38vh] md:min-h-0">
           <TrackList
@@ -3052,6 +3062,58 @@ function App() {
           onClose={() => setCustomFxOpen(false)}
           onSave={saveCustomFx}
         />
+      )}
+
+      {partsNeeded && (
+        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm grid place-items-center p-4" data-testid="parts-needed-modal" onMouseDown={(e) => e.target === e.currentTarget && setPartsNeeded(null)}>
+          <div className="w-full max-w-md hl-panel rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--hl-line)]">
+              <div className="flex items-center gap-2">
+                <FolderDown size={18} className="text-[var(--hl-amber)]" />
+                <h2 className="font-display text-lg">More parts needed</h2>
+              </div>
+              <button data-testid="parts-needed-close" onClick={() => setPartsNeeded(null)} className="h-8 w-8 grid place-items-center rounded hover:bg-white/10"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-[var(--hl-text)]">
+                "{partsNeeded.name}" was saved in <span className="font-700">{partsNeeded.parts} parts</span>. You've loaded{" "}
+                <span className="font-700 text-[var(--hl-fire)]">{partsNeeded.have} of {partsNeeded.parts}</span>.
+              </p>
+              <p className="text-sm text-[var(--hl-muted)]">
+                Still need part {partsNeeded.missing.join(", ")}. Tap Browse and pick the remaining
+                "part X of {partsNeeded.parts}" file{partsNeeded.missing.length === 1 ? "" : "s"} (you can select several at once) to finish restoring the playlist.
+              </p>
+              <input
+                ref={morePartsInputRef}
+                type="file"
+                multiple
+                accept="*/*"
+                className="hidden"
+                data-testid="parts-needed-input"
+                onChange={(e) => {
+                  if (e.target.files?.length) importPlaylist(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  data-testid="parts-needed-browse"
+                  onClick={() => morePartsInputRef.current?.click()}
+                  className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg hl-fire-gradient text-white font-700 hover:brightness-110 transition"
+                >
+                  <Upload size={16} /> Browse for the other part{partsNeeded.missing.length === 1 ? "" : "s"}
+                </button>
+                <button
+                  data-testid="parts-needed-dismiss"
+                  onClick={() => setPartsNeeded(null)}
+                  className="px-4 py-2.5 rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-text)] text-sm"
+                >
+                  Later
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
