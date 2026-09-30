@@ -35,7 +35,7 @@ import { formatTime } from "@/lib/format";
 import { deriveNames, parseFilename } from "@/lib/id3";
 import { loadStations, saveStations, stationWsConfig } from "@/lib/stations";
 import { micConstraints } from "@/lib/mic";
-import { fsaSupported, pickBackupDir, getBackupDir, forgetBackupDir, writeFileToDir } from "@/lib/backup";
+import { fsaSupported, pickBackupDir, getBackupDir, forgetBackupDir, writeFileToDir, listBackupFilesFSA } from "@/lib/backup";
 import { addHistory, loadHistory, loadDismissed, dismissExpiry as dismissExpiryCode, updateHistoryExpiry } from "@/lib/cloudHistory";
 
 const uid = () =>
@@ -1536,6 +1536,11 @@ function App() {
 
   // Restore a previously-connected backup folder on launch.
   useEffect(() => {
+    if (platform.isElectron) {
+      backupDirRef.current = { electron: true, name: "Flash drive · HotLive95Data/backups" };
+      setBackupFolderName("Flash drive · HotLive95Data/backups");
+      return;
+    }
     if (!backupSupported) return;
     (async () => {
       const res = await getBackupDir();
@@ -1558,14 +1563,26 @@ function App() {
     }
   };
 
-  // Write every playlist (with tracks) into the connected folder.
+  // Write every playlist (with tracks) into the connected folder (FSA) or the
+  // desktop flash-drive backups folder (Electron — no taps needed).
+  const writeOneBackup = async (target, filename, obj) => {
+    const text = JSON.stringify(obj);
+    if (target && target.electron) {
+      const okw = await window.hotlive.saveBackup(filename, text);
+      if (!okw) throw new Error("save-backup failed");
+      return;
+    }
+    await writeFileToDir(target, filename, new Blob([text], { type: "application/json" }));
+  };
+
   const backupToFolder = async (dir, { silent = false } = {}) => {
     const withTracks = playlists.filter((p) => (p.trackIds || []).length);
+    const label = dir?.name || "backup folder";
     if (!withTracks.length) {
       if (!silent) setBanner("No playlists with tracks to back up yet.");
       return false;
     }
-    if (!silent) setBanner(`Backing up ${withTracks.length} playlist${withTracks.length === 1 ? "" : "s"} to “${dir.name}”…`);
+    if (!silent) setBanner(`Backing up ${withTracks.length} playlist${withTracks.length === 1 ? "" : "s"} to “${label}”…`);
     let ok = 0;
     for (const pl of withTracks) {
       try {
@@ -1573,7 +1590,7 @@ function App() {
         const { files } = await buildPlaylistFiles(pl);
         for (const f of files) {
           // eslint-disable-next-line no-await-in-loop
-          await writeFileToDir(dir, f.filename, new Blob([JSON.stringify(f.obj)], { type: "application/json" }));
+          await writeOneBackup(dir, f.filename, f.obj);
         }
         ok += 1;
       } catch {
@@ -1582,11 +1599,16 @@ function App() {
     }
     stampBackup();
     setDirty(false);
-    if (!silent) setBanner(`Backed up ${ok} playlist${ok === 1 ? "" : "s"} to “${dir.name}”. Auto-backup keeps them fresh.`);
+    if (!silent) setBanner(`Backed up ${ok} playlist${ok === 1 ? "" : "s"} to “${label}”. Auto-backup keeps them fresh.`);
     return true;
   };
 
   const chooseBackupFolder = async () => {
+    if (platform.isElectron) {
+      // Desktop always backs up to the flash-drive folder automatically.
+      await backupToFolder(backupDirRef.current || { electron: true, name: "Flash drive · HotLive95Data/backups" });
+      return;
+    }
     if (!backupSupported) {
       // No File System Access (iPad/iOS) — one-tap download instead.
       await saveAllPlaylists();
@@ -1605,10 +1627,41 @@ function App() {
   };
 
   const disconnectBackupFolder = async () => {
+    if (platform.isElectron) return; // flash-drive backup is always on for desktop
     await forgetBackupDir();
     backupDirRef.current = null;
     setBackupFolderName("");
     setBanner("Auto-backup folder disconnected. Your playlists are untouched.");
+  };
+
+  // Reload every playlist file from the connected folder (one-tap restore).
+  const restoreFromBackup = async () => {
+    setBackupBusy(true);
+    try {
+      let files = [];
+      if (platform.isElectron) {
+        const names = (await window.hotlive.listBackups()) || [];
+        for (const n of names) {
+          // eslint-disable-next-line no-await-in-loop
+          const text = await window.hotlive.readBackup(n);
+          if (text) files.push(new File([text], n, { type: "application/json" }));
+        }
+      } else if (backupDirRef.current && !backupDirRef.current.electron) {
+        const res = await getBackupDir({ prompt: true });
+        const dir = res && res.name ? res : backupDirRef.current;
+        files = await listBackupFilesFSA(dir);
+      }
+      if (!files.length) {
+        setBanner("No backup files found in the connected folder yet. Back up first, then restore.");
+        return;
+      }
+      setBackupOpen(false);
+      await importPlaylist(files);
+    } catch {
+      setBanner("Couldn't read the backup folder. Reconnect it and try again.");
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
   // One tap: write to the connected folder if there is one, else download all
@@ -1616,11 +1669,12 @@ function App() {
   const backupAllNow = async () => {
     setBackupBusy(true);
     try {
-      const dir = backupDirRef.current;
-      if (dir) {
+      if (platform.isElectron) {
+        await backupToFolder(backupDirRef.current || { electron: true, name: "Flash drive · HotLive95Data/backups" });
+      } else if (backupDirRef.current) {
         // Make sure we still hold permission (a fresh gesture may be needed).
         const res = await getBackupDir({ prompt: true });
-        const usable = res && res.name ? res : dir;
+        const usable = res && res.name ? res : backupDirRef.current;
         await backupToFolder(usable);
       } else {
         await saveAllPlaylists();
@@ -1634,12 +1688,10 @@ function App() {
   // Auto-backup to the connected folder shortly after playlists change.
   const autoBackupTimerRef = useRef(null);
   useEffect(() => {
-    if (!backupDirRef.current || !loaded || !dirtyReadyRef.current) return;
+    const target = platform.isElectron ? { electron: true, name: "Flash drive · HotLive95Data/backups" } : backupDirRef.current;
+    if (!target || !loaded || !dirtyReadyRef.current) return;
     if (autoBackupTimerRef.current) clearTimeout(autoBackupTimerRef.current);
-    autoBackupTimerRef.current = setTimeout(() => {
-      const dir = backupDirRef.current;
-      if (dir) backupToFolder(dir, { silent: true });
-    }, 6000);
+    autoBackupTimerRef.current = setTimeout(() => backupToFolder(target, { silent: true }), 6000);
     return () => autoBackupTimerRef.current && clearTimeout(autoBackupTimerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlists, tracks, loaded]);
@@ -1647,9 +1699,9 @@ function App() {
   // Periodic backup / reminder every few hours while the studio is open.
   useEffect(() => {
     const iv = setInterval(() => {
-      const dir = backupDirRef.current;
-      if (dir) {
-        backupToFolder(dir, { silent: true });
+      const target = platform.isElectron ? { electron: true, name: "Flash drive · HotLive95Data/backups" } : backupDirRef.current;
+      if (target) {
+        backupToFolder(target, { silent: true });
       } else if (playlists.some((p) => (p.trackIds || []).length)) {
         setBanner("Reminder: tap Backup to save your playlists (pick iCloud Drive) so they survive a reinstall.");
       }
@@ -2894,7 +2946,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} onGoLive={() => setGoLiveOpen(true)} broadcasting={Object.values(bcStations).some((s) => s && s.state === "live")} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} onGoLive={() => setGoLiveOpen(true)} broadcasting={Object.values(bcStations).some((s) => s && s.state === "live")} backupDirty={dirty} lastBackupAt={lastBackupAt} onOpenBackup={() => setBackupOpen(true)} />
 
       {banner && (
         <div
@@ -3326,13 +3378,15 @@ function App() {
 
       {backupOpen && (
         <BackupModal
-          supported={backupSupported}
+          supported={backupSupported || platform.isElectron}
+          isDesktop={platform.isElectron}
           folderName={backupFolderName}
           lastBackupAt={lastBackupAt}
           busy={backupBusy}
           onBackupNow={backupAllNow}
           onChooseFolder={chooseBackupFolder}
           onDisconnect={disconnectBackupFolder}
+          onRestore={restoreFromBackup}
           onClose={() => setBackupOpen(false)}
         />
       )}

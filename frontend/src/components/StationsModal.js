@@ -714,6 +714,17 @@ export default function StationsModal({
         <div className="p-5 space-y-4">
           {/* Global controls */}
           <div className="rounded-xl border border-[var(--hl-line)] bg-black/30 p-3 space-y-3" data-testid="broadcast-global-bar">
+            {!(typeof window !== "undefined" && window.hotlive && window.hotlive.isElectron) && (
+              <div className="flex items-start gap-2 rounded-lg border border-[var(--hl-cue)]/40 bg-[var(--hl-cue)]/5 px-3 py-2 text-[11px] text-[var(--hl-muted)]" data-testid="uninterrupted-air-note">
+                <Radio size={13} className="mt-0.5 shrink-0 text-[var(--hl-cue)]" />
+                <span>
+                  <span className="text-[var(--hl-text)] font-600">For 24/7 non-stop air:</span> run the{" "}
+                  <span className="text-[var(--hl-text)]">desktop app</span> (from your flash drive). In a phone/tablet
+                  browser, the system can pause a live broadcast when the screen locks or you switch apps — the desktop
+                  build keeps streaming no matter what until you stop it.
+                </span>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <button
                 data-testid="broadcast-golive-all"

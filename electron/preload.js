@@ -29,4 +29,7 @@ contextBridge.exposeInMainWorld("hotlive", {
   getDeviceId: () => ipcRenderer.invoke("get-device-id"),
   deleteFile: (filePath) => ipcRenderer.invoke("delete-file", filePath),
   fileExists: (filePath) => ipcRenderer.invoke("file-exists", filePath),
+  saveBackup: (name, text) => ipcRenderer.invoke("save-backup", name, text),
+  listBackups: () => ipcRenderer.invoke("list-backups"),
+  readBackup: (name) => ipcRenderer.invoke("read-backup", name),
 });

@@ -93,3 +93,18 @@ export async function writeFileToDir(dirHandle, filename, blob) {
   await w.write(blob);
   await w.close();
 }
+
+// Read all .hl95playlist files from the connected folder as File objects.
+export async function listBackupFilesFSA(dirHandle) {
+  const out = [];
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind === "file" && /\.hl95playlist$/i.test(name)) {
+      try {
+        out.push(await handle.getFile());
+      } catch {
+        /* skip */
+      }
+    }
+  }
+  return out;
+}

@@ -1,9 +1,9 @@
 import React from "react";
-import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud, Layers, Podcast } from "lucide-react";
+import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud, Layers, Podcast, ShieldCheck, ShieldAlert } from "lucide-react";
 import InstallButton from "./InstallButton";
 import MicSelector from "./MicSelector";
 
-export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems, onGoLive, broadcasting }) {
+export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems, onGoLive, broadcasting, backupDirty, lastBackupAt, onOpenBackup }) {
   const fmtRec = (s) => {
     const t = Math.floor(s || 0);
     return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
@@ -96,6 +96,19 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
               REC
             </>
           )}
+        </button>
+        <button
+          data-testid="backup-health-badge"
+          onClick={onOpenBackup}
+          className={`hidden sm:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-md border text-[11px] font-600 transition ${
+            backupDirty
+              ? "border-[var(--hl-amber)] text-[var(--hl-amber)] hover:bg-[var(--hl-amber)]/10"
+              : "border-[#2ee5c4]/50 text-[#2ee5c4] hover:bg-[#2ee5c4]/10"
+          }`}
+          title={backupDirty ? "You have changes not backed up yet — tap to back up" : `Playlists backed up${lastBackupAt ? " · " + new Date(lastBackupAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}`}
+        >
+          {backupDirty ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
+          {backupDirty ? "Needs backup" : "Backed up"}
         </button>
         <button
           data-testid="open-takes-vault"

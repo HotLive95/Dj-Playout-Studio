@@ -1,5 +1,5 @@
 import React from "react";
-import { X, CloudUpload, FolderCheck, FolderPlus, Loader2, Unplug, HardDriveDownload } from "lucide-react";
+import { X, CloudUpload, FolderCheck, FolderPlus, Loader2, Unplug, HardDriveDownload, RotateCcw } from "lucide-react";
 
 const fmtWhen = (iso) => {
   if (!iso) return "never";
@@ -13,12 +13,14 @@ const fmtWhen = (iso) => {
 
 export default function BackupModal({
   supported,
+  isDesktop,
   folderName,
   lastBackupAt,
   busy,
   onBackupNow,
   onChooseFolder,
   onDisconnect,
+  onRestore,
   onClose,
 }) {
   return (
@@ -59,10 +61,33 @@ export default function BackupModal({
             </p>
           )}
 
+          {/* Restore latest backup from the connected folder */}
+          {folderName && (
+            <button
+              data-testid="backup-restore-button"
+              onClick={onRestore}
+              disabled={busy}
+              className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[var(--hl-cue)] text-[var(--hl-cue)] hover:bg-[var(--hl-cue)]/10 text-sm font-600 transition disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} Restore latest backup
+            </button>
+          )}
+
           {/* Auto-backup folder (desktop / Chromium) */}
           <div className="rounded-xl border border-[var(--hl-line)] bg-black/30 p-3 space-y-2">
             <div className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)]">Automatic backup</div>
-            {supported ? (
+            {isDesktop ? (
+              <>
+                <div className="flex items-center gap-2 text-sm" data-testid="backup-folder-name">
+                  <FolderCheck size={16} className="text-[#2ee5c4]" />
+                  <span className="truncate">{folderName}</span>
+                </div>
+                <p className="text-[11px] text-[var(--hl-muted)]">
+                  Your playlists auto-save to the flash drive as you work — no taps needed. After a
+                  reinstall, tap <span className="text-[var(--hl-text)]">Restore latest backup</span> to reload them all.
+                </p>
+              </>
+            ) : supported ? (
               folderName ? (
                 <>
                   <div className="flex items-center gap-2 text-sm" data-testid="backup-folder-name">

@@ -154,6 +154,35 @@ ipcMain.handle("save-state", async (_e, state) => {
   return true;
 });
 
+// ---- Backups: auto-saved playlist files on the flash drive ----
+const backupDir = () => {
+  const dir = path.join(dataDir(), "backups");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
+ipcMain.handle("save-backup", async (_e, name, text) => {
+  try {
+    fs.writeFileSync(path.join(backupDir(), name), text);
+    return true;
+  } catch {
+    return false;
+  }
+});
+ipcMain.handle("list-backups", async () => {
+  try {
+    return fs.readdirSync(backupDir()).filter((f) => /\.hl95playlist$/i.test(f));
+  } catch {
+    return [];
+  }
+});
+ipcMain.handle("read-backup", async (_e, name) => {
+  try {
+    return fs.readFileSync(path.join(backupDir(), name), "utf-8");
+  } catch {
+    return null;
+  }
+});
+
 ipcMain.handle("delete-file", async (_e, p) => {
   try {
     fs.unlinkSync(p);
