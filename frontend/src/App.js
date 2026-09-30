@@ -24,7 +24,7 @@ import StemIsolator from "@/components/StemIsolator";
 import StationsModal from "@/components/StationsModal";
 import MultiChannelStudio from "@/components/MultiChannelStudio";
 import BackupModal from "@/components/BackupModal";
-import { IdCard, X, FolderDown, Upload } from "lucide-react";
+import { IdCard, X, FolderDown, Upload, Lock } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob, getBlob, deleteBlob } from "@/lib/db";
@@ -2701,6 +2701,7 @@ function App() {
 
   // ---- Keep audio alive in the background / standby (never cut the broadcast) ----
   const wakeLockRef = useRef(null);
+  const [wakeActive, setWakeActive] = useState(false);
   useEffect(() => {
     const active = onAir || isBroadcasting;
     let cancelled = false;
@@ -2714,8 +2715,10 @@ function App() {
             return;
           }
           wakeLockRef.current = wl;
+          setWakeActive(true);
           wl.addEventListener?.("release", () => {
             if (wakeLockRef.current === wl) wakeLockRef.current = null;
+            setWakeActive(false);
           });
         }
       } catch {
@@ -2729,6 +2732,7 @@ function App() {
         /* ignore */
       }
       wakeLockRef.current = null;
+      setWakeActive(false);
     };
     if (active) acquire();
     else release();
@@ -2956,6 +2960,19 @@ function App() {
           {banner}
         </div>
       )}
+
+      {isBroadcasting &&
+        !(typeof window !== "undefined" && window.hotlive && window.hotlive.isElectron) &&
+        /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent) && (
+          <div
+            className="px-4 py-2 text-center text-[13px] font-700 bg-[var(--hl-onair)] text-white flex items-center justify-center gap-2 animate-pulse"
+            data-testid="onair-lock-warning"
+          >
+            <Lock size={15} />
+            ON AIR — keep this screen unlocked. Locking the phone can stop the broadcast.
+            {wakeActive && <span className="font-500 opacity-90">(screen auto-lock is being held off)</span>}
+          </div>
+        )}
 
       {dirty && !backupDismissed && (
         <div

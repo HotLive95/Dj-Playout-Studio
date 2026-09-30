@@ -301,3 +301,13 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   keeps streaming until you stop it.
 - Verified: testing agent iteration_42 — web-testable parts 100% (badge states + click, one-tap backup
   clears badge, restore button correctly absent with no folder, air note present); no regressions.
+
+## Update 44 (2026-06) — Screen-lock broadcast safeguard
+- Wake Lock now exposes a wakeActive state; held whenever onAir||isBroadcasting and re-acquired on
+  visibilitychange (prevents AUTO screen-lock while live; recovers fast when tab returns to foreground).
+- New on-air safeguard banner (data-testid onair-lock-warning): red "ON AIR — keep this screen unlocked.
+  Locking the phone can stop the broadcast." shown only on mobile browsers (UA iPhone/iPad/Android/Mobile)
+  while broadcasting, NOT in Electron desktop. Notes when auto-lock is being held off.
+- Honest limit: a MANUAL screen lock on iOS suspends the tab's Web-Audio encoding + WS upload after a few
+  seconds — no web API can override that. Auto-lock is prevented; manual lock is not. Desktop build streams
+  through any lock. Communicated to user.
