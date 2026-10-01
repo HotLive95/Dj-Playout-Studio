@@ -24,7 +24,7 @@ import StemIsolator from "@/components/StemIsolator";
 import StationsModal from "@/components/StationsModal";
 import MultiChannelStudio from "@/components/MultiChannelStudio";
 import BackupModal from "@/components/BackupModal";
-import { IdCard, X, FolderDown, Upload, Lock } from "lucide-react";
+import { IdCard, X, FolderDown, Upload, Lock, Radio, MonitorDown } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob, getBlob, deleteBlob } from "@/lib/db";
@@ -42,8 +42,9 @@ const uid = () =>
   (crypto.randomUUID && crypto.randomUUID()) ||
   `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-const defaultSettings = {
-  autoplay: true,
+const DESKTOP_URL = process.env.REACT_APP_DESKTOP_URL || "";
+
+const defaultSettings = {  autoplay: true,
   shuffle: false,
   crossfade: true,
   crossfadeSeconds: 3,
@@ -294,6 +295,10 @@ function App() {
     saveStations(stations);
   }, [stations]);
   const [bcStations, setBcStations] = useState({}); // station id -> { state, error, reconnect }
+  const bcStationsRef = useRef({});
+  useEffect(() => {
+    bcStationsRef.current = bcStations;
+  }, [bcStations]);
   const liveIdsRef = useRef([]);
   const onStationStateRef = useRef(() => {});
   const airAllRef = useRef(() => {});
@@ -2702,6 +2707,13 @@ function App() {
   // ---- Keep audio alive in the background / standby (never cut the broadcast) ----
   const wakeLockRef = useRef(null);
   const [wakeActive, setWakeActive] = useState(false);
+  const [airGuard, setAirGuard] = useState(false);
+  const [onairNoteDismissed, setOnairNoteDismissed] = useState(false);
+  const hiddenWhileLiveRef = useRef(false);
+  // Reset the one-time on-air reminder each time a new broadcast starts.
+  useEffect(() => {
+    if (!isBroadcasting) setOnairNoteDismissed(false);
+  }, [isBroadcasting]);
   useEffect(() => {
     const active = onAir || isBroadcasting;
     let cancelled = false;
@@ -2737,10 +2749,25 @@ function App() {
     if (active) acquire();
     else release();
     const onVis = () => {
-      if (document.visibilityState === "visible") {
-        engineRef.current?.resumeContexts?.();
-        if (active) acquire();
+      if (document.visibilityState === "hidden") {
+        if (active) hiddenWhileLiveRef.current = true;
+        return;
       }
+      // Back in the foreground. Only raise the guard if audio was ACTUALLY
+      // interrupted while the screen was off — a harmless app switch (contexts
+      // still running, nothing dropped) stays silent so we never nag the DJ
+      // while the studio is active.
+      const wasHidden = hiddenWhileLiveRef.current;
+      const interrupted = engineRef.current?.isInterrupted?.();
+      const dropped = Object.values(bcStationsRef.current || {}).some(
+        (s) => s && (s.state === "reconnecting" || s.state === "error" || s.state === "closed" || s.state === "disconnected")
+      );
+      engineRef.current?.resumeContexts?.();
+      if (active) {
+        acquire();
+        if (wasHidden && (interrupted || dropped)) setAirGuard(true);
+      }
+      hiddenWhileLiveRef.current = false;
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
@@ -2779,6 +2806,16 @@ function App() {
       /* ignore */
     }
   }, [currentTrack, onAir]);
+
+  // Full-screen guard action: resume audio + re-air any station that dropped.
+  const keepBroadcasting = () => {
+    engineRef.current?.resumeContexts?.();
+    const dropped = stations.filter(
+      (s) => s && s.host && s.password && !["live", "connecting", "reconnecting"].includes(bcStations[s.id]?.state)
+    );
+    if (dropped.length) airStations(dropped);
+    setAirGuard(false);
+  };
 
   // ---- Loop-roll pads (beat-synced stutter of the pad sample) ----
   const stopRoll = (index) => {
@@ -2962,17 +2999,65 @@ function App() {
       )}
 
       {isBroadcasting &&
+        !onairNoteDismissed &&
         !(typeof window !== "undefined" && window.hotlive && window.hotlive.isElectron) &&
         /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent) && (
           <div
-            className="px-4 py-2 text-center text-[13px] font-700 bg-[var(--hl-onair)] text-white flex items-center justify-center gap-2 animate-pulse"
+            className="px-4 py-2 text-center text-[13px] font-700 bg-[var(--hl-onair)] text-white flex items-center justify-center gap-2"
             data-testid="onair-lock-warning"
           >
             <Lock size={15} />
             ON AIR — keep this screen unlocked. Locking the phone can stop the broadcast.
             {wakeActive && <span className="font-500 opacity-90">(screen auto-lock is being held off)</span>}
+            <button
+              data-testid="onair-lock-dismiss"
+              onClick={() => setOnairNoteDismissed(true)}
+              className="ml-2 opacity-80 hover:opacity-100"
+              aria-label="Dismiss"
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
+
+      {airGuard && (
+        <div className="fixed inset-0 z-[120] bg-[#1a0300]/95 backdrop-blur-md grid place-items-center p-6 text-center" data-testid="air-guard-overlay">
+          <div className="max-w-md space-y-6">
+            <div className="mx-auto h-20 w-20 grid place-items-center rounded-full bg-[var(--hl-onair)]/20 border-2 border-[var(--hl-onair)] animate-pulse">
+              <Radio size={40} className="text-[var(--hl-onair)]" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="font-display text-2xl text-white">Broadcast may have paused</h2>
+              <p className="text-sm text-white/70">
+                Your screen was off. Tap below to make sure Hot Live 95 is still on the air, then keep
+                this screen unlocked.
+              </p>
+            </div>
+            <button
+              data-testid="air-guard-resume"
+              onClick={keepBroadcasting}
+              className="w-full py-4 rounded-2xl hl-fire-gradient text-white font-800 text-lg hover:brightness-110 active:scale-95 transition shadow-[0_10px_40px_rgba(255,23,68,0.4)]"
+            >
+              Tap to keep broadcasting
+            </button>
+            {DESKTOP_URL ? (
+              <a
+                href={DESKTOP_URL}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="air-guard-desktop-link"
+                className="inline-flex items-center justify-center gap-2 text-xs text-white/60 hover:text-white underline"
+              >
+                <MonitorDown size={14} /> Get the desktop app for lock-proof, non-stop air
+              </a>
+            ) : (
+              <p className="text-xs text-white/50">
+                Tip: the desktop app streams non-stop through any screen lock.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {dirty && !backupDismissed && (
         <div

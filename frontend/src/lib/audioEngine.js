@@ -124,14 +124,18 @@ export default class AudioEngine {
 
   _rampTo(el, target, ms) {
     if (this._volRaf) cancelAnimationFrame(this._volRaf);
+    if (this._volTimer) clearInterval(this._volTimer);
     const start = performance.now();
     const from = el.volume;
-    const step = (now) => {
-      const p = Math.min(1, (now - start) / ms);
+    // Timer-based so a duck/unduck ramp still finishes when backgrounded.
+    this._volTimer = setInterval(() => {
+      const p = Math.min(1, (performance.now() - start) / ms);
       this._setVol(el, from + (target - from) * p);
-      if (p < 1) this._volRaf = requestAnimationFrame(step);
-    };
-    this._volRaf = requestAnimationFrame(step);
+      if (p >= 1) {
+        clearInterval(this._volTimer);
+        this._volTimer = null;
+      }
+    }, 30);
   }
 
   setDuck(active, level, ms) {
@@ -643,6 +647,16 @@ export default class AudioEngine {
   // Resume any suspended audio contexts + keep the on-air deck playing. Called
   // when the tab becomes visible again so playout/broadcast recover fast after
   // the device was in standby or another app was in the foreground.
+  // True if audio was actually interrupted (contexts suspended or the on-air
+  // deck got paused while it should be playing) — used to decide whether the
+  // "tap to keep broadcasting" guard is warranted vs a harmless app switch.
+  isInterrupted() {
+    const susp = (c) => c && c.state === "suspended";
+    if (susp(this._actx) || susp(this._recCtx)) return true;
+    if (this.active && this.active.paused && this._wasPlaying && !this.active.ended) return true;
+    return false;
+  }
+
   resumeContexts() {
     [this._actx, this._recCtx].forEach((ctx) => {
       try {
@@ -651,6 +665,9 @@ export default class AudioEngine {
         /* ignore */
       }
     });
+    // If a crossfade was frozen while backgrounded, finish it now so auto-advance
+    // never gets stuck with _fading pinned true.
+    if (this._fading && this._fadeState) this._fadeTick();
     try {
       if (this.active && this.active.paused && !this.active.ended && this._wasPlaying) {
         this.active.play().catch(() => {});
@@ -771,7 +788,20 @@ export default class AudioEngine {
     const ctx = new AC();
     const master = ctx.createGain();
     master.gain.value = 1;
-    master.connect(ctx.destination);
+    // Safety limiter so overlapping decks during a crossfade can't sum past 0dB
+    // and distort the broadcast/recording bus.
+    const limiter = ctx.createDynamicsCompressor();
+    try {
+      limiter.threshold.value = -1.5;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.12;
+    } catch {
+      /* ignore read-only in some impls */
+    }
+    master.connect(limiter);
+    limiter.connect(ctx.destination);
     this._recCtx = ctx;
     this._recMaster = master;
     this._recSourced = new WeakSet();
@@ -1347,6 +1377,11 @@ export default class AudioEngine {
   }
 
   _onTime(el) {
+    // Safety: if a fade somehow outran its duration (timer throttled while
+    // backgrounded), finish it so advancing never stalls.
+    if (this._fading && this._fadeState && performance.now() - this._fadeState.start > this._fadeState.durMs + 1500) {
+      this._finishFade();
+    }
     if (el !== this.active) return;
     const dur = el.duration;
     if (dur && isFinite(dur)) {
@@ -1434,40 +1469,56 @@ export default class AudioEngine {
       /* ignore */
     }
     const durMs = Math.max(0.3, this.crossfadeSeconds) * 1000;
-    const start = performance.now();
-    const step = (now) => {
-      const p = Math.min(1, (now - start) / durMs);
-      // Fade toward the CURRENT effective volume so an active duck (mic/talk/
-      // jingle) is preserved across the track change instead of jumping to full.
-      const peak = this._effVol();
-      this._setVol(from, Math.max(0, peak * (1 - p)));
-      this._setVol(to, Math.min(peak, peak * p));
-      if (p < 1) {
-        this._fadeRaf = requestAnimationFrame(step);
-      } else {
-        from.pause();
-        try {
-          from.currentTime = 0;
-        } catch {
-          /* ignore */
-        }
-        this.active = to;
-        this.idle = from;
-        this.index = nextIndex;
-        this._fading = false;
-        // Re-assert the effective (possibly ducked) volume on the new active
-        // element in case the duck state changed during the fade.
-        this._setVol(this.active, this._effVol());
-        this._emit();
-      }
-    };
-    this._fadeRaf = requestAnimationFrame(step);
+    // Timer-based (not rAF) so the fade still completes when the tab is
+    // backgrounded / the screen is off — rAF fully pauses there, which used to
+    // leave _fading stuck true forever and kill all future auto-advance.
+    this._fadeState = { from, to, nextIndex, start: performance.now(), durMs };
+    if (this._fadeTimer) clearInterval(this._fadeTimer);
+    this._fadeTimer = setInterval(() => this._fadeTick(), 40);
+    this._fadeTick();
+  }
+
+  _fadeTick() {
+    const st = this._fadeState;
+    if (!st) return;
+    const p = Math.min(1, (performance.now() - st.start) / st.durMs);
+    const peak = this._effVol();
+    this._setVol(st.from, Math.max(0, peak * (1 - p)));
+    this._setVol(st.to, Math.min(peak, peak * p));
+    if (p >= 1) this._finishFade();
+  }
+
+  _finishFade() {
+    const st = this._fadeState;
+    if (!st) return;
+    if (this._fadeTimer) {
+      clearInterval(this._fadeTimer);
+      this._fadeTimer = null;
+    }
+    try {
+      st.from.pause();
+      st.from.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    this.active = st.to;
+    this.idle = st.from;
+    this.index = st.nextIndex;
+    this._fading = false;
+    this._fadeState = null;
+    this._setVol(this.active, this._effVol());
+    this._emit();
   }
 
   _cancelFade() {
+    if (this._fadeTimer) {
+      clearInterval(this._fadeTimer);
+      this._fadeTimer = null;
+    }
     if (this._fadeRaf) cancelAnimationFrame(this._fadeRaf);
     this._fadeRaf = null;
     this._fading = false;
+    this._fadeState = null;
   }
 
   _onEnded(el) {

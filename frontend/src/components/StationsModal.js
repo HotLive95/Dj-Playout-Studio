@@ -722,6 +722,20 @@ export default function StationsModal({
                   <span className="text-[var(--hl-text)]">desktop app</span> (from your flash drive). In a phone/tablet
                   browser, the system can pause a live broadcast when the screen locks or you switch apps — the desktop
                   build keeps streaming no matter what until you stop it.
+                  {process.env.REACT_APP_DESKTOP_URL && (
+                    <>
+                      {" "}
+                      <a
+                        href={process.env.REACT_APP_DESKTOP_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-testid="air-note-desktop-link"
+                        className="text-[var(--hl-cue)] underline hover:text-[var(--hl-fire)]"
+                      >
+                        Download the desktop app →
+                      </a>
+                    </>
+                  )}
                 </span>
               </div>
             )}

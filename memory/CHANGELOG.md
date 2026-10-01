@@ -311,3 +311,13 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - Honest limit: a MANUAL screen lock on iOS suspends the tab's Web-Audio encoding + WS upload after a few
   seconds — no web API can override that. Auto-lock is prevented; manual lock is not. Desktop build streams
   through any lock. Communicated to user.
+
+## Update 45 (2026-06) — Full-screen "Tap to keep broadcasting" guard + desktop link
+- Air guard: hiddenWhileLiveRef set when the tab goes hidden while live; on return to foreground a
+  full-screen overlay (data-testid air-guard-overlay) appears with a big "Tap to keep broadcasting"
+  button (air-guard-resume) → keepBroadcasting() resumes audio contexts + re-airs any dropped station.
+  This catches the iOS manual-lock interruption the moment the DJ reopens the app.
+- Desktop download link: reads REACT_APP_DESKTOP_URL (frontend .env). When set, shows a link in the air
+  guard (air-guard-desktop-link) and the Broadcast Center air note (air-note-desktop-link):
+  "Download the desktop app". When unset, falls back to a plain tip. NEEDS the user's real desktop build
+  download URL to activate.
