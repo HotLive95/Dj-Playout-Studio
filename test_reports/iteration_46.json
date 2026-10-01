@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only verification of the critical save/reload bug fix in Hot Live 95: large playlists now save as a SINGLE .zip containing all parts, and reloading that single .zip restores every track with NO missing-parts prompt. License gate bypassed via localStorage. Install prompt dismissed. Primary flow (3 x ~15MB files with single-file-save OFF) and the small-playlist regression (single .hl95playlist with single-file-save ON) both pass. Zero page errors, zero console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"frontend": "100%"},
+  "test_credentials": "License key Q61VK-G819N-40K1B-H226T via localStorage {activated:true, legalAccepted:true}",
+  "seed_data_creation": "Captured artifacts in /app/test_assets/_captured_* (zip + hl95playlist); transient only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "jszip-based save/import fix verified end-to-end. Downloaded filename format: '<Name> <YYYY-MM-DD> (<N> parts).zip' containing N '<Name> <YYYY-MM-DD> — part i of N.hl95playlist' entries. On import, Sidebar import-playlist-input accepts the .zip and triggers merge via handlePlaylistPart without surfacing parts-needed-modal. Load success banner reads 'Loaded 1 playlist(s) — <N> tracks'.",
+  "detailed_results": {
+    "app_logo_present": true,
+    "install_prompt_dismissable": true,
+    "primary_large_playlist_zip_flow": {
+      "single_file_save_toggled_off": true,
+      "three_tracks_loaded_after_upload": true,
+      "download_filename": "BigSplit 2026-10-01 (3 parts).zip",
+      "download_filename_ends_with_zip": true,
+      "only_one_download_occurred": true,
+      "zip_entry_count": 3,
+      "zip_entries": [
+        "BigSplit 2026-10-01 — part 1 of 3.hl95playlist",
+        "BigSplit 2026-10-01 — part 2 of 3.hl95playlist",
+        "BigSplit 2026-10-01 — part 3 of 3.hl95playlist"
+      ],
+      "zip_bytes": 356257,
+      "reload_restored_three_tracks": true,
+      "parts_needed_modal_shown": false,
+      "load_success_banner": "Loaded 1 playlist(s) — 3 tracks"
+    },
+    "small_playlist_single_file_regression": {
+      "single_file_save_default_on": true,
+      "download_filename": "SmallSingle 2026-10-01.hl95playlist",
+      "ends_with_hl95playlist_not_zip": true,
+      "only_one_download": true,
+      "reload_no_parts_prompt": true
+    },
+    "page_errors": 0,
+    "console_errors": 0
+  }
+}

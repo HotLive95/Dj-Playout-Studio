@@ -373,3 +373,14 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
 - StationsModal global-bar layout restructured to hold the loudness + metadata controls; verified no
   breakage. Verified: testing agent iteration_45 — Broadcast Center renders fully, loudness persists,
   VU clip/dB present, playout/backup regressions pass, 100%.
+
+## CRITICAL FIX (2026-06) — Multi-part save only produced 1 file; reload demanded missing parts (verified iteration_46)
+- Root cause: for a split-worthy playlist, savePlaylistFile fired N separate browser downloads
+  (part X of N). Browsers block rapid multiple programmatic downloads, so only "part 1 of N" saved;
+  on reload that lone file (parts=N) prompted for the other N-1 parts the user never got.
+- Fix (App.js): when a playlist splits (parts>1), bundle ALL parts into ONE .zip via jszip and download
+  that single file ("<name> <date> (N parts).zip"). importPlaylist now detects a .zip, expands every
+  .hl95playlist entry inside, and merges them via handlePlaylistPart — so one .zip restores the whole
+  playlist with NO missing-parts prompt. Small playlists still save as a single .hl95playlist.
+- Verified: testing agent iteration_46 — 3x15MB (single-file-save OFF) saved as ONE .zip and reloaded all
+  3 tracks with no parts-needed prompt; small playlist single-file path intact; 100%, 0 errors.
