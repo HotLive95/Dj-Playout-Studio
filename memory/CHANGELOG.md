@@ -351,3 +351,9 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   broadcast-level > vu-meter) and a compact meter in the header (header-vu-meter) shown only while
   isBroadcasting. getProgramLevels passed via a stable useCallback.
 - Verified: testing agent iteration_44 — meter renders, null-safe when idle, no regressions, 0 errors.
+
+## Update 47 (2026-06) — VU meter clip light + dB readout
+- VuMeter.js: added a clip/peak warning light (data-testid vu-clip) that latches ~1.2s after any clip
+  (>0.97) and flashes (animate-pulse) when the signal holds in the red >1s; plus a numeric dB readout
+  (data-testid vu-db) showing peak dBFS (max of L/R), rendering "CLIP" when sustained-clipping. dB hidden
+  in compact (header) mode; the Broadcast Center meter shows the full readout. Null-safe when idle.
