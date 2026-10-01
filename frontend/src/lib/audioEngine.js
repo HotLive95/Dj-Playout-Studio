@@ -821,6 +821,24 @@ export default class AudioEngine {
     }
     master.connect(limiter);
     limiter.connect(ctx.destination);
+    // Optional loudness leveler (simple AGC) sits between the mix and the
+    // limiter so every song airs at a consistent target level.
+    const loudnessGain = ctx.createGain();
+    loudnessGain.gain.value = 1;
+    // Re-wire: master -> loudnessGain -> limiter (instead of master -> limiter).
+    try {
+      master.disconnect(limiter);
+    } catch {
+      /* ignore */
+    }
+    master.connect(loudnessGain);
+    loudnessGain.connect(limiter);
+    const lvl = ctx.createAnalyser();
+    lvl.fftSize = 2048;
+    master.connect(lvl); // measure the pre-gain program level
+    this._loudnessGain = loudnessGain;
+    this._lvlAnalyser = lvl;
+    this._lvlBuf = new Float32Array(lvl.fftSize);
     // Stereo analysers on the actual on-air signal (post-limiter) for the VU meter.
     const splitter = ctx.createChannelSplitter(2);
     limiter.connect(splitter);
@@ -839,7 +857,59 @@ export default class AudioEngine {
     this._routeElement(this.a);
     this._routeElement(this.b);
     if (this._programSink) this._applyCtxSink(this._programSink);
+    if (this._loudnessLufs) this._startLoudnessLoop();
     return ctx;
+  }
+
+  // Loudness leveling (approx LUFS target). null/0 disables it.
+  setLoudnessTarget(lufs) {
+    this._loudnessLufs = lufs || null;
+    if (!this._loudnessGain || !this._recCtx) return;
+    if (!this._loudnessLufs) {
+      this._stopLoudnessLoop();
+      try {
+        this._loudnessGain.gain.setTargetAtTime(1, this._recCtx.currentTime, 0.3);
+      } catch {
+        this._loudnessGain.gain.value = 1;
+      }
+    } else {
+      this._startLoudnessLoop();
+    }
+  }
+
+  _startLoudnessLoop() {
+    if (this._loudnessTimer) return;
+    this._loudnessTimer = setInterval(() => this._loudnessTick(), 250);
+  }
+
+  _stopLoudnessLoop() {
+    if (this._loudnessTimer) {
+      clearInterval(this._loudnessTimer);
+      this._loudnessTimer = null;
+    }
+  }
+
+  _loudnessTick() {
+    const an = this._lvlAnalyser;
+    const g = this._loudnessGain;
+    const ctx = this._recCtx;
+    if (!an || !g || !ctx || !this._loudnessLufs) return;
+    an.getFloatTimeDomainData(this._lvlBuf);
+    let sum = 0;
+    for (let i = 0; i < this._lvlBuf.length; i++) {
+      const v = this._lvlBuf[i];
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / this._lvlBuf.length);
+    if (rms < 0.0008) return; // near silence — hold gain, don't pump up noise
+    const targetRms = Math.pow(10, this._loudnessLufs / 20);
+    const desired = Math.max(0.25, Math.min(4, targetRms / rms));
+    const next = g.gain.value * 0.85 + desired * 0.15; // smooth
+    try {
+      g.gain.setTargetAtTime(next, ctx.currentTime, 0.4);
+    } catch {
+      g.gain.value = next;
+    }
   }
 
   _routeElement(el) {

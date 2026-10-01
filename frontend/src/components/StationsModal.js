@@ -15,6 +15,7 @@ import {
   Mic,
   MicOff,
   Users,
+  TrendingUp,
   ChevronDown,
   ChevronUp,
   Zap,
@@ -58,6 +59,10 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
   const [health, setHealth] = useState(null);
   const [listeners, setListeners] = useState(null);
   const listenerLogRef = useRef([]);
+  const peakRef = useRef(0);
+  const [peak, setPeak] = useState(0);
+  const [peakFlash, setPeakFlash] = useState(false);
+  const peakFlashTimer = useRef(null);
   const fileRef = useRef(null);
   const [azuraUrl, setAzuraUrl] = useState("");
   const [resolving, setResolving] = useState(false);
@@ -91,6 +96,16 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
         const d = await r.json();
         if (alive && d && d.ok && typeof d.listeners === "number") {
           setListeners(d.listeners);
+          // Listener peak alert: gently flash when this show sets a new high.
+          if (d.listeners > peakRef.current && d.listeners > 0) {
+            if (peakRef.current > 0) {
+              setPeakFlash(true);
+              if (peakFlashTimer.current) clearTimeout(peakFlashTimer.current);
+              peakFlashTimer.current = setTimeout(() => setPeakFlash(false), 5000);
+            }
+            peakRef.current = d.listeners;
+            setPeak(d.listeners);
+          }
           // Record a listener sample for the per-show CSV export.
           listenerLogRef.current.push({
             t: new Date().toISOString(),
@@ -253,6 +268,14 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
             {listeners != null && (
               <span className="ml-2 inline-flex items-center gap-1 text-[var(--hl-cue)]">
                 <Users size={11} /> {listeners}
+              </span>
+            )}
+            {peakFlash && (
+              <span
+                className="ml-2 inline-flex items-center gap-1 rounded-full bg-[var(--hl-fire)]/20 text-[var(--hl-fire)] px-2 py-0.5 text-[10px] font-700 animate-pulse"
+                data-testid={`listener-peak-alert-${station.id}`}
+              >
+                <TrendingUp size={11} /> New peak: {peak}
               </span>
             )}
             {health && isLive && <span className="ml-2 text-[#2ee5c4]">{health.kbps} kbps</span>}
@@ -586,6 +609,8 @@ export default function StationsModal({
   onTest,
   getLevel,
   getProgramLevels,
+  loudnessLufs,
+  onLoudnessChange,
   getHealth,
   metaFormat,
   onMetaFormat,
@@ -751,19 +776,36 @@ export default function StationsModal({
               >
                 <Square size={14} /> Stop all
               </button>
-              <div className="ml-auto flex items-center gap-2 text-xs text-[var(--hl-muted)]">
-                <span>Metadata</span>
-                <select
-                  data-testid="broadcast-meta-format"
-                  value={metaFormat}
-                  onChange={(e) => onMetaFormat(e.target.value)}
-                  className="hl-input py-1 text-xs"
-                >
+              <div className="ml-auto flex items-center gap-3 text-xs text-[var(--hl-muted)]">
+                <div className="flex items-center gap-1.5" data-testid="loudness-control">
+                  <span>Loudness</span>
+                  <select
+                    data-testid="loudness-target"
+                    value={loudnessLufs == null ? "off" : String(loudnessLufs)}
+                    onChange={(e) => onLoudnessChange(e.target.value === "off" ? null : Number(e.target.value))}
+                    className="hl-input py-1 text-xs"
+                    title="Even out every song to a consistent on-air level"
+                  >
+                    <option value="off">Off</option>
+                    <option value="-14">-14 LUFS</option>
+                    <option value="-16">-16 LUFS</option>
+                    <option value="-18">-18 LUFS</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>Metadata</span>
+                  <select
+                    data-testid="broadcast-meta-format"
+                    value={metaFormat}
+                    onChange={(e) => onMetaFormat(e.target.value)}
+                    className="hl-input py-1 text-xs"
+                  >
                   <option value="artist-title">Artist — Title</option>
                   <option value="title-artist">Title — Artist</option>
                   <option value="title-only">Title only</option>
                 </select>
               </div>
+            </div>
             </div>
             {/* On-air stereo VU meter (actual broadcast output) */}
             <div className="flex items-center gap-3" data-testid="broadcast-level">

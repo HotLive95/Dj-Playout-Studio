@@ -24,7 +24,7 @@ import StemIsolator from "@/components/StemIsolator";
 import StationsModal from "@/components/StationsModal";
 import MultiChannelStudio from "@/components/MultiChannelStudio";
 import BackupModal from "@/components/BackupModal";
-import { IdCard, X, FolderDown, Upload, Lock, Radio, MonitorDown } from "lucide-react";
+import { IdCard, X, FolderDown, Upload, Lock, Radio, MonitorDown, RotateCcw } from "lucide-react";
 import AudioEngine from "@/lib/audioEngine";
 import { platform } from "@/lib/platform";
 import { putBlob, getBlob, deleteBlob } from "@/lib/db";
@@ -65,6 +65,7 @@ const defaultSettings = {  autoplay: true,
   autoCueNext: false,
   rollDiv: 0.25,
   singleFileSave: true,
+  loudnessLufs: null,
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -550,6 +551,7 @@ function App() {
     e.setLoopRegion(settings.loopRegion);
     e.setCueAutoFade(settings.cueAutoFade, settings.cueFadeSeconds);
     e.setFaderCurve(settings.faderCurve || "smooth");
+    e.setLoudnessTarget(settings.loudnessLufs || null);
     e.setSyncLock(!!settings.syncLock);
   }, [settings]);
 
@@ -1949,6 +1951,7 @@ function App() {
 
   const partBufferRef = useRef({});
   const [partsNeeded, setPartsNeeded] = useState(null);
+  const [restorePrompt, setRestorePrompt] = useState(null);
   const morePartsInputRef = useRef(null);
   const handlePlaylistPart = async (data) => {
     const key = data.partGroup;
@@ -2810,6 +2813,26 @@ function App() {
   // Stable accessor for the on-air VU meter.
   const getProgramLevels = useCallback(() => engineRef.current?.getProgramLevels?.() || null, []);
 
+  // Fresh-install auto-restore: on the desktop app, if the library is empty but
+  // the flash drive has backup files, offer to restore them in one tap.
+  const restoreCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || restoreCheckedRef.current || !platform.isElectron) return;
+    if (Object.keys(tracks).length > 0) {
+      restoreCheckedRef.current = true;
+      return;
+    }
+    restoreCheckedRef.current = true;
+    (async () => {
+      try {
+        const names = (await window.hotlive.listBackups()) || [];
+        if (names.length) setRestorePrompt({ count: names.length });
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [loaded, tracks]);
+
   // Full-screen guard action: resume audio + re-air any station that dropped.
   const keepBroadcasting = () => {    engineRef.current?.resumeContexts?.();
     const dropped = stations.filter(
@@ -3431,6 +3454,8 @@ function App() {
           onTest={testBroadcast}
           getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
           getProgramLevels={getProgramLevels}
+          loudnessLufs={settings.loudnessLufs || null}
+          onLoudnessChange={(v) => setSettings((s) => ({ ...s, loudnessLufs: v }))}
           getHealth={(id) => engineRef.current?.getBroadcastHealth?.(id) || null}
           metaFormat={metaFormat}
           onMetaFormat={changeMetaFormat}
@@ -3494,6 +3519,39 @@ function App() {
           onRestore={restoreFromBackup}
           onClose={() => setBackupOpen(false)}
         />
+      )}
+
+      {restorePrompt && (
+        <div className="fixed inset-0 z-[75] bg-black/80 backdrop-blur-sm grid place-items-center p-4" data-testid="restore-prompt-modal">
+          <div className="w-full max-w-md hl-panel rounded-2xl overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--hl-line)]">
+              <RotateCcw size={18} className="text-[var(--hl-cue)]" />
+              <h2 className="font-display text-lg">Restore your playlists?</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-[var(--hl-text)]">
+                Found <span className="font-700 text-[var(--hl-fire)]">{restorePrompt.count}</span> backup
+                file{restorePrompt.count === 1 ? "" : "s"} on this drive from a previous session. Reload them now?
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  data-testid="restore-prompt-yes"
+                  onClick={() => { setRestorePrompt(null); restoreFromBackup(); }}
+                  className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg hl-fire-gradient text-white font-700 hover:brightness-110 transition"
+                >
+                  <RotateCcw size={16} /> Restore playlists
+                </button>
+                <button
+                  data-testid="restore-prompt-no"
+                  onClick={() => setRestorePrompt(null)}
+                  className="px-4 py-2.5 rounded-lg border border-[var(--hl-line)] text-[var(--hl-muted)] hover:text-[var(--hl-text)] text-sm"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {partsNeeded && (
