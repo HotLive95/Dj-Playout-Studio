@@ -863,3 +863,5 @@ Latest shipped work (Voice DSP chain, Install button, 500MB chunked uploads, Exp
   watermark), `icon-192.png`/`icon-512.png`/`icon-maskable-512.png` (maskable = emblem in safe zone on
   dark tile), `icon.jpg` favicon, and Electron `build-assets/icon.png` + multi-size `icon.ico`.
   Verified rendering on the activation gate and the public /live player.
+
+> Latest status (2026-06): see CHANGELOG.md Update 48 — Loudness leveler, Listener Peak Alert, Auto-Restore prompt shipped. Desktop download link wired but deferred (no URL yet, REACT_APP_DESKTOP_URL unset).

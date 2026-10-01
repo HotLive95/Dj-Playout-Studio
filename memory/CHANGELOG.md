@@ -357,3 +357,19 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   (>0.97) and flashes (animate-pulse) when the signal holds in the red >1s; plus a numeric dB readout
   (data-testid vu-db) showing peak dBFS (max of L/R), rendering "CLIP" when sustained-clipping. dB hidden
   in compact (header) mode; the Broadcast Center meter shows the full readout. Null-safe when idle.
+
+## Update 48 (2026-06) — Loudness leveler + Listener Peak Alert + Auto-Restore prompt (verified iteration_45)
+- Loudness Target: optional broadcast loudness leveler (simple AGC). Engine adds a loudnessGain node
+  (master -> loudnessGain -> limiter) + a pre-gain analyser; _loudnessTick (250ms) measures RMS and nudges
+  the gain toward targetRms=10^(LUFS/20), clamped 0.25x-4x, smoothed. setLoudnessTarget(lufs|null).
+  settings.loudnessLufs (default null/off); Broadcast Center global-bar select (loudness-control /
+  loudness-target: Off/-14/-16/-18 LUFS), persisted + applied via e.setLoudnessTarget.
+- Listener Peak Alert: StationCard tracks a session listener peak; when a poll sets a NEW high (and a prior
+  peak existed) it flashes a gentle "New peak: N" badge (listener-peak-alert-<id>) for ~5s. Needs a live
+  listener count (AzuraCast/Icecast status) so only shows during a real show.
+- Auto-Restore Prompt (Electron): on launch, if the library is empty (fresh install) and the flash drive
+  has backup files (window.hotlive.listBackups), a "Restore your playlists?" modal (restore-prompt-modal:
+  restore-prompt-yes/no) offers one-tap restoreFromBackup(). Desktop-only (web harness can't trigger it).
+- StationsModal global-bar layout restructured to hold the loudness + metadata controls; verified no
+  breakage. Verified: testing agent iteration_45 — Broadcast Center renders fully, loudness persists,
+  VU clip/dB present, playout/backup regressions pass, 100%.
