@@ -341,3 +341,13 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   re-arms on each new broadcast.
 - Verified: testing agent iteration_43 — 3x6s tones auto-advanced 220->440->330 with no manual clicks, no
   stuck fade, manual next/prev fine, 0 console errors; frontend 100%.
+
+## Update 46 (2026-06) — On-air stereo VU meter (verified iteration_44)
+- Engine: stereo analysers (ChannelSplitter -> 2 AnalyserNodes) tap the POST-limiter on-air signal in
+  _ensureProgramGraph; getProgramLevels() returns {l,r} peak 0-1 (or null when no broadcast/record bus).
+- components/VuMeter.js (new): rAF-polled L/R bars, fast-attack/slow-release smoothing + peak-hold marker,
+  green->yellow->red gradient, clip tint. Safe when getLevels() returns null (idle bars).
+- UI: stereo VU meter in the Broadcast Center global bar (replaces the old mono bar; data-testid
+  broadcast-level > vu-meter) and a compact meter in the header (header-vu-meter) shown only while
+  isBroadcasting. getProgramLevels passed via a stable useCallback.
+- Verified: testing agent iteration_44 — meter renders, null-safe when idle, no regressions, 0 errors.
