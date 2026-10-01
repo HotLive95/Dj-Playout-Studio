@@ -787,16 +787,23 @@ export default class AudioEngine {
     const anR = this._progAnR;
     if (!anL || !anR || !this._progBuf) return null;
     const buf = this._progBuf;
-    const peak = (an) => {
+    const analyze = (an) => {
       an.getFloatTimeDomainData(buf);
-      let p = 0;
+      let peak = 0;
+      let sq = 0;
       for (let i = 0; i < buf.length; i++) {
-        const v = Math.abs(buf[i]);
-        if (v > p) p = v;
+        const v = buf[i];
+        const a = v < 0 ? -v : v;
+        if (a > peak) peak = a;
+        sq += v * v;
       }
-      return Math.min(1, p);
+      return { peak: Math.min(1, peak), ms: sq / buf.length };
     };
-    return { l: peak(anL), r: peak(anR) };
+    const L = analyze(anL);
+    const R = analyze(anR);
+    const ms = L.ms + R.ms; // stereo sum (ITU-style, no K-weighting)
+    const lufs = ms > 1e-9 ? -0.691 + 10 * Math.log10(ms) : -Infinity;
+    return { l: L.peak, r: R.peak, lufs };
   }
 
   // ---- Session recorder (program bus + mic → single file) ----
@@ -832,7 +839,12 @@ export default class AudioEngine {
       /* ignore */
     }
     master.connect(loudnessGain);
-    loudnessGain.connect(limiter);
+    // Clip auto-trim gain rides down when the mix keeps slamming the limiter.
+    const trimGain = ctx.createGain();
+    trimGain.gain.value = 1;
+    loudnessGain.connect(trimGain);
+    trimGain.connect(limiter);
+    this._trimGain = trimGain;
     const lvl = ctx.createAnalyser();
     lvl.fftSize = 2048;
     master.connect(lvl); // measure the pre-gain program level
@@ -858,7 +870,62 @@ export default class AudioEngine {
     this._routeElement(this.b);
     if (this._programSink) this._applyCtxSink(this._programSink);
     if (this._loudnessLufs) this._startLoudnessLoop();
+    if (this._clipAutoTrim) this._maybeClipLoop();
     return ctx;
+  }
+
+  // Clip auto-trim: gently pull the whole mix down when it keeps hitting the
+  // red, and slowly recover when it's clean again.
+  setClipAutoTrim(on) {
+    this._clipAutoTrim = on;
+    if (!on && this._trimGain && this._recCtx) {
+      try {
+        this._trimGain.gain.setTargetAtTime(1, this._recCtx.currentTime, 0.5);
+      } catch {
+        this._trimGain.gain.value = 1;
+      }
+    }
+    this._maybeClipLoop();
+  }
+
+  _maybeClipLoop() {
+    if (this._clipAutoTrim && this._recCtx) {
+      if (!this._clipTimer) this._clipTimer = setInterval(() => this._clipTick(), 200);
+    } else if (this._clipTimer) {
+      clearInterval(this._clipTimer);
+      this._clipTimer = null;
+    }
+  }
+
+  _clipTick() {
+    const lv = this.getProgramLevels();
+    const g = this._trimGain;
+    const ctx = this._recCtx;
+    if (!lv || !g || !ctx) return;
+    const peak = Math.max(lv.l, lv.r);
+    if (peak >= 0.98) {
+      this._clipRun = (this._clipRun || 0) + 1;
+      this._clipCleanMs = 0;
+      if (this._clipRun >= 2) {
+        const next = Math.max(0.5, g.gain.value * 0.93); // ~-0.6 dB step, floor -6 dB
+        try {
+          g.gain.setTargetAtTime(next, ctx.currentTime, 0.15);
+        } catch {
+          g.gain.value = next;
+        }
+      }
+    } else {
+      this._clipRun = 0;
+      this._clipCleanMs = (this._clipCleanMs || 0) + 200;
+      if (this._clipCleanMs > 4000 && g.gain.value < 1) {
+        const next = Math.min(1, g.gain.value * 1.02 + 0.004); // slow recovery
+        try {
+          g.gain.setTargetAtTime(next, ctx.currentTime, 0.5);
+        } catch {
+          g.gain.value = next;
+        }
+      }
+    }
   }
 
   // Loudness leveling (approx LUFS target). null/0 disables it.

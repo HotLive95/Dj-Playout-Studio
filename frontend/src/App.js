@@ -66,6 +66,7 @@ const defaultSettings = {  autoplay: true,
   rollDiv: 0.25,
   singleFileSave: true,
   loudnessLufs: null,
+  clipAutoTrim: true,
   customFx: { highpass: 120, lowpass: 12000, drive: 0.2, echo: 0, reverb: 0 },
 };
 
@@ -552,6 +553,7 @@ function App() {
     e.setCueAutoFade(settings.cueAutoFade, settings.cueFadeSeconds);
     e.setFaderCurve(settings.faderCurve || "smooth");
     e.setLoudnessTarget(settings.loudnessLufs || null);
+    e.setClipAutoTrim(settings.clipAutoTrim !== false);
     e.setSyncLock(!!settings.syncLock);
   }, [settings]);
 
@@ -1488,20 +1490,27 @@ function App() {
         );
         return;
       }
-      // Stagger the downloads so browsers don't drop rapid successive saves.
-      files.forEach((f, i) => {
-        setTimeout(() => {
-          try {
-            downloadJson(f.obj, f.filename);
-          } catch {
-            /* ignore a single failed part; user can re-save */
-          }
-        }, i * 400);
-      });
+      // Big playlist: bundle ALL parts into a SINGLE .zip download. Browsers
+      // block rapid multiple downloads (only the first would save), so one zip
+      // guarantees every part is actually delivered and re-loadable.
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      files.forEach((f) => zip.file(f.filename, JSON.stringify(f.obj)));
+      const safe = (pl.name || "Playlist").replace(/[\\/:*?"<>|]+/g, "_");
+      const stamp = new Date().toISOString().slice(0, 10);
+      const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safe} ${stamp} (${parts} parts).zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
       setDirty(false);
       setBanner(
-        `Saved "${pl.name}" in ${parts} parts (playlist too large for one file). ` +
-          `Keep all ${parts} “part X of ${parts}” files together — re-upload them all to restore the full playlist.`
+        `Saved "${pl.name}" as ONE .zip containing all ${parts} parts (${trackCount} tracks). ` +
+          `Just re-load this single .zip to restore the whole playlist — no missing-parts prompt.`
       );
     } catch (e) {
       setBanner(e.message || "Couldn't save that playlist. Please try again.");
@@ -1990,12 +1999,34 @@ function App() {
   };
 
   const importPlaylist = async (fileOrList) => {
-    const files =
+    const rawFiles =
       fileOrList instanceof FileList
         ? Array.from(fileOrList)
         : Array.isArray(fileOrList)
         ? fileOrList
         : [fileOrList];
+    // Expand any .zip bundle (saved multi-part playlists) into its part files.
+    const files = [];
+    for (const f of rawFiles) {
+      if (/\.zip$/i.test(f.name) || f.type === "application/zip") {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const JSZip = (await import("jszip")).default;
+          // eslint-disable-next-line no-await-in-loop
+          const zip = await JSZip.loadAsync(f);
+          const entries = Object.values(zip.files).filter((e) => !e.dir && /\.hl95playlist$/i.test(e.name));
+          for (const e of entries) {
+            // eslint-disable-next-line no-await-in-loop
+            const text = await e.async("string");
+            files.push(new File([text], e.name, { type: "application/json" }));
+          }
+        } catch {
+          setBanner(`Couldn't open "${f.name}" — the .zip may be damaged.`);
+        }
+      } else {
+        files.push(f);
+      }
+    }
     // Load part files in order so progress reads naturally.
     const parsed = [];
     for (const file of files) {
@@ -3456,6 +3487,8 @@ function App() {
           getProgramLevels={getProgramLevels}
           loudnessLufs={settings.loudnessLufs || null}
           onLoudnessChange={(v) => setSettings((s) => ({ ...s, loudnessLufs: v }))}
+          clipAutoTrim={settings.clipAutoTrim !== false}
+          onClipAutoTrimChange={(v) => setSettings((s) => ({ ...s, clipAutoTrim: v }))}
           getHealth={(id) => engineRef.current?.getBroadcastHealth?.(id) || null}
           metaFormat={metaFormat}
           onMetaFormat={changeMetaFormat}

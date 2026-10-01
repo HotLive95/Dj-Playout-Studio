@@ -6,9 +6,9 @@ const fmtDb = (db) => (db === -Infinity ? "-\u221E" : `${db > 0 ? "+" : ""}${db.
 // On-air stereo VU/level meter. Polls engine.getProgramLevels() each frame and
 // renders two smoothed bars (L/R) with peak-hold, a numeric dB readout, and a
 // clip light that latches briefly and flashes when you hold in the red.
-export default function VuMeter({ getLevels, className = "", compact = false, showDb = true }) {
-  const [state, setState] = useState({ l: 0, r: 0, lHold: 0, rHold: 0, db: -Infinity, clip: false, held: false });
-  const pRef = useRef({ l: 0, r: 0, lHold: 0, rHold: 0 });
+export default function VuMeter({ getLevels, className = "", compact = false, showDb = true, showLufs = false }) {
+  const [state, setState] = useState({ l: 0, r: 0, lHold: 0, rHold: 0, db: -Infinity, lufs: -Infinity, clip: false, held: false });
+  const pRef = useRef({ l: 0, r: 0, lHold: 0, rHold: 0, lufs: -Infinity });
   const holdTsRef = useRef({ l: 0, r: 0 });
   const clipRef = useRef({ latchUntil: 0, redSince: 0 });
   const rafRef = useRef(null);
@@ -47,12 +47,22 @@ export default function VuMeter({ getLevels, className = "", compact = false, sh
       const clip = now < c.latchUntil;
       const held = !!c.redSince && now - c.redSince > 1000;
 
+      // Smooth the momentary LUFS reading.
+      const rawLufs = typeof lv.lufs === "number" ? lv.lufs : -Infinity;
+      if (rawLufs === -Infinity || !isFinite(rawLufs)) {
+        p.lufs = p.lufs === -Infinity ? -Infinity : p.lufs - 2;
+        if (p.lufs < -60) p.lufs = -Infinity;
+      } else {
+        p.lufs = p.lufs === -Infinity ? rawLufs : p.lufs * 0.8 + rawLufs * 0.2;
+      }
+
       setState({
         l: p.l,
         r: p.r,
         lHold: p.lHold,
         rHold: p.rHold,
         db: toDb(Math.max(p.l, p.r)),
+        lufs: p.lufs,
         clip,
         held,
       });
@@ -108,6 +118,16 @@ export default function VuMeter({ getLevels, className = "", compact = false, sh
         >
           {state.clip && state.held ? "CLIP" : fmtDb(state.db)}
           {!(state.clip && state.held) && <span className="text-[8px] ml-0.5 opacity-70">dB</span>}
+        </span>
+      )}
+      {showLufs && !compact && (
+        <span
+          data-testid="vu-lufs"
+          className="font-mono text-[11px] w-20 text-right tabular-nums text-[var(--hl-cue)]"
+          title="Momentary program loudness (approx LUFS)"
+        >
+          {state.lufs === -Infinity || !isFinite(state.lufs) ? "-\u221E" : state.lufs.toFixed(1)}
+          <span className="text-[8px] ml-0.5 opacity-70">LUFS</span>
         </span>
       )}
     </div>

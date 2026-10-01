@@ -60,6 +60,7 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
   const [listeners, setListeners] = useState(null);
   const listenerLogRef = useRef([]);
   const peakRef = useRef(0);
+  const peakAtRef = useRef(null);
   const [peak, setPeak] = useState(0);
   const [peakFlash, setPeakFlash] = useState(false);
   const peakFlashTimer = useRef(null);
@@ -104,6 +105,7 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
               peakFlashTimer.current = setTimeout(() => setPeakFlash(false), 5000);
             }
             peakRef.current = d.listeners;
+            peakAtRef.current = new Date().toISOString();
             setPeak(d.listeners);
           }
           // Record a listener sample for the per-show CSV export.
@@ -191,9 +193,13 @@ function StationCard({ station, bc, onChange, onDelete, onAir, onStop, onTest, g
     const log = listenerLogRef.current;
     if (!log.length) return;
     const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
-    const rows = [["timestamp", "listeners", "now_playing"]].concat(
-      log.map((s) => [s.t, s.listeners, s.nowPlaying])
-    );
+    const rows = [
+      ["Station", station.name || ""],
+      ["Show peak listeners", peakRef.current || 0],
+      ["Peak reached at", peakAtRef.current || ""],
+      [],
+      ["timestamp", "listeners", "now_playing"],
+    ].concat(log.map((s) => [s.t, s.listeners, s.nowPlaying]));
     const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -611,6 +617,8 @@ export default function StationsModal({
   getProgramLevels,
   loudnessLufs,
   onLoudnessChange,
+  clipAutoTrim,
+  onClipAutoTrimChange,
   getHealth,
   metaFormat,
   onMetaFormat,
@@ -811,8 +819,18 @@ export default function StationsModal({
             <div className="flex items-center gap-3" data-testid="broadcast-level">
               <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] w-16">On-air</span>
               <div className="flex-1">
-                <VuMeter getLevels={getProgramLevels} />
+                <VuMeter getLevels={getProgramLevels} showLufs />
               </div>
+              <label className="flex items-center gap-1 text-[10px] text-[var(--hl-muted)] cursor-pointer" title="Automatically trim the mix down a touch when it keeps clipping">
+                <input
+                  type="checkbox"
+                  data-testid="clip-autotrim-toggle"
+                  checked={clipAutoTrim}
+                  onChange={(e) => onClipAutoTrimChange(e.target.checked)}
+                  className="accent-[var(--hl-fire)]"
+                />
+                Auto-trim
+              </label>
               <span className="text-[10px] text-[var(--hl-muted)] w-10 text-right">{anyLive ? `${liveCount} on` : "idle"}</span>
             </div>
           </div>
