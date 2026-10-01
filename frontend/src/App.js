@@ -2807,9 +2807,11 @@ function App() {
     }
   }, [currentTrack, onAir]);
 
+  // Stable accessor for the on-air VU meter.
+  const getProgramLevels = useCallback(() => engineRef.current?.getProgramLevels?.() || null, []);
+
   // Full-screen guard action: resume audio + re-air any station that dropped.
-  const keepBroadcasting = () => {
-    engineRef.current?.resumeContexts?.();
+  const keepBroadcasting = () => {    engineRef.current?.resumeContexts?.();
     const dropped = stations.filter(
       (s) => s && s.host && s.password && !["live", "connecting", "reconnecting"].includes(bcStations[s.id]?.state)
     );
@@ -2987,7 +2989,7 @@ function App() {
 
   return (
     <div className="min-h-screen md:h-screen w-full md:w-screen flex flex-col hl-app-bg overflow-x-hidden pb-16 md:pb-0" data-testid="app-root">
-      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} onGoLive={() => setGoLiveOpen(true)} broadcasting={Object.values(bcStations).some((s) => s && s.state === "live")} backupDirty={dirty} lastBackupAt={lastBackupAt} onOpenBackup={() => setBackupOpen(true)} />
+      <Header onAir={onAir} nowPlaying={currentTrack ? currentTrack.name : null} search={search} onSearch={setSearch} onOpenKeyManager={() => setKeyManagerOpen(true)} onOpenLicenseStatus={() => setLicenseStatusOpen(true)} recording={recording} recSec={recSec} onToggleRecord={toggleRecord} onOpenVault={() => setVaultOpen(true)} vaultCount={vault.length} onOpenCloud={() => { setInitialCloudCode(null); setCloudOpen(true); }} onOpenStems={() => setStemsOpen(true)} onGoLive={() => setGoLiveOpen(true)} broadcasting={Object.values(bcStations).some((s) => s && s.state === "live")} backupDirty={dirty} lastBackupAt={lastBackupAt} onOpenBackup={() => setBackupOpen(true)} isBroadcasting={isBroadcasting} getLevels={getProgramLevels} />
 
       {banner && (
         <div
@@ -3428,6 +3430,7 @@ function App() {
           onStopAll={stopAllAir}
           onTest={testBroadcast}
           getLevel={() => engineRef.current?.getBroadcastLevel() || 0}
+          getProgramLevels={getProgramLevels}
           getHealth={(id) => engineRef.current?.getBroadcastHealth?.(id) || null}
           metaFormat={metaFormat}
           onMetaFormat={changeMetaFormat}

@@ -23,6 +23,7 @@ import {
   Download,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
+import VuMeter from "@/components/VuMeter";
 import { blankStation, stationPublic, downscaleLogo } from "@/lib/stations";
 import { api } from "@/lib/api";
 
@@ -584,6 +585,7 @@ export default function StationsModal({
   onStopAll,
   onTest,
   getLevel,
+  getProgramLevels,
   getHealth,
   metaFormat,
   onMetaFormat,
@@ -594,22 +596,12 @@ export default function StationsModal({
   onOpenMultiChannel,
   onClose,
 }) {
-  const [level, setLevel] = useState(0);
   const fileImportRef = useRef(null);
 
   const liveCount = useMemo(
     () => Object.values(bcStations || {}).filter((s) => s && (s.state === "live" || s.state === "connecting" || s.state === "reconnecting")).length,
     [bcStations]
   );
-
-  useEffect(() => {
-    if (!liveCount) {
-      setLevel(0);
-      return;
-    }
-    const id = setInterval(() => setLevel(getLevel()), 120);
-    return () => clearInterval(id);
-  }, [liveCount, getLevel]);
 
   // Persist a station's public branding to the backend so /live players see it.
   const publishPublic = (s) => {
@@ -773,17 +765,11 @@ export default function StationsModal({
                 </select>
               </div>
             </div>
-            {/* Shared program level */}
-            <div className="flex items-center gap-2" data-testid="broadcast-level">
+            {/* On-air stereo VU meter (actual broadcast output) */}
+            <div className="flex items-center gap-3" data-testid="broadcast-level">
               <span className="text-[10px] uppercase tracking-wider text-[var(--hl-muted)] w-16">On-air</span>
-              <div className="flex-1 h-2 rounded-full bg-black/50 overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-[width] duration-100"
-                  style={{
-                    width: `${Math.min(100, Math.round(level * 140))}%`,
-                    background: level > 0.7 ? "var(--hl-onair)" : level > 0.4 ? "var(--hl-amber)" : "#2ee5c4",
-                  }}
-                />
+              <div className="flex-1">
+                <VuMeter getLevels={getProgramLevels} />
               </div>
               <span className="text-[10px] text-[var(--hl-muted)] w-10 text-right">{anyLive ? `${liveCount} on` : "idle"}</span>
             </div>

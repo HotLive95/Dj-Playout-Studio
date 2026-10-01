@@ -780,6 +780,25 @@ export default class AudioEngine {
     }, delay * 1000);
   }
 
+  // Stereo peak levels (0–1) of the actual on-air signal, for the VU meter.
+  // Returns null when there's no broadcast/record bus active.
+  getProgramLevels() {
+    const anL = this._progAnL;
+    const anR = this._progAnR;
+    if (!anL || !anR || !this._progBuf) return null;
+    const buf = this._progBuf;
+    const peak = (an) => {
+      an.getFloatTimeDomainData(buf);
+      let p = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = Math.abs(buf[i]);
+        if (v > p) p = v;
+      }
+      return Math.min(1, p);
+    };
+    return { l: peak(anL), r: peak(anR) };
+  }
+
   // ---- Session recorder (program bus + mic → single file) ----
   _ensureProgramGraph() {
     if (this._recCtx) return this._recCtx;
@@ -802,6 +821,18 @@ export default class AudioEngine {
     }
     master.connect(limiter);
     limiter.connect(ctx.destination);
+    // Stereo analysers on the actual on-air signal (post-limiter) for the VU meter.
+    const splitter = ctx.createChannelSplitter(2);
+    limiter.connect(splitter);
+    const anL = ctx.createAnalyser();
+    const anR = ctx.createAnalyser();
+    anL.fftSize = 1024;
+    anR.fftSize = 1024;
+    splitter.connect(anL, 0);
+    splitter.connect(anR, 1);
+    this._progAnL = anL;
+    this._progAnR = anR;
+    this._progBuf = new Float32Array(anL.fftSize);
     this._recCtx = ctx;
     this._recMaster = master;
     this._recSourced = new WeakSet();

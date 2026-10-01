@@ -2,8 +2,9 @@ import React from "react";
 import { KeyRound, IdCard, Search, X, Circle, Square, Archive, Cloud, Layers, Podcast, ShieldCheck, ShieldAlert } from "lucide-react";
 import InstallButton from "./InstallButton";
 import MicSelector from "./MicSelector";
+import VuMeter from "./VuMeter";
 
-export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems, onGoLive, broadcasting, backupDirty, lastBackupAt, onOpenBackup }) {
+export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyManager, onOpenLicenseStatus, recording, recSec, onToggleRecord, onOpenVault, vaultCount = 0, onOpenCloud, onOpenStems, onGoLive, broadcasting, backupDirty, lastBackupAt, onOpenBackup, isBroadcasting, getLevels }) {
   const fmtRec = (s) => {
     const t = Math.floor(s || 0);
     return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
@@ -59,6 +60,11 @@ export default function Header({ onAir, nowPlaying, search, onSearch, onOpenKeyM
 
       <div className="flex items-center gap-2 md:gap-4">
         <div className="hidden md:flex"><MicSelector /></div>
+        {isBroadcasting && (
+          <div className="hidden lg:block w-28" title="On-air output level (L/R)" data-testid="header-vu-meter">
+            <VuMeter getLevels={getLevels} compact />
+          </div>
+        )}
         <InstallButton variant="header" />
         <button
           data-testid="go-live-button"
