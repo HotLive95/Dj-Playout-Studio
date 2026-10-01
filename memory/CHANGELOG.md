@@ -321,3 +321,23 @@ Tested end-to-end by testing agent (iteration_26.json): 100% pass, no bugs.
   guard (air-guard-desktop-link) and the Broadcast Center air note (air-note-desktop-link):
   "Download the desktop app". When unset, falls back to a plain tip. NEEDS the user's real desktop build
   download URL to activate.
+
+## CRITICAL FIX (2026-06) — Auto-advance stalled + track-start distortion (verified iteration_43)
+- Root cause: crossfade (_startCrossfade) and volume ramps (_rampTo) used requestAnimationFrame. rAF is
+  fully PAUSED when the tab is backgrounded / screen off (routine during a broadcast). A crossfade that
+  started as the screen went off left _fading pinned true forever → every later auto-advance was blocked
+  (_onTime/_onEnded early-return on _fading) and both decks kept playing → distortion.
+- Fixes (lib/audioEngine.js):
+  - Crossfade is now setInterval + wall-clock progress (_fadeTimer/_fadeState/_fadeTick/_finishFade) so it
+    completes even when throttled; _cancelFade clears it.
+  - _rampTo is likewise timer-based (duck/unduck finishes in background).
+  - _onTime has a stale-fade safety (force _finishFade if a fade outran its duration + 1.5s).
+  - resumeContexts() finishes any frozen fade on foreground return.
+  - _ensureProgramGraph adds a DynamicsCompressor limiter on the broadcast/record bus so overlapping decks
+    during a crossfade can't sum past 0dB and distort.
+- Interruption guard now only fires on a REAL interruption (engine.isInterrupted(): suspended ctx or
+  paused-while-should-play, or a dropped station) instead of every app switch — "deactivate the
+  notification while the app is active". On-air lock banner is now dismissible (onair-lock-dismiss) and
+  re-arms on each new broadcast.
+- Verified: testing agent iteration_43 — 3x6s tones auto-advanced 220->440->330 with no manual clicks, no
+  stuck fade, manual next/prev fine, 0 console errors; frontend 100%.

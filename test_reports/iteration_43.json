@@ -1,0 +1,48 @@
+{
+  "summary": "Frontend-only bug-fix verification for timer-based crossfade auto-advance on Hot Live 95. PRIMARY TEST PASSED: With license bypassed, created playlist TEST_AutoAdv, added 3x6s WAV tones (220/440/330) via add-files-input, clicked play on PlayerBar and observed foreground auto-advance for ~22s with NO manual clicks. Observed track sequence: Tone 220 Long -> Tone 440 Long -> Tone 330 Long (2 automatic advances, matching ~3s crossfade handoff around 6-9s/9-10.5s timeline). Row 3 highlights at end and player holds last track (end-of-playlist, expected). Regression PASSED: manual next advances 220->440, prev returns to 220, play/pause toggles correctly, app-logo renders, 0 console errors / 0 page errors / 0 warnings across both runs. No stuck fade or stalled playback observed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "App.js remains >3000 lines (per iter 42) - still should be split into focused hooks/modules.",
+    "The now-playing active-track-row highlight in TrackList is visually present (orange text + play icon on row 3) but exposes no stable aria/data-active attribute - testing agents must rely on className regex. Consider adding data-active='true' on the currently playing track-row for robust automation."
+  ],
+  "updated_files": [],
+  "success_rate": {"frontend": "100%"},
+  "test_credentials": "License key Q61VK-G819N-40K1B-H226T via localStorage {activated:true, legalAccepted:true}",
+  "seed_data_creation": "Transient TEST_AutoAdv and TEST_Regr playlists each with 3 tones (220/440/330 WAV, 6s each). localStorage only.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "To reproduce auto-advance test: set localStorage hotlive95_license={activated:true,legalAccepted:true,key:'Q61VK-G819N-40K1B-H226T'} BEFORE load (use add_init_script). Dismiss 'Maybe later' install prompt. Create playlist via new-playlist-button -> new-playlist-input -> confirm-create-playlist. The add-files-input is HIDDEN so use wait_for_selector(..., state='attached') then set_input_files. Default settings autoplay=on (Auto fire-orange highlighted), crossfade=on (Xfade amber highlighted), crossfade-seconds=3. Click play-pause-button and poll player-track-name every 2s. Expected transition timeline for 6s tracks + 3s xfade: track1 0-6s, handoff to track2 at ~3s, track2 fully audible by ~6s playing until ~9s, handoff to track3 at ~6s, etc. Observed: 220 at T+1.5-5.5s, 440 at T+7.5s, 330 at T+9.5s onward.",
+  "detailed_results": {
+    "license_bypass": "ok",
+    "playlist_created": "TEST_AutoAdv (3 tracks, 18s runtime)",
+    "tracks_added": ["Tone 220 Long", "Tone 440 Long", "Tone 330 Long"],
+    "autoplay_default_on": true,
+    "crossfade_default_on": true,
+    "crossfade_seconds_default": "3",
+    "sampled_now_playing": [
+      {"t_s": 1.5, "track": "Tone 220 Long", "cur": "0:01"},
+      {"t_s": 3.5, "track": "Tone 220 Long", "cur": "0:03"},
+      {"t_s": 5.5, "track": "Tone 220 Long", "cur": "0:05"},
+      {"t_s": 7.5, "track": "Tone 440 Long", "cur": "0:04"},
+      {"t_s": 9.5, "track": "Tone 330 Long", "cur": "0:02"},
+      {"t_s": 11.5, "track": "Tone 330 Long", "cur": "0:04"},
+      {"t_s": 13.5, "track": "Tone 330 Long", "cur": "0:00 (ended, holding last)"},
+      {"t_s": 21.5, "track": "Tone 330 Long", "cur": "0:00 (end of playlist)"}
+    ],
+    "automatic_advances_count": 2,
+    "regression_manual_next": "Tone 220 Long -> Tone 440 Long OK",
+    "regression_manual_prev": "Tone 440 Long -> Tone 220 Long OK",
+    "regression_play_pause_toggle": "OK (cur advanced to 0:02 after resume)",
+    "app_logo_present": true,
+    "console_errors": 0,
+    "console_warnings": 0,
+    "page_errors": 0
+  }
+}
